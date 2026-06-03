@@ -1,0 +1,17 @@
+{
+  "node_id": "endless_trial",
+  "screenshot_path": "E:\\antigravity\\adb_vl\\screenshots\\acquisition\\endless_trial_20260603_081604_full.png",
+  "candidate_template_path": "E:\\antigravity\\adb_vl\\assets\\candidates\\endless_trial_endless_trial_title_20260603_081604.png",
+  "suggested_final_path": "assets/anchors/endless_trial_title.png",
+  "crop_box": [
+    50,
+    20,
+    300,
+    100
+  ],
+  "intended_use": "anchor",
+  "selector_type": "top_title",
+  "source": "auto_candidate",
+  "review_status": "pending",
+  "notes": "Auto captured from endless_trial at 20260603_081604"
+}
