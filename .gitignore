@@ -7,3 +7,5 @@ scratch/
 .vscode/
 *.log
 screenshots/
+assets/candidates/
+screenshot.png
