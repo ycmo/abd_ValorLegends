@@ -109,6 +109,8 @@ class AdRunner:
                 break
 
         print(f"[AdRunner] 最終狀態: {self.state.name}")
+        # 完成後嘗試點返回鍵，回到主畫面
+        self._do_return_home()
         return self.state
 
     def _do_nav_to_hub(self):
@@ -135,10 +137,17 @@ class AdRunner:
         otherworld_path = Path(self.cfg.entry_dir) / "nav_otherworld.png"
         res_otherworld = self.matcher.match_template(screen, otherworld_path)
         if res_otherworld:
-            print("  > 在王國事件選單，點擊「異界奇聞」...")
-            self.device.tap(*res_otherworld.center)
-            time.sleep(2.0)
-            return # 下一輪迴圈會再次進入 _do_nav_to_hub 判斷
+            cx, cy = res_otherworld.center
+            # 防呆：異界奇聞在選單的合理 y 範圍 (畫面高度 540，該按鈕約在 y:380~480)
+            # 若 y 超出範圍，代表打到其他選單項目，視為失敗
+            h = screen.shape[0]
+            if cy > h * 0.85:
+                print(f"  > [WARN] nav_otherworld 命中位置 ({cx},{cy}) 偏低，可能誤判，跳過")
+            else:
+                print(f"  > 在王國事件選單，點擊「異界奇聞」({cx},{cy})...")
+                self.device.tap(cx, cy)
+                time.sleep(2.0)
+                return # 下一輪迴圈會再次進入 _do_nav_to_hub 判斷
 
         # 3. 最淺層：是否在「主畫面」 (看到王國事件標籤)
         kingdom_path = Path(self.cfg.entry_dir) / "nav_kingdom.png"
@@ -287,6 +296,24 @@ class AdRunner:
         # 2. 回到異界奇聞，繼續掃蕩下一個免費廣告
         print("[VERIFY_RETURN] 成功跳出廣告！返回掃蕩下一個...")
         self.state = State.SWEEP_ADS
+
+    def _do_return_home(self):
+        """任務結束後，嘗試點返回鍵回到主畫面。"""
+        print("[RETURN] 嘗試點擊返回鍵回到主畫面...")
+        screen = self._take_screenshot("return_home")
+        if screen is None:
+            return
+        back_path = Path(self.cfg.entry_dir) / "nav_back.png"
+        if not back_path.exists():
+            print("[RETURN] 找不到 nav_back.png，略過返回步驟")
+            return
+        res = self.matcher.match_template(screen, back_path, threshold=0.75)
+        if res:
+            print(f"[RETURN] 找到返回鍵 ({res.center[0]},{res.center[1]})，點擊")
+            self.device.tap(*res.center)
+            time.sleep(1.5)
+        else:
+            print("[RETURN] 找不到返回鍵，可能已在主畫面或需手動處理")
 
     def _fail(self, reason: str):
         self.state = State.FAILED

@@ -41,6 +41,10 @@ Important safety rule:
 - Some screens can show `你確定要退出遊戲嗎？` if the wrong back action is used.
 - Route-specific return logic is required before enabling `run-all`.
 - Golden rule for uncertainty or live/development problems: stop, take a screenshot, ask the user, open the screenshot in Paint, and wait.
+- Normal automation should run as action -> screenshot -> recognition -> next action. Coordinates are reference points to compare expected ranges/ROIs; screenshot recognition decides whether to continue.
+- Prefer correctness over speed. Longer waits between live actions are acceptable when they make recognition safer.
+- During debug-stage live runs, enable persisted screenshots with `--debug-actions` or `VL_DEBUG_ACTIONS=1`. The controller saves every recognition screenshot plus before/after screenshots for every `tap`, `swipe`, and `keyevent` under a per-run subdirectory in `captures/action_debug/`.
+- For swipes, constrain the unused axis when possible: vertical scrolling should lock x, and horizontal scrolling should lock y.
 
 ## Template Findings
 
@@ -179,6 +183,24 @@ Do not re-enable generic unknown-screen Back for this.
   - `run-current-task arena` completed successfully: `Arena fights: 9 across 2 round(s)`.
   - Post-run scene detection was `daily_tasks`; post-run screenshot is `captures/after_arena_live_test.png`.
 
+## Guild Wish Findings
+
+- User confirmed in `docs/project_analysis.v1.md`: Guild Wish should only tap the free wish and must not tap 100/200 gem wishes.
+- The legacy `guild_wish_route` flow was simple: open Guild Wish, tap free, then close the dialog with the top-right X.
+- New formal Guild Wish templates:
+  - `guild_wish_title.png`
+  - `ordinary_wish_label.png`
+  - `free_wish_button.png`
+  - `close_button.png`
+- The new route is conservative:
+  1. Requires the Guild Wish dialog title.
+  2. Requires the left `普通祈願` card.
+  3. Taps only the left free button ROI.
+  4. Requires the dialog is still visible, then closes with X.
+- If a reward overlay or unexpected UI hides the dialog/close button after free wish, stop instead of guessing.
+- Offline template tests passed against `manual_screenshots/公會祈願/002_公會祈願.png`.
+- No live Guild Wish run has been performed after this rewrite.
+
 ## Current Next Step
 
-Before running `run-all`, implement and verify safe return-to-daily behavior for each route. Secret Realm, Summon, Midas, and Arena have live-tested closed loops. Time Travel is paused after the 50-gem reward dismissal attempt and needs a fresh/current screenshot check before continuing.
+Before running `run-all`, implement and verify safe return-to-daily behavior for each route. Secret Realm, Summon, Midas, and Arena have live-tested closed loops. Guild Wish has offline coverage and needs live testing. Time Travel is paused after the 50-gem reward dismissal attempt and needs a fresh/current screenshot check before continuing.

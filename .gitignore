@@ -13,4 +13,8 @@ legacy/
 assets/candidates/
 assets/raw_captures/*
 !assets/raw_captures/README.md
+call_of_the_gale/runtime_captures/*
+!call_of_the_gale/runtime_captures/README.md
+call_of_the_gale/debug_output/*
+!call_of_the_gale/debug_output/README.md
 screenshot.png

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Type
+from typing import Dict, Iterable, List, Optional, Type
 
 from src.adb_controller import DeviceController
 from src.battle_handler import BattleHandler
@@ -13,8 +13,8 @@ from src.tasks import TASK_CLASSES
 from src.vision_matcher import VisionMatcher
 
 
-def build_context(serial: str = DEFAULT_SERIAL, debug: bool = False) -> TaskContext:
-    controller = DeviceController(serial=serial)
+def build_context(serial: str = DEFAULT_SERIAL, debug: Optional[bool] = None) -> TaskContext:
+    controller = DeviceController(serial=serial, debug_actions=debug)
     matcher = VisionMatcher()
     detector = SceneDetector(matcher)
     finder = DailyTaskFinder(controller, matcher)

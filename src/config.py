@@ -12,9 +12,11 @@ SHARED_ASSETS_DIR = ASSETS_DIR / "shared"
 TASK_ASSETS_DIR = ASSETS_DIR / "tasks"
 RAW_CAPTURES_DIR = ASSETS_DIR / "raw_captures"
 CAPTURES_DIR = ROOT_DIR / "captures"
+ACTION_DEBUG_DIR = CAPTURES_DIR / "action_debug"
 MANUAL_SCREENSHOTS_DIR = ROOT_DIR / "manual_screenshots"
 
 DEFAULT_SERIAL = os.environ.get("VL_ADB_SERIAL", "emulator-5554")
+ACTION_DEBUG_ENABLED = os.environ.get("VL_DEBUG_ACTIONS", "").lower() in ("1", "true", "yes", "on")
 EXPECTED_SCREEN_SIZE: Tuple[int, int] = (960, 540)
 
 MATCH_THRESHOLD = 0.82

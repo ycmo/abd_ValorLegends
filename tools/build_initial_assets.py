@@ -178,6 +178,31 @@ CROPS: Tuple[CropSpec, ...] = (
         asset("tasks", "arena", "arena_back_button.png"),
         "競技場 top-left back arrow interior",
     ),
+    # Guild Wish task action templates. Crops avoid user-added red/green annotation boxes.
+    CropSpec(
+        manual("公會祈願", "002_公會祈願.png"),
+        (438, 70, 90, 30),
+        asset("tasks", "guild_wish", "guild_wish_title.png"),
+        "公會祈願 dialog title",
+    ),
+    CropSpec(
+        manual("公會祈願", "002_公會祈願.png"),
+        (236, 146, 104, 28),
+        asset("tasks", "guild_wish", "ordinary_wish_label.png"),
+        "普通祈願 card label",
+    ),
+    CropSpec(
+        manual("公會祈願", "002_公會祈願.png"),
+        (195, 398, 120, 32),
+        asset("tasks", "guild_wish", "free_wish_button.png"),
+        "公會祈願 free button left/center interior",
+    ),
+    CropSpec(
+        manual("公會祈願", "002_公會祈願.png"),
+        (782, 64, 28, 28),
+        asset("tasks", "guild_wish", "close_button.png"),
+        "公會祈願 close X interior",
+    ),
     # Summon task action templates.
     CropSpec(
         manual("高級召喚", "002_高級召喚.png"),
