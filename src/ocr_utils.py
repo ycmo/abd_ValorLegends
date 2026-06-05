@@ -84,3 +84,87 @@ def extract_arena_powers_hash(screen: np.ndarray) -> List[dict]:
             )
     return results
 
+
+ARENA_POWER_COL_X_RANGES = ((200, 350), (580, 730))
+ARENA_POWER_ROW_Y_RANGES = ((140, 180), (218, 258), (296, 336), (374, 414))
+
+
+def build_easyocr_reader():
+    import easyocr
+
+    return easyocr.Reader(["en"], gpu=False, verbose=False)
+
+
+def extract_arena_powers_easyocr(screen: np.ndarray, reader=None) -> List[dict]:
+    """Read the 8 fixed-position Arena opponent power values with EasyOCR.
+
+    The ROI intentionally includes only the power text area. EasyOCR sometimes
+    also sees score text farther right, so boxes near the far-right edge are
+    ignored before combining text fragments.
+    """
+
+    if reader is None:
+        reader = build_easyocr_reader()
+
+    results = []
+    for row_idx, (y0, y1) in enumerate(ARENA_POWER_ROW_Y_RANGES):
+        for col_idx, (x0, x1) in enumerate(ARENA_POWER_COL_X_RANGES):
+            roi = screen[y0:y1, x0:x1]
+            roi_large = cv2.resize(roi, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            roi_pad = cv2.copyMakeBorder(
+                roi_large,
+                20,
+                20,
+                20,
+                20,
+                cv2.BORDER_CONSTANT,
+                value=[255, 255, 255],
+            )
+            ocr_results = reader.readtext(roi_pad, allowlist="0123456789kK,")
+            text, confidence = _combine_arena_power_ocr_results(ocr_results)
+            results.append(
+                {
+                    "row": row_idx + 1,
+                    "col": col_idx + 1,
+                    "power_text": text,
+                    "power_k": parse_power_value(text),
+                    "confidence": confidence,
+                }
+            )
+    return results
+
+
+def _combine_arena_power_ocr_results(ocr_results) -> tuple[str, float]:
+    pieces = []
+    for box, text, confidence in ocr_results:
+        clean = str(text).lower().replace(" ", "")
+        if not any(char.isdigit() for char in clean):
+            continue
+        xs = _box_x_values(box)
+        if not xs:
+            continue
+        left = min(xs)
+        center = sum(xs) / len(xs)
+        if center > 240:
+            continue
+        pieces.append((left, clean, float(confidence)))
+
+    if not pieces:
+        return "", 0.0
+
+    pieces.sort(key=lambda item: item[0])
+    text = "".join(piece[1] for piece in pieces)
+    if "k" in text:
+        text = text[: text.index("k") + 1]
+    confidence = min(piece[2] for piece in pieces)
+    return text, confidence
+
+
+def _box_x_values(box) -> List[float]:
+    values = []
+    for point in box:
+        try:
+            values.append(float(point[0]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return values

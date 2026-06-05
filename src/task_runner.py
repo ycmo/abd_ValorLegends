@@ -62,16 +62,23 @@ class BaseTask:
 
     def run(self) -> TaskRunResult:
         started = time.time()
+        return self._run_with_opener(started, self.context.navigator.open_task_from_daily)
+
+    def run_from_current_daily_screen(self) -> TaskRunResult:
+        started = time.time()
+        return self._run_with_opener(started, self.context.navigator.open_task_from_current_daily_screen)
+
+    def _run_with_opener(self, started: float, opener) -> TaskRunResult:
         missing = self.missing_assets()
         if missing:
             return self._result(
                 TaskState.NEEDS_ASSETS,
                 "Missing assets: " + ", ".join(str(p) for p in missing),
                 started,
-            )
+        )
 
         try:
-            opened = self.context.navigator.open_task_from_daily(self.spec)
+            opened = opener(self.spec)
             if opened.status == OpenTaskStatus.SKIPPED_DONE_OR_CLAIMABLE:
                 return self._result(TaskState.SKIPPED, opened.reason, started)
 

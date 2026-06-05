@@ -141,6 +141,43 @@ CROPS: Tuple[CropSpec, ...] = (
         "完成1次時間旅行",
         True,
     ),
+    # Arena task action templates. Crops avoid red manual annotation boxes.
+    CropSpec(
+        manual("競技場", "002_選擇挑戰.png"),
+        (800, 10, 80, 80),
+        asset("tasks", "arena", "arena_main_anchor.png"),
+        "競技場 main page shop/top-right anchor",
+    ),
+    CropSpec(
+        manual("競技場", "003_選擇對手.png"),
+        (800, 10, 80, 80),
+        asset("tasks", "arena", "opponent_list_anchor.png"),
+        "競技場 multi-challenge opponent dialog close anchor",
+    ),
+    CropSpec(
+        manual("競技場", "002_選擇挑戰.png"),
+        (480, 486, 142, 31),
+        asset("tasks", "arena", "multi_challenge_button.png"),
+        "競技場 多人挑戰 button interior",
+    ),
+    CropSpec(
+        manual("競技場", "003_選擇對手.png"),
+        (820, 440, 35, 35),
+        asset("tasks", "arena", "challenge_button.png"),
+        "競技場 bottom-right green challenge button background",
+    ),
+    CropSpec(
+        manual("競技場", "004_點擊繼續.png"),
+        (450, 506, 63, 18),
+        asset("tasks", "arena", "continue_button.png"),
+        "競技場 點擊繼續 button interior",
+    ),
+    CropSpec(
+        manual("競技場", "005_退出競技場.png"),
+        (23, 12, 47, 50),
+        asset("tasks", "arena", "arena_back_button.png"),
+        "競技場 top-left back arrow interior",
+    ),
     # Summon task action templates.
     CropSpec(
         manual("高級召喚", "002_高級召喚.png"),

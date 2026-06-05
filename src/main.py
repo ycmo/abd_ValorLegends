@@ -36,8 +36,20 @@ def _build_parser() -> argparse.ArgumentParser:
     probe_task = sub.add_parser("probe-task", help="Find a task row on the daily-task screen without opening it")
     probe_task.add_argument("task", choices=sorted(TASK_CLASSES))
 
+    probe_current_task = sub.add_parser(
+        "probe-current-task",
+        help="Find a task row on the current daily-task screen without scrolling",
+    )
+    probe_current_task.add_argument("task", choices=sorted(TASK_CLASSES))
+
     run_task = sub.add_parser("run-task", help="Run one task by key")
     run_task.add_argument("task", choices=sorted(TASK_CLASSES))
+
+    run_current_task = sub.add_parser(
+        "run-current-task",
+        help="Run one visible task row on the current daily-task screen without scrolling first",
+    )
+    run_current_task.add_argument("task", choices=sorted(TASK_CLASSES))
 
     sub.add_parser("run-all", help="Run all tasks in configured order")
     return parser
@@ -130,12 +142,43 @@ def cmd_probe_task(serial: str, task_key: str) -> int:
     return 0
 
 
+def cmd_probe_current_task(serial: str, task_key: str) -> int:
+    context = build_context(serial)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    result = context.finder.find_on_current_screen(TASK_SPECS[task_key])
+    print(f"task={task_key}")
+    print(f"status={result.status.value}")
+    if result.label_match:
+        print(f"label_center={result.label_match.center}")
+        print(f"label_confidence={result.label_match.confidence:.4f}")
+    if result.go_match:
+        print(f"go_center={result.go_match.center}")
+        print(f"go_confidence={result.go_match.confidence:.4f}")
+    if result.reason:
+        print(f"reason={result.reason}")
+    return 0
+
+
 def cmd_run_task(serial: str, task_key: str) -> int:
     context = build_context(serial)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
     result = DailyRunner(context).run_task(task_key)
+    print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
+    if result.message:
+        print(result.message)
+    return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
+
+
+def cmd_run_current_task(serial: str, task_key: str) -> int:
+    context = build_context(serial)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    result = DailyRunner(context).run_current_task(task_key)
     print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
     if result.message:
         print(result.message)
@@ -176,8 +219,12 @@ def main(argv: list = None) -> int:
             return cmd_list_tasks()
         if args.command == "probe-task":
             return cmd_probe_task(args.serial, args.task)
+        if args.command == "probe-current-task":
+            return cmd_probe_current_task(args.serial, args.task)
         if args.command == "run-task":
             return cmd_run_task(args.serial, args.task)
+        if args.command == "run-current-task":
+            return cmd_run_current_task(args.serial, args.task)
         if args.command == "run-all":
             return cmd_run_all(args.serial)
         parser.error(f"Unknown command: {args.command}")

@@ -32,6 +32,8 @@ Useful checks:
 - The right-side `前往` search ROI should stay in the right side of the same row, not the whole row.
 - The same-row `前往` ROI was widened to the right-side area centered around the label row. The earlier narrow ROI caused false negatives for ready rows.
 - Daily-task scrolling now compares screenshots/fingerprints after swipes so it can stop at top/bottom boundaries instead of blindly swiping.
+- If a task row is too close to the bottom edge, the visible `前往` button may only partially match, e.g. Arena bottom-row live screenshot matched at only `0.6744`. Finder now treats bottom-edge rows as not safely classifiable instead of `done_or_claimable`.
+- `probe-current-task <task>` and `run-current-task <task>` do not scroll. Use them after the user manually positions a target row on screen.
 
 Important safety rule:
 
@@ -154,6 +156,29 @@ Do not re-enable generic unknown-screen Back for this.
 - Post-run screenshot: `captures/after_midas_live_test.png`.
 - Post-run `probe-task midas` returned `done_or_claimable`.
 
+## Arena Findings
+
+- User confirmed in Q011: ignore the Daily Tasks count of 2; Arena should keep fighting until accumulated opponents reach at least 8. Exceeding 8 is acceptable.
+- Arena policy remains: cancel/avoid opponents above `7000k`.
+- The legacy `arena_route` flow is the correct starting point: open `多人挑戰`, OCR 8 opponent power values, uncheck over-7000k checked opponents, then start the challenge.
+- The legacy unsafe unknown-screen fallback is not allowed in the new route. Do not tap top-left Back just because a screen is unknown.
+- New formal Arena templates:
+  - `arena_main_anchor.png`
+  - `opponent_list_anchor.png`
+  - `multi_challenge_button.png`
+  - `challenge_button.png`
+  - `continue_button.png`
+  - `arena_back_button.png`
+- The hash OCR path is not safe enough for live Arena decisions. On the manual opponent-list screenshot, it misread high-power values such as `9733k` and `8127k`.
+- Arena now uses EasyOCR with fixed ROIs and filters out far-right score text that EasyOCR can also detect.
+- Offline real EasyOCR audit on `manual_screenshots/競技場/003_選擇對手.png` detected the high-power opponents `9733k`, `8127k`, and `7531k` correctly.
+- Safety stops: missing/low-confidence OCR, uncertain checkbox state, no checked safe opponents after filtering, failed verification after unchecking an over-7000k opponent, missing continue button, or failure to return to Daily Tasks.
+- Live test on 2026-06-05:
+  - Initial `probe-task arena` failed because auto-scanning moved the list and the row was not visible; user repositioned the list.
+  - `probe-current-task arena` found the visible row at `label_center=(330, 349)`, `go_center=(840, 358)`.
+  - `run-current-task arena` completed successfully: `Arena fights: 9 across 2 round(s)`.
+  - Post-run scene detection was `daily_tasks`; post-run screenshot is `captures/after_arena_live_test.png`.
+
 ## Current Next Step
 
-Before running `run-all`, implement and verify safe return-to-daily behavior for each route. Secret Realm, Summon, and Midas have live-tested closed loops. Time Travel is paused after the 50-gem reward dismissal attempt and needs a fresh/current screenshot check before continuing.
+Before running `run-all`, implement and verify safe return-to-daily behavior for each route. Secret Realm, Summon, Midas, and Arena have live-tested closed loops. Time Travel is paused after the 50-gem reward dismissal attempt and needs a fresh/current screenshot check before continuing.

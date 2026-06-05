@@ -38,6 +38,10 @@ class DailyRunner:
         task_class = TASK_CLASSES[task_key]
         return task_class(self.context).run()
 
+    def run_current_task(self, task_key: str) -> TaskRunResult:
+        task_class = TASK_CLASSES[task_key]
+        return task_class(self.context).run_from_current_daily_screen()
+
     def run_all(self, order: Iterable[str] = TASK_ORDER) -> List[TaskRunResult]:
         results = []
         for key in order:

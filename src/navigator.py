@@ -88,6 +88,27 @@ class Navigator:
         time.sleep(TRANSITION_WAIT_SECONDS)
         return OpenTaskResult(OpenTaskStatus.OPENED)
 
+    def open_task_from_current_daily_screen(self, spec: TaskSpec) -> OpenTaskResult:
+        screen = self.controller.screenshot()
+        detected = self.detector.detect(screen)
+        if detected.scene != Scene.DAILY_TASKS:
+            raise NavigationError("Current screen is not Daily Tasks")
+
+        result = self.finder.find_on_current_screen(spec)
+        if result.status == TaskSearchStatus.DONE_OR_CLAIMABLE:
+            return OpenTaskResult(
+                OpenTaskStatus.SKIPPED_DONE_OR_CLAIMABLE,
+                reason=result.reason,
+            )
+        if result.status != TaskSearchStatus.READY or result.go_match is None:
+            raise NavigationError(
+                f"Cannot find runnable task row on current screen for {spec.display_name}: {result.reason}"
+            )
+
+        self.controller.tap(*result.go_match.center)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+        return OpenTaskResult(OpenTaskStatus.OPENED)
+
     def return_to_daily_tasks(self) -> bool:
         return self.go_to_daily_tasks()
 

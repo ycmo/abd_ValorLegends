@@ -61,7 +61,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
         policy=ResourcePolicy(
             allowed_actions=("challenge_opponents_under_7000k",),
             stop_conditions=("ocr_uncertain", "all_opponents_over_7000k"),
-            notes="Arena must avoid opponents above 7000k. OCR/hash OCR is required.",
+            notes="Arena must avoid opponents above 7000k and keep fighting until at least 8 opponents are accumulated.",
         ),
     ),
     "bounty": TaskSpec(

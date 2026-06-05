@@ -60,6 +60,13 @@ class DailyTaskFinder:
         if label is None:
             return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="task label not visible")
 
+        if self._row_too_close_to_bottom(screen_height=screen.shape[0], label=label):
+            return TaskSearchResult(
+                TaskSearchStatus.NOT_FOUND,
+                label_match=label,
+                reason="task row is too close to the bottom edge to classify safely",
+            )
+
         go_roi = self._same_row_right_roi(screen_width=screen.shape[1], label=label)
         go = self.matcher.match_template(screen, go_path, threshold=GO_BUTTON_THRESHOLD, roi=go_roi)
         if go is None:
@@ -85,6 +92,8 @@ class DailyTaskFinder:
             if attempt >= max_swipes:
                 break
             if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=420, wait_seconds=TAP_COOLDOWN_SECONDS):
+                if last.label_match is not None:
+                    return last
                 return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="task label not visible before list bottom")
         return last
 
@@ -139,3 +148,7 @@ class DailyTaskFinder:
         row_h = 100
         x = int(screen_width * 0.70)
         return (x, row_y, screen_width - x, row_h)
+
+    @staticmethod
+    def _row_too_close_to_bottom(screen_height: int, label: MatchResult) -> bool:
+        return label.center[1] >= screen_height - 70
