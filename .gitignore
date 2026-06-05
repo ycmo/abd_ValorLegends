@@ -1,4 +1,5 @@
 .venv/
+.venv-codex/
 __pycache__/
 *.pyc
 debug/
@@ -7,5 +8,9 @@ scratch/
 .vscode/
 *.log
 screenshots/
+captures/
+legacy/
 assets/candidates/
+assets/raw_captures/*
+!assets/raw_captures/README.md
 screenshot.png

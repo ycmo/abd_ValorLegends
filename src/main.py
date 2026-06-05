@@ -1,116 +1,191 @@
+from __future__ import annotations
+
 import argparse
 import sys
-import os
+import time
+from pathlib import Path
 
-# ── 確保從 src/ 目錄執行時能 import 同層模組 ──
-sys.path.insert(0, os.path.dirname(__file__))
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from actions import list_devices_action, screenshot_action, tap_action, find_action, probe_daily_tasks_action, run_small_tasks_action
-from adb_client import AdbError, get_default_adb_target
+from src.adb_controller import AdbControllerError, DeviceController
+from src.config import CAPTURES_DIR, DEFAULT_SERIAL, EXPECTED_SCREEN_SIZE, TASK_ORDER, TASK_SPECS
+from src.daily_runner import DailyRunner, build_context
+from src.exceptions import BotError, ConfigurationError
+from src.scene_detector import SceneDetector
+from src.tasks import TASK_CLASSES
+from src.vision_matcher import VisionMatcher
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Valor Legends ADB 自動化工具",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-範例：
-  python src/main.py devices
-  python src/main.py screenshot
-  python src/main.py tap 800 450
-  python src/main.py find assets/go_button.png
-  python src/main.py probe-daily-tasks
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Valor Legends ADB automation")
+    parser.add_argument("--serial", default=DEFAULT_SERIAL, help=f"ADB serial, default: {DEFAULT_SERIAL}")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-廣告關閉實驗（支線）：
-  python experiments/ad_closer/run_ad_closer.py --debug
-        """,
-    )
-    default_serial = get_default_adb_target()
-    parser.add_argument(
-        "--serial",
-        type=str,
-        default=default_serial,
-        help=f"ADB 設備 serial（預設: {default_serial}）",
-    )
-    subparsers = parser.add_subparsers(dest="command", help="可用指令")
+    sub.add_parser("devices", help="List connected ADB devices")
+    sub.add_parser("check-device", help="Connect and validate screenshot size")
 
-    # ── 舊有指令 ──────────────────────────────────────
+    screenshot = sub.add_parser("screenshot", help="Capture a screenshot into captures/")
+    screenshot.add_argument("--name", help="Optional output file name")
 
-    subparsers.add_parser("devices", help="列出已連線 ADB 設備")
-    subparsers.add_parser("screenshot", help="擷圖存到 screenshots/current.png")
+    sub.add_parser("detect-scene", help="Detect current scene from shared anchors")
+    sub.add_parser("go-daily", help="Navigate to the daily tasks screen")
 
-    tap_parser = subparsers.add_parser("tap", help="點擊指定座標 (x, y)")
-    tap_parser.add_argument("x", type=int, help="X 座標")
-    tap_parser.add_argument("y", type=int, help="Y 座標")
+    sub.add_parser("list-tasks", help="List configured daily tasks")
 
-    find_parser = subparsers.add_parser("find", help="在截圖中尋找 template")
-    find_parser.add_argument("template_path", type=str, help="Template 圖片路徑")
-    find_parser.add_argument(
-        "image_path",
-        type=str,
-        nargs="?",
-        default="screenshots/current.png",
-        help="目標基底圖片路徑（預設: screenshots/current.png）",
-    )
+    probe_task = sub.add_parser("probe-task", help="Find a task row on the daily-task screen without opening it")
+    probe_task.add_argument("task", choices=sorted(TASK_CLASSES))
 
-    subparsers.add_parser("probe-daily-tasks", help="探測每日任務「前往」按鈕")
+    run_task = sub.add_parser("run-task", help="Run one task by key")
+    run_task.add_argument("task", choices=sorted(TASK_CLASSES))
 
-    run_tasks_parser = subparsers.add_parser("run-small-tasks", help="執行低風險小任務")
-    run_tasks_parser.add_argument(
-        "--tasks",
-        nargs="+",
-        default=["endless_trial", "campaign"],
-        help="欲執行的任務列表 (預設: endless_trial campaign)"
-    )
+    sub.add_parser("run-all", help="Run all tasks in configured order")
+    return parser
 
-    # ── 解析 ────────────────────────────────────────────
 
-    args = parser.parse_args()
+def _connect_controller(serial: str) -> DeviceController:
+    controller = DeviceController(serial)
+    if not controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    return controller
 
-    # Apply global serial override if specified
-    if args.serial:
-        import adb_client
-        adb_client.ADB_TARGET = args.serial
-        try:
-            import subprocess
-            subprocess.run(
-                ["adb", "connect", args.serial],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                encoding="utf-8",
-                errors="ignore"
-            )
-        except Exception:
-            pass
 
-    if not args.command:
-        parser.print_help()
-        sys.exit(1)
+def cmd_devices() -> int:
+    for serial in DeviceController.list_devices():
+        print(serial)
+    return 0
 
+
+def cmd_check_device(serial: str) -> int:
+    controller = _connect_controller(serial)
+    wm_size = controller.get_screen_size()
+    density = controller.get_screen_density()
+    screenshot_size = controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    print(f"serial={serial}")
+    print(f"wm_size={wm_size[0]}x{wm_size[1]}")
+    print(f"density={density}")
+    print(f"screenshot_size={screenshot_size[0]}x{screenshot_size[1]}")
+    return 0
+
+
+def cmd_screenshot(serial: str, name: str) -> int:
+    controller = _connect_controller(serial)
+    if not name:
+        name = time.strftime("%Y%m%d_%H%M%S.png")
+    path = CAPTURES_DIR / name
+    controller.save_screenshot(path)
+    print(path)
+    return 0
+
+
+def cmd_detect_scene(serial: str) -> int:
+    controller = _connect_controller(serial)
+    screen = controller.screenshot()
+    detection = SceneDetector(VisionMatcher()).detect(screen)
+    print(f"scene={detection.scene.value}")
+    print(f"confidence={detection.confidence:.4f}")
+    if detection.match:
+        print(f"template={detection.match.template_path}")
+    if detection.reason:
+        print(f"reason={detection.reason}")
+    return 0
+
+
+def cmd_go_daily(serial: str) -> int:
+    context = build_context(serial)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    ok = context.navigator.go_to_daily_tasks()
+    print("daily_tasks=ok" if ok else "daily_tasks=failed")
+    return 0 if ok else 1
+
+
+def cmd_list_tasks() -> int:
+    for key in TASK_ORDER:
+        spec = TASK_SPECS[key]
+        print(f"{key}: {spec.display_name} [{spec.kind}]")
+        print(f"  policy: {spec.policy.notes}")
+    return 0
+
+
+def cmd_probe_task(serial: str, task_key: str) -> int:
+    context = build_context(serial)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    if not context.navigator.go_to_daily_tasks():
+        raise ConfigurationError("Cannot reach daily tasks")
+    result = context.finder.scroll_to_task(TASK_SPECS[task_key])
+    print(f"task={task_key}")
+    print(f"status={result.status.value}")
+    if result.label_match:
+        print(f"label_center={result.label_match.center}")
+        print(f"label_confidence={result.label_match.confidence:.4f}")
+    if result.go_match:
+        print(f"go_center={result.go_match.center}")
+        print(f"go_confidence={result.go_match.confidence:.4f}")
+    if result.reason:
+        print(f"reason={result.reason}")
+    return 0
+
+
+def cmd_run_task(serial: str, task_key: str) -> int:
+    context = build_context(serial)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    result = DailyRunner(context).run_task(task_key)
+    print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
+    if result.message:
+        print(result.message)
+    return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
+
+
+def cmd_run_all(serial: str) -> int:
+    context = build_context(serial)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    results = DailyRunner(context).run_all()
+    failed = False
+    for result in results:
+        print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
+        if result.message:
+            print(f"  {result.message}")
+        if result.state.value == "failed":
+            failed = True
+    return 1 if failed else 0
+
+
+def main(argv: list = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
     try:
         if args.command == "devices":
-            list_devices_action()
+            return cmd_devices()
+        if args.command == "check-device":
+            return cmd_check_device(args.serial)
+        if args.command == "screenshot":
+            return cmd_screenshot(args.serial, args.name)
+        if args.command == "detect-scene":
+            return cmd_detect_scene(args.serial)
+        if args.command == "go-daily":
+            return cmd_go_daily(args.serial)
+        if args.command == "list-tasks":
+            return cmd_list_tasks()
+        if args.command == "probe-task":
+            return cmd_probe_task(args.serial, args.task)
+        if args.command == "run-task":
+            return cmd_run_task(args.serial, args.task)
+        if args.command == "run-all":
+            return cmd_run_all(args.serial)
+        parser.error(f"Unknown command: {args.command}")
+        return 2
+    except (AdbControllerError, BotError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
-        elif args.command == "screenshot":
-            screenshot_action()
-
-        elif args.command == "tap":
-            tap_action(args.x, args.y)
-
-        elif args.command == "find":
-            find_action(args.template_path, args.image_path)
-
-        elif args.command == "probe-daily-tasks":
-            probe_daily_tasks_action()
-
-        elif args.command == "run-small-tasks":
-            run_small_tasks_action(args.tasks)
-
-    except AdbError:
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

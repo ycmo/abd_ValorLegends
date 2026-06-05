@@ -1,141 +1,99 @@
-# Valor Legends ADB 自動化工具
+# Valor Legends ADB 自動化
 
-外部 Python 腳本，透過 ADB 控制 Android 模擬器，使用 OpenCV template matching 自動化遊戲操作。
+這是重構後的新主線。專案只做外部 UI 自動化：
 
-**技術路線**：ADB 截圖 → OpenCV 比對 → ADB tap。無封包攔截、無記憶體修改、無 APK 注入。
+```text
+ADB 截圖 -> OpenCV template matching / OCR -> ADB tap/swipe
+```
 
----
+不做封包攔截、記憶體修改、APK 注入。
 
-## 環境需求
+## 目前決策
 
-- Python 3.9+
-- ADB（Android Debug Bridge）已安裝並加入 PATH
-- Android 模擬器（已開啟 USB 偵錯 / ADB over TCP）
+- 以 `docs/project_analysis.v1.md` 為準。
+- Codex 交接與工作筆記記錄在 `CODEX_NOTES.md`。
+- 實機測試發現與臨時結論記錄在 `docs/implementation_notes.md`。
+- 待使用者確認的需求問題記錄在 `docs/requirements_QA.md`。
+- 初期只支援 960x540 截圖解析度；不符合就停止。
+- `manual_screenshots/` 是使用者提供的真相來源，不覆蓋。
+- Codex 自行截圖放 `captures/` 或 `assets/raw_captures/`。
+- 舊架構已封存到 `legacy/20260604_pre_rewrite/`。
+- 看廣告相關內容放 `ads/`，不混進每日任務主線。
+- 第一版不自動點每日任務「領取」。
 
-### 安裝 Python 套件
+## 安裝
 
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
----
+## 常用指令
 
-## 專案結構
+建議從專案根目錄執行：
 
-```
-adb_vl/
-├── assets/
-│   ├── ad_close/              ← 廣告關閉按鈕 template（*.png）
-│   │   ├── close_x_01.png
-│   │   ├── close_x_02.png
-│   │   └── skip_01.png
-│   └── anchors/               ← 遊戲大廳 anchor template
-│       └── game_lobby_anchor.png
-├── screenshots/
-│   └── debug/                 ← debug 模式輸出截圖
-├── src/
-│   ├── adb_controller.py      ← DeviceController（連線、擷圖、tap、back）
-│   ├── vision_matcher.py      ← VisionMatcher（ROI、多 template、debug 框）
-│   ├── ad_closer.py           ← 廣告關閉狀態機 MVP
-│   ├── actions.py             ← 舊有 CLI actions（probe-daily-tasks 等）
-│   ├── adb_client.py          ← 舊有 ADB 底層
-│   ├── vision.py              ← 舊有 vision 底層
-│   └── main.py                ← CLI 入口
-├── docs/
-│   ├── daily_tasks_exploration.md
-│   └── repo_inspection_report.md
-├── requirements.txt
-└── README.md
+```powershell
+python -m src.main devices
+python -m src.main check-device
+python -m src.main screenshot
+python -m src.main detect-scene
+python -m src.main list-tasks
+python -m src.main run-task midas
+python -m src.main run-all
 ```
 
----
+目前預設 ADB serial 是 `emulator-5554`。如果 BlueStacks 之後又變回 `127.0.0.1:5555`，可以用任一方式覆蓋：
 
-## 廣告關閉 MVP (`close-ad`)
-
-### 快速開始
-
-1. **手動開啟廣告**：在遊戲中點擊任一「觀看廣告」按鈕，讓廣告開始播放。
-2. **準備 template**：先擷取一張截圖，裁切出廣告的 X / Close / Skip 按鈕，放入 `assets/ad_close/`：
-   ```bash
-   python src/main.py screenshot
-   ```
-3. **執行 MVP**（保持廣告播放中）：
-   ```bash
-   python src/main.py close-ad --debug
-   ```
-
-### 完整 CLI 參數
-
-```
-python src/main.py close-ad [OPTIONS]
-
-選項：
-  --serial        ADB 設備 serial（預設: 127.0.0.1:5555）
-  --timeout       最長等待秒數（預設: 60）
-  --interval      輪詢截圖間隔秒數（預設: 1.5）
-  --threshold     Template matching 信心值閾值（預設: 0.82）
-  --anchor-threshold  Anchor 偵測信心值（預設: 0.80）
-  --ad-close-dir  Close button template 資料夾（預設: assets/ad_close）
-  --anchor-path   遊戲大廳 anchor 圖片（預設: assets/anchors/game_lobby_anchor.png）
-  --grace         廣告黑屏載入寬限期（秒，預設: 5）
-  --post-tap-wait 點擊後等待秒數（預設: 2.5）
-  --max-taps      最大點擊嘗試次數（預設: 5）
-  --debug         輸出帶 bbox 的 debug 截圖到 screenshots/debug/
-  --debug-dir     Debug 截圖輸出目錄（預設: screenshots/debug）
+```powershell
+python -m src.main --serial 127.0.0.1:5555 check-device
+$env:VL_ADB_SERIAL = "127.0.0.1:5555"
 ```
 
-### 狀態機流程
+手動截圖工具保留原本用途：
 
-```
-[手動開廣告] → AD_WAIT
-                 │ 每 1.5s 截圖，掃描四角 ROI
-                 │ 找到 close/skip template
-                 ↓
-           FIND_CLOSE_OR_SKIP
-                 │ 確認比對結果
-                 ↓
-              TAP_CLOSE
-                 │ adb tap center
-                 │ 等待 2.5s
-                 │ 確認是否回到遊戲（anchor 或 close button 消失）
-                 ├──→ DONE   ✅ 廣告關閉成功
-                 └──→ FAILED ❌ timeout / 多次嘗試失敗 → 輸出 debug 截圖
+```powershell
+python -m src.manual_screenshots --task 無盡試煉 --index 1 --scene 每日任務
 ```
 
-### ROI 掃描範圍（預設）
+## 新目錄
 
-| 區域         | 比例範圍（y%, x%）    | 說明                      |
-| :----------- | :-------------------- | :------------------------ |
-| top_right    | (0~20%, 70~100%)      | 最常見廣告 X 按鈕位置     |
-| top_left     | (0~20%, 0~30%)        | 部分廣告的關閉在左上角    |
-| bottom_right | (80~100%, 70~100%)    | Skip Ad 常見位置          |
-| bottom_left  | (80~100%, 0~30%)      | 部分廣告格式              |
+```text
+src/
+  adb_controller.py       ADB 連線、截圖、tap/swipe/back
+  vision_matcher.py       OpenCV template matching
+  scene_detector.py       共用場景辨識
+  daily_task_finder.py    每日任務列表找任務與前往按鈕
+  navigator.py            回每日任務、開任務
+  battle_handler.py       戰鬥等待與結果處理
+  task_runner.py          任務基底與 step runner
+  daily_runner.py         單任務/全任務執行器
+  tasks/                  各每日任務
 
----
+assets/
+  shared/                 共用 template
+  tasks/<task_key>/       任務專用 template
+  raw_captures/           Codex 擷取的原始素材
 
-## 其他指令
-
-```bash
-# 列出設備
-python src/main.py devices
-
-# 擷圖
-python src/main.py screenshot
-
-# 點擊座標
-python src/main.py tap 800 450
-
-# 在截圖中尋找 template
-python src/main.py find assets/ad_close/close_x_01.png
-
-# 探測每日任務「前往」按鈕
-python src/main.py probe-daily-tasks
+ads/                      Antigravity 看廣告工作區
+legacy/                   舊檔封存，本地保留、不納入 git
 ```
 
----
+## Template 命名
 
-## 注意事項
+每條任務至少需要：
 
-- 本工具為純外部 UI 自動化（ADB 截圖 + OpenCV 比對 + ADB tap），不涉及任何封包攔截、記憶體修改、APK 注入或反作弊規避。
-- Template 圖片必須在與模擬器相同的解析度下擷取。
-- FAILED 時腳本**不會**自動重啟遊戲或發送 back 鍵，僅輸出 debug 截圖供手動排查。
+```text
+assets/tasks/<task_key>/task_label.png
+assets/shared/go_button.png
+```
+
+如果任務找得到 label 但同一列找不到 `go_button.png`，程式會視為已完成或可領取，直接跳過。
+
+## 資源消耗規則
+
+- `midas`: 免費 + 20 鑽 + 50 鑽。
+- `time_travel`: 免費 + 50 鑽，遇到 100 鑽停止。
+- `secret_realm`: 只購買迷失森林兩次，然後掃蕩全部。
+- `summon`: 只免費召喚。
+- `guild_wish`: 只免費祈願。
+- `bounty`: 只接白名單；全黑名單或四星以下才刷新；不確定就停止。
+- `arena`: 必須避開高於 7000k 的對手。
