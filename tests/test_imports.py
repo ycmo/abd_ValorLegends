@@ -25,11 +25,14 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES))
 
     def test_task_specs_are_configured(self):
-        from src.config import TASK_ORDER, TASK_SPECS
+        from src.config import TASK_ORDER, TASK_SPECS, TESTED_DAILY_TASK_ORDER
 
         self.assertEqual(set(TASK_ORDER), set(TASK_SPECS))
         self.assertIn("midas", TASK_SPECS)
         self.assertIn("gem_50", TASK_SPECS["midas"].policy.allowed_actions)
+        self.assertLessEqual(set(TESTED_DAILY_TASK_ORDER), set(TASK_SPECS))
+        self.assertNotIn("bounty", TESTED_DAILY_TASK_ORDER)
+        self.assertNotIn("guild_dungeon", TESTED_DAILY_TASK_ORDER)
 
 
 if __name__ == "__main__":

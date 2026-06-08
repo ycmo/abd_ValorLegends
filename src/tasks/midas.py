@@ -5,7 +5,7 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.task_runner import BaseTask
+from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult, Roi
 
 
@@ -29,8 +29,13 @@ class MidasTask(BaseTask):
     REWARD_TITLE_ROI: Roi = (330, 100, 300, 100)
     ACTIVE_BUTTON_THRESHOLD = 0.92
     MAX_ALLOWED_TAPS = 12
+    task_scene_anchors = (
+        TaskSceneAnchor("midas_title.png", threshold=0.86, roi=TITLE_ROI),
+        TaskSceneAnchor("reward_title.png", threshold=0.86, roi=REWARD_TITLE_ROI),
+    )
 
     def execute(self) -> str:
+        self._dismiss_reward_overlay_if_present()
         self._require_midas_dialog()
         completed = []
         for _ in range(self.MAX_ALLOWED_TAPS):
@@ -81,18 +86,17 @@ class MidasTask(BaseTask):
         ):
             return
 
-        for _ in range(2):
-            title = self._match_task_asset(
+        self.dismiss_reward_overlay_by_blank_taps(
+            is_closed=lambda: self._match_task_asset(
                 "reward_title.png",
                 roi=self.REWARD_TITLE_ROI,
                 threshold=0.86,
                 timeout_seconds=0.4,
             )
-            if title is None:
-                return
-            self.context.controller.tap(*title.center)
-            time.sleep(TAP_COOLDOWN_SECONDS)
-        raise TaskFailedError("Midas reward overlay did not close after two title taps")
+            is None,
+            max_taps=2,
+            failure_message="Midas reward overlay did not close after two blank-area taps",
+        )
 
     def _close_dialog(self) -> None:
         self._dismiss_reward_overlay_if_present()

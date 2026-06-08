@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from src.config import TASK_SPECS
 from src.exceptions import MissingAssetError
-from src.task_runner import BaseTask
+from src.task_runner import BaseTask, TaskSceneAnchor
 
 
 class BountyTask(BaseTask):
@@ -13,6 +13,9 @@ class BountyTask(BaseTask):
         "dispatch_button.png",
         "refresh_button.png",
     )
+    task_scene_anchors = (
+        TaskSceneAnchor("bounty_board_anchor.png", threshold=0.82),
+    )
 
     def execute(self) -> str:
         whitelist_dir = self.spec.asset_dir / "whitelist"
@@ -21,4 +24,3 @@ class BountyTask(BaseTask):
                 "Bounty whitelist is empty. Add resource templates under assets/tasks/bounty/whitelist/."
             )
         return "bounty whitelist framework ready; dispatch logic awaits concrete whitelist rules"
-

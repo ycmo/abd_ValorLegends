@@ -10,7 +10,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.adb_controller import AdbControllerError, DeviceController
-from src.config import CAPTURES_DIR, DEFAULT_SERIAL, EXPECTED_SCREEN_SIZE, TASK_ORDER, TASK_SPECS
+from src.config import CAPTURES_DIR, DEFAULT_SERIAL, EXPECTED_SCREEN_SIZE, TASK_ORDER, TASK_SPECS, TESTED_DAILY_TASK_ORDER
 from src.daily_runner import DailyRunner, build_context
 from src.exceptions import BotError, ConfigurationError
 from src.scene_detector import SceneDetector
@@ -54,10 +54,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_current_task = sub.add_parser(
         "run-current-task",
-        help="Run one visible task row on the current daily-task screen without scrolling first",
+        help="Run one task near the current daily-task viewport without resetting the list first",
     )
     run_current_task.add_argument("task", choices=sorted(TASK_CLASSES))
 
+    run_current_scene_task = sub.add_parser(
+        "run-current-scene-task",
+        help="Continue one task from its current feature screen/dialog",
+    )
+    run_current_scene_task.add_argument("task", choices=sorted(TASK_CLASSES))
+
+    sub.add_parser("run-tested-daily", help="Run only the live-tested daily-task closed loops")
     sub.add_parser("run-all", help="Run all tasks in configured order")
     return parser
 
@@ -192,6 +199,18 @@ def cmd_run_current_task(serial: str, task_key: str, debug_actions: Optional[boo
     return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
 
 
+def cmd_run_current_scene_task(serial: str, task_key: str, debug_actions: Optional[bool] = None) -> int:
+    context = build_context(serial, debug=debug_actions)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    result = DailyRunner(context).run_current_scene_task(task_key)
+    print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
+    if result.message:
+        print(result.message)
+    return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
+
+
 def cmd_run_all(serial: str, debug_actions: Optional[bool] = None) -> int:
     context = build_context(serial, debug=debug_actions)
     if not context.controller.connect():
@@ -206,6 +225,23 @@ def cmd_run_all(serial: str, debug_actions: Optional[bool] = None) -> int:
         if result.state.value == "failed":
             failed = True
     return 1 if failed else 0
+
+
+def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None) -> int:
+    context = build_context(serial, debug=debug_actions)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    runner = DailyRunner(context)
+    for task_key in TESTED_DAILY_TASK_ORDER:
+        result = runner.run_task(task_key)
+        print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)", flush=True)
+        if result.message:
+            print(f"  {result.message}", flush=True)
+        if result.state.value in ("failed", "needs_assets"):
+            print(f"stopped_after={result.task_key}", flush=True)
+            return 1
+    return 0
 
 
 def main(argv: list = None) -> int:
@@ -232,6 +268,10 @@ def main(argv: list = None) -> int:
             return cmd_run_task(args.serial, args.task, args.debug_actions)
         if args.command == "run-current-task":
             return cmd_run_current_task(args.serial, args.task, args.debug_actions)
+        if args.command == "run-current-scene-task":
+            return cmd_run_current_scene_task(args.serial, args.task, args.debug_actions)
+        if args.command == "run-tested-daily":
+            return cmd_run_tested_daily(args.serial, args.debug_actions)
         if args.command == "run-all":
             return cmd_run_all(args.serial, args.debug_actions)
         parser.error(f"Unknown command: {args.command}")

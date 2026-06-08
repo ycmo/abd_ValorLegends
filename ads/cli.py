@@ -62,23 +62,40 @@ class State(Enum):
 # 核心狀態機
 # ------------------------------------------------------------------
 class AdRunner:
-    def __init__(self, cfg: AdConfig):
+    def __init__(self, cfg: AdConfig, initial_state: State = State.NAV_TO_HUB):
         self.cfg = cfg
         self.device = DeviceController(serial=cfg.serial)
         self.matcher: Optional[VisionMatcher] = None
         
-        self.state = State.NAV_TO_HUB
+        self.state = initial_state
         self.start_time: float = 0.0
         self.tap_attempts: int = 0
         self.last_match: Optional[MatchResult] = None
         self.last_screen = None
         self.best_confidence: float = 0.0
         self.best_template: str = ""
+        
+        # 建立專屬 debug 目錄與 log 檔案
+        self.run_id = time.strftime("%Y%m%d_%H%M%S")
+        self.run_dir = os.path.join(self.cfg.debug_dir, f"run_{self.run_id}")
+        if self.cfg.debug:
+            os.makedirs(self.run_dir, exist_ok=True)
+            self.log_file = open(os.path.join(self.run_dir, "run.log"), "w", encoding="utf-8")
+        else:
+            self.log_file = None
+
+    def _log(self, msg: str):
+        print(msg)
+        if self.log_file:
+            # 加上時間戳記寫入檔案
+            ts = time.strftime("%H:%M:%S")
+            self.log_file.write(f"[{ts}] {msg}\n")
+            self.log_file.flush()
 
     def run(self) -> State:
-        print(f"==================================================")
-        print(f"[AdRunner] 啟動廣告自動尋寶與觀看流程")
-        print(f"==================================================")
+        self._log(f"==================================================")
+        self._log(f"[AdRunner] 啟動廣告自動尋寶與觀看流程 (Run ID: {self.run_id})")
+        self._log(f"==================================================")
         
         if not self._setup():
             return State.FAILED
@@ -248,13 +265,22 @@ class AdRunner:
 
     def _do_find_close(self):
         elapsed = time.time() - self.start_time
-        print(f"[FIND_CLOSE] 掃描關閉按鈕... ({elapsed:.1f}s)")
+        self._log(f"[FIND_CLOSE] 掃描關閉按鈕... ({elapsed:.1f}s)")
         screen = self._take_screenshot("find_close")
         if screen is None:
             time.sleep(self.cfg.interval)
             return
 
-        result = self.matcher.match_dir(screen, Path(self.cfg.ad_close_dir), threshold=0.75)
+        # 檢查是否廣告提早結束，已經回到遊戲大廳或商店
+        hub_path = Path(self.cfg.entry_dir) / "hub_anchor.png"
+        kingdom_path = Path(self.cfg.entry_dir) / "nav_kingdom.png"
+        shop_path = Path(self.cfg.entry_dir) / "shop_anchor.png"
+        if self.matcher.match_template(screen, hub_path) or self.matcher.match_template(screen, kingdom_path) or self.matcher.match_template(screen, shop_path):
+            self._log("[FIND_CLOSE] 尚未點擊關閉，但畫面已回到遊戲場景！廣告可能已自行關閉，返回掃蕩...")
+            self.state = State.SWEEP_ADS
+            return
+
+        result = self.matcher.match_dir(screen, Path(self.cfg.ad_close_dir), threshold=0.85)
         if result:
             if result.confidence > self.best_confidence:
                 self.best_confidence = result.confidence
@@ -272,8 +298,17 @@ class AdRunner:
             return
 
         cx, cy = self.last_match.center
+        
+        # 如果多次點擊無效，可能是判定區域(Hitbox)有偏移，加入朝向畫面中心的偏移量
+        if self.tap_attempts > 0:
+            dx = 1 if cx < 300 else -1
+            dy = 1 if cy < 300 else -1
+            offset = 15 * self.tap_attempts
+            cx += dx * offset
+            cy += dy * offset
+
         self.tap_attempts += 1
-        print(f"[TAP_CLOSE] 嘗試點擊關閉 #{self.tap_attempts}: ({cx}, {cy})")
+        self._log(f"[TAP_CLOSE] 嘗試點擊關閉 #{self.tap_attempts}: ({cx}, {cy})")
         self.device.tap(cx, cy)
         time.sleep(3.0)
         
@@ -281,20 +316,36 @@ class AdRunner:
 
     def _do_verify_return(self):
         print("[VERIFY_RETURN] 驗證是否成功關閉廣告...")
-        screen = self._take_screenshot("verify")
-        if screen is None:
-            time.sleep(1.0)
-            return
+        
+        # 多階段廣告切換時，下一個關閉按鈕可能會有幾秒的延遲出現
+        # 這裡給予最多 5 秒的緩衝時間
+        for attempt in range(5):
+            screen = self._take_screenshot("verify")
+            if screen is None:
+                time.sleep(1.0)
+                continue
 
-        # 1. 如果關閉按鈕還在，退回 FIND_CLOSE
-        still_has_close = self.matcher.match_dir(screen, Path(self.cfg.ad_close_dir))
-        if still_has_close:
-            print("[VERIFY_RETURN] 關閉按鈕仍在，退回 FIND_CLOSE。")
-            self.state = State.FIND_CLOSE
-            return
+            # 1. 如果關閉按鈕還在，退回 FIND_CLOSE
+            still_has_close = self.matcher.match_dir(screen, Path(self.cfg.ad_close_dir), threshold=0.85)
+            if still_has_close:
+                print(f"[VERIFY_RETURN] 發現關閉按鈕 {still_has_close.template_path.name}，退回 FIND_CLOSE。")
+                self.state = State.FIND_CLOSE
+                return
+                
+            # 2. 判斷是否已經回到大廳或商店
+            hub_path = Path(self.cfg.entry_dir) / "hub_anchor.png"
+            kingdom_path = Path(self.cfg.entry_dir) / "nav_kingdom.png"
+            shop_path = Path(self.cfg.entry_dir) / "shop_anchor.png"
             
-        # 2. 回到異界奇聞，繼續掃蕩下一個免費廣告
-        print("[VERIFY_RETURN] 成功跳出廣告！返回掃蕩下一個...")
+            if self.matcher.match_template(screen, hub_path) or self.matcher.match_template(screen, kingdom_path) or self.matcher.match_template(screen, shop_path):
+                self._log("[VERIFY_RETURN] 確認已回到遊戲場景或看見商店標題！返回掃蕩下一個...")
+                self.state = State.SWEEP_ADS
+                return
+                
+            print(f"  > 尚未看到關閉按鈕，也尚未回到遊戲場景，等待中... ({attempt+1}/5)")
+            time.sleep(1.0)
+            
+        print("[VERIFY_RETURN] 超時未發現明確特徵，假設已成功跳出，嘗試掃蕩下一個...")
         self.state = State.SWEEP_ADS
 
     def _do_return_home(self):
@@ -357,7 +408,8 @@ class AdRunner:
             self.last_screen = screen
             if self.cfg.debug:
                 ts = time.strftime("%H%M%S")
-                cv2.imwrite(os.path.join(self.cfg.debug_dir, f"{tag}_{ts}.png"), screen)
+                # 存檔到 run 專屬的目錄
+                cv2.imwrite(os.path.join(self.run_dir, f"{ts}_{tag}.png"), screen)
             return screen
         except:
             return None
@@ -393,7 +445,14 @@ def main():
     run_parser = subparsers.add_parser("run", help="執行自動觀看與關閉廣告")
     run_parser.add_argument("--serial", default="emulator-5554")
     run_parser.add_argument("--debug", action="store_true")
+    run_parser.add_argument("--wait-time", type=float, default=30.0, help="點擊廣告後的初始等待秒數 (預設: 30.0)")
     
+    # sweep command
+    sweep_parser = subparsers.add_parser("sweep", help="直接在當前畫面尋找並點擊免費廣告按鈕，不進行場景導航")
+    sweep_parser.add_argument("--serial", default="emulator-5554")
+    sweep_parser.add_argument("--debug", action="store_true")
+    sweep_parser.add_argument("--wait-time", type=float, default=30.0, help="點擊廣告後的初始等待秒數 (預設: 30.0)")
+
     # capture command
     cap_parser = subparsers.add_parser("capture", help="手動擷取畫面")
     cap_parser.add_argument("--serial", default="emulator-5554")
@@ -403,8 +462,15 @@ def main():
 
     # Default to run if no command
     if args.command is None or args.command == "run":
-        cfg = AdConfig(serial=args.serial, debug=args.debug)
-        runner = AdRunner(cfg)
+        wait_t = args.wait_time if hasattr(args, 'wait_time') else 30.0
+        cfg = AdConfig(serial=args.serial, debug=args.debug, initial_wait_seconds=wait_t)
+        runner = AdRunner(cfg, initial_state=State.NAV_TO_HUB)
+        runner.run()
+    elif args.command == "sweep":
+        wait_t = args.wait_time if hasattr(args, 'wait_time') else 30.0
+        cfg = AdConfig(serial=args.serial, debug=args.debug, initial_wait_seconds=wait_t)
+        # 直接從 SWEEP_ADS 狀態開始，略過導航
+        runner = AdRunner(cfg, initial_state=State.SWEEP_ADS)
         runner.run()
     elif args.command == "capture":
         run_capture(args.tag, args.serial)

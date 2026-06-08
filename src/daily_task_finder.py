@@ -60,22 +60,44 @@ class DailyTaskFinder:
         if label is None:
             return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="task label not visible")
 
+        go_roi = self._same_row_right_roi(
+            screen_width=screen.shape[1],
+            screen_height=screen.shape[0],
+            label=label,
+        )
+        go = self.matcher.match_template(screen, go_path, threshold=GO_BUTTON_THRESHOLD, roi=go_roi)
+        if go is not None:
+            return TaskSearchResult(TaskSearchStatus.READY, label_match=label, go_match=go)
+
         if self._row_too_close_to_bottom(screen_height=screen.shape[0], label=label):
             return TaskSearchResult(
                 TaskSearchStatus.NOT_FOUND,
                 label_match=label,
-                reason="task row is too close to the bottom edge to classify safely",
+                reason="task row is too close to the bottom edge and Go button was not safely detected",
             )
 
-        go_roi = self._same_row_right_roi(screen_width=screen.shape[1], label=label)
-        go = self.matcher.match_template(screen, go_path, threshold=GO_BUTTON_THRESHOLD, roi=go_roi)
-        if go is None:
-            return TaskSearchResult(
-                TaskSearchStatus.DONE_OR_CLAIMABLE,
-                label_match=label,
-                reason="task label found but Go button not found on the same row",
-            )
-        return TaskSearchResult(TaskSearchStatus.READY, label_match=label, go_match=go)
+        return TaskSearchResult(
+            TaskSearchStatus.DONE_OR_CLAIMABLE,
+            label_match=label,
+            reason="task label found but Go button not found on the same row",
+        )
+
+    def find_near_current_screen(self, spec: TaskSpec, max_nudge_swipes: int = 2) -> TaskSearchResult:
+        """Find a row near the current viewport without resetting the daily list to the top."""
+        result = self.find_on_current_screen(spec)
+        if result.status != TaskSearchStatus.NOT_FOUND or result.label_match is None:
+            return result
+
+        last = result
+        for _ in range(max_nudge_swipes):
+            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=320, wait_seconds=0.45):
+                return last
+            last = self.find_on_current_screen(spec)
+            if last.status != TaskSearchStatus.NOT_FOUND:
+                return last
+            if last.label_match is None:
+                return last
+        return last
 
     def scroll_to_task(
         self,
@@ -143,9 +165,9 @@ class DailyTaskFinder:
         return (x, y, screen_width - x, screen_height - y)
 
     @staticmethod
-    def _same_row_right_roi(screen_width: int, label: MatchResult) -> Roi:
-        row_y = max(0, label.center[1] - 50)
+    def _same_row_right_roi(screen_width: int, screen_height: int, label: MatchResult) -> Roi:
         row_h = 100
+        row_y = max(0, min(label.center[1] - 50, screen_height - row_h))
         x = int(screen_width * 0.70)
         return (x, row_y, screen_width - x, row_h)
 

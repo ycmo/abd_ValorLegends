@@ -9,7 +9,7 @@ from typing import ClassVar, Iterable, Optional, Sequence, Tuple, Type
 from src.adb_controller import DeviceController
 from src.battle_handler import BattleHandler, BattleResult
 from src.config import SHARED_ASSETS_DIR, TAP_COOLDOWN_SECONDS, TaskSpec
-from src.exceptions import BotError, MissingAssetError, TaskFailedError
+from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSkippedError
 from src.daily_task_finder import DailyTaskFinder
 from src.navigator import Navigator, OpenTaskStatus
 from src.scene_detector import SceneDetector
@@ -53,22 +53,60 @@ class ActionStep:
     wait_after_seconds: float = TAP_COOLDOWN_SECONDS
 
 
+@dataclass(frozen=True)
+class TaskSceneAnchor:
+    asset_name: str
+    source: str = "task"
+    threshold: float = 0.82
+    roi: Optional[Tuple[int, int, int, int]] = None
+
+
 class BaseTask:
     spec: ClassVar[TaskSpec]
     required_assets: ClassVar[Tuple[str, ...]] = ("task_label.png",)
+    task_scene_anchors: ClassVar[Sequence[TaskSceneAnchor]] = ()
 
     def __init__(self, context: TaskContext):
         self.context = context
 
     def run(self) -> TaskRunResult:
         started = time.time()
-        return self._run_with_opener(started, self.context.navigator.open_task_from_daily)
+        return self._run_with_opener(
+            started,
+            self.context.navigator.open_task_from_daily,
+            allow_current_scene=True,
+        )
 
     def run_from_current_daily_screen(self) -> TaskRunResult:
         started = time.time()
-        return self._run_with_opener(started, self.context.navigator.open_task_from_current_daily_screen)
+        return self._run_with_opener(
+            started,
+            self.context.navigator.open_task_from_current_daily_screen,
+            allow_current_scene=False,
+        )
 
-    def _run_with_opener(self, started: float, opener) -> TaskRunResult:
+    def run_from_current_scene(self) -> TaskRunResult:
+        started = time.time()
+        missing = self.missing_assets()
+        if missing:
+            return self._result(
+                TaskState.NEEDS_ASSETS,
+                "Missing assets: " + ", ".join(str(p) for p in missing),
+                started,
+            )
+
+        try:
+            if not self.is_current_task_scene():
+                raise TaskFailedError(f"Current screen is not the {self.spec.display_name} task scene")
+            return self._execute_and_return(started)
+        except TaskSkippedError as exc:
+            return self._result(TaskState.SKIPPED, str(exc), started)
+        except MissingAssetError as exc:
+            return self._result(TaskState.NEEDS_ASSETS, str(exc), started)
+        except BotError as exc:
+            return self._result(TaskState.FAILED, str(exc), started)
+
+    def _run_with_opener(self, started: float, opener, *, allow_current_scene: bool) -> TaskRunResult:
         missing = self.missing_assets()
         if missing:
             return self._result(
@@ -78,20 +116,16 @@ class BaseTask:
         )
 
         try:
+            if allow_current_scene and self.is_current_task_scene():
+                return self._execute_and_return(started)
+
             opened = opener(self.spec)
             if opened.status == OpenTaskStatus.SKIPPED_DONE_OR_CLAIMABLE:
                 return self._result(TaskState.SKIPPED, opened.reason, started)
 
-            result = self.execute()
-            try:
-                self.context.navigator.return_to_daily_tasks()
-            except BotError as exc:
-                return self._result(
-                    TaskState.FAILED,
-                    f"Task action finished but return_to_daily_tasks failed: {exc}",
-                    started,
-                )
-            return self._result(TaskState.COMPLETED, result or "completed", started)
+            return self._execute_and_return(started)
+        except TaskSkippedError as exc:
+            return self._result(TaskState.SKIPPED, str(exc), started)
         except MissingAssetError as exc:
             return self._result(TaskState.NEEDS_ASSETS, str(exc), started)
         except BotError as exc:
@@ -99,6 +133,28 @@ class BaseTask:
 
     def execute(self) -> str:
         raise NotImplementedError
+
+    def execute_from_current_scene(self) -> str:
+        return self.execute()
+
+    def is_current_task_scene(self) -> bool:
+        screen = self.context.controller.screenshot()
+        return self.is_task_scene(screen)
+
+    def is_task_scene(self, screen) -> bool:
+        for anchor in self.task_scene_anchors:
+            path = self.asset_path(anchor.asset_name, anchor.source)
+            if not path.exists():
+                continue
+            match = self.context.matcher.match_template(
+                screen,
+                path,
+                threshold=anchor.threshold,
+                roi=anchor.roi,
+            )
+            if match is not None:
+                return True
+        return False
 
     def missing_assets(self) -> Tuple[Path, ...]:
         missing = []
@@ -146,6 +202,42 @@ class BaseTask:
             if self.tap_asset(step):
                 completed.append(step.name)
         return "steps: " + ", ".join(completed)
+
+    def dismiss_reward_overlay_by_blank_taps(
+        self,
+        *,
+        is_closed=None,
+        max_taps: int = 2,
+        tap_points: Sequence[Tuple[int, int]] = ((80, 500),),
+        wait_seconds: float = TAP_COOLDOWN_SECONDS,
+        failure_message: str = "Reward overlay did not close after blank-area taps",
+    ) -> None:
+        """Dismiss common reward overlays by tapping blank/outside areas."""
+        if is_closed is not None and is_closed():
+            return
+
+        for index in range(max_taps):
+            point = tap_points[min(index, len(tap_points) - 1)]
+            self.context.controller.tap(*point)
+            time.sleep(wait_seconds)
+            if is_closed is not None and is_closed():
+                return
+
+        if is_closed is None:
+            return
+        raise TaskFailedError(failure_message)
+
+    def _execute_and_return(self, started: float) -> TaskRunResult:
+        result = self.execute_from_current_scene()
+        try:
+            self.context.navigator.return_to_daily_tasks()
+        except BotError as exc:
+            return self._result(
+                TaskState.FAILED,
+                f"Task action finished but return_to_daily_tasks failed: {exc}",
+                started,
+            )
+        return self._result(TaskState.COMPLETED, result or "completed", started)
 
     def _result(self, state: TaskState, message: str, started: float) -> TaskRunResult:
         return TaskRunResult(

@@ -20,7 +20,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--index", required=True, help="Screenshot index, e.g. 1 or 001")
     parser.add_argument("--scene", help="Scene name, e.g. 每日任務")
     parser.add_argument("--serial", default=DEFAULT_SERIAL, help=f"ADB serial, default: {DEFAULT_SERIAL}")
-    parser.add_argument("--open-paint", action="store_true", help="Open saved image in mspaint")
+    parser.add_argument("--open-paint", action="store_true", help="Open saved image in mspaint (default)")
+    parser.add_argument("--no-open-paint", action="store_true", help="Do not open saved image in mspaint")
     return parser
 
 
@@ -61,11 +62,14 @@ def main(argv: list = None) -> int:
     print(f"{width}/{height}")
     print(output_path.stat().st_size)
 
-    if args.open_paint:
-        subprocess.Popen(["mspaint", str(output_path.resolve())])
+    if not args.no_open_paint:
+        open_in_paint(output_path)
     return 0
+
+
+def open_in_paint(path: Path) -> None:
+    subprocess.Popen(["mspaint", str(path.resolve())])
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

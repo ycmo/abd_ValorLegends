@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -10,7 +10,13 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from src.config import ACTION_DEBUG_DIR, ACTION_DEBUG_ENABLED, DEFAULT_SERIAL, EXPECTED_SCREEN_SIZE
+from src.config import (
+    ACTION_DEBUG_DIR,
+    ACTION_DEBUG_ENABLED,
+    ADB_INPUT_TIMEOUT_SECONDS,
+    DEFAULT_SERIAL,
+    EXPECTED_SCREEN_SIZE,
+)
 from src.exceptions import ConfigurationError
 
 
@@ -182,7 +188,7 @@ class DeviceController:
         self,
         action_name: str,
         args: Iterable[str],
-        timeout: int = 15,
+        timeout: int = ADB_INPUT_TIMEOUT_SECONDS,
     ) -> subprocess.CompletedProcess:
         if not self.debug_actions:
             return self._run(args, timeout=timeout)
@@ -219,15 +225,20 @@ class DeviceController:
         timeout: int = 15,
     ) -> subprocess.CompletedProcess:
         cmd = self.base_cmd + list(args)
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="ignore",
-            timeout=timeout,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AdbControllerError(
+                f"ADB command timed out after {timeout}s: {' '.join(cmd)}"
+            ) from exc
         if result.returncode != 0:
             raise AdbControllerError(
                 f"ADB command failed: {' '.join(cmd)}\n{result.stderr.strip()}"

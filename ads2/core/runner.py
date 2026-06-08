@@ -18,6 +18,14 @@ import src.vision_matcher as vm
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 
+class AppRecoveryNeeded(Exception):
+    def __init__(self, reason, screen=None):
+        self.reason = reason
+        self.screen = screen
+
+class UserInterrupt(Exception):
+    pass
+
 # --- 極速快取優化 (不改動外部 src 的情況下動態攔截並快取圖檔) ---
 _original_read_image = vm.read_image
 _image_cache = {}
@@ -110,6 +118,7 @@ class ReactiveRunner:
         self.matcher = VisionMatcher()
         self.ad_wait = ad_wait
         self.debug_mode = debug
+        self.force_esc_trigger = False
         
         # 路徑設定
         self.base_dir = Path(__file__).parent.parent
@@ -132,8 +141,6 @@ class ReactiveRunner:
         if old_btn_path.exists():
             shutil.move(str(old_btn_path), str(self.free_ad_icons_dir / "btn_free_ad.png"))
             
-        self.click_counts = {}
-        
     def setup(self):
         print("[系統] 正在連線 ADB...")
         if not self.device.connect():
@@ -234,8 +241,12 @@ class ReactiveRunner:
                 print("2. 獲得道具 (放入 got_icons, 預設不去背 / 高速比對)")
                 print("3. 主畫面錨點 (放入 scene_anchors, 支援去背)")
                 print("4. 看廣告按鈕 (放入 free_ad_icons, 預設不去背 / 高速比對)")
+                print("5. 截錯了 / 誤觸 (取消)")
                 
-                choice = input("👉 請輸入數字 (1-4): ").strip()
+                choice = input("👉 請輸入數字 (1-5): ").strip()
+                if choice == "5":
+                    print("🚫 [自癒系統] 取消儲存。")
+                    return
                 
                 # 是否去背
                 do_transparent = False
@@ -281,7 +292,44 @@ class ReactiveRunner:
                 
         print("▶️ [自癒系統] 人機協同流程結束，恢復大迴圈...")
         print("==================================================\n")
+
+    def sleep_or_esc(self, seconds):
+        """可被 ESC 中斷的 sleep。如果被中斷，拋出 UserInterrupt。"""
+        end_time = time.time() + seconds
+        while time.time() < end_time:
+            if self.force_esc_trigger or keyboard.is_pressed('esc'):
+                self.force_esc_trigger = True
+                raise UserInterrupt()
+            time.sleep(0.1)
+
+    def _safe_screenshot(self):
+        try:
+            return self.device.screenshot()
+        except Exception as e:
+            print(f"\n⚠️ [警告] 截圖發生異常 ({type(e).__name__}): {e}")
+            raise AppRecoveryNeeded(reason="ScreenshotError")
+
+    def recover_from_app_jump(self, screen=None, reason="Unknown"):
+        print(f"\n⚠️ [警告] 觸發返回遊戲機制 (原因: {reason})")
+        if screen is not None:
+            self.save_debug_error(screen, f"AppJump_{reason}")
+        print("👉 [目前動作] 執行 Home 鍵並重新喚醒遊戲...")
         
+        try:
+            self.device.shell(["input", "keyevent", "3"])
+        except Exception as e:
+            print(f"⚠️ [警告] 執行 Home 鍵時發生錯誤: {e}")
+            
+        if self.sleep_or_esc(1):
+            return
+            
+        try:
+            self.device.shell(["monkey", "-p", "com.ageofeternity.global", "-c", "android.intent.category.LAUNCHER", "1"])
+        except Exception as e:
+            print(f"⚠️ [警告] 喚醒遊戲時發生錯誤 (可能已成功喚醒): {e}")
+            
+        self.sleep_or_esc(3)
+
     def run(self):
         if not self.setup():
             return
@@ -327,225 +375,199 @@ class ReactiveRunner:
             # 除非有達到門檻，否則不再印出「最接近」的無效資訊，保持畫面乾淨
             return None
         
+        import threading
+        def poll_esc():
+            while True:
+                try:
+                    if keyboard.is_pressed('esc'):
+                        self.force_esc_trigger = True
+                except:
+                    pass
+                time.sleep(0.05)
+        
+        t = threading.Thread(target=poll_esc, daemon=True)
+        t.start()
+        
         while True:
-            loop_start_time = time.time()
-            
-            # 1. 攔截 ESC 鍵
-            if keyboard.is_pressed('esc'):
-                screen = self.device.screenshot()
-                if screen is not None:
-                    self.handle_esc_interact(screen)
-                continue
+            try:
+                loop_start_time = time.time()
                 
-            if self.debug_mode:
-                now_str = time.strftime("%H:%M:%S")
-                print(f"\r[{now_str}] 📸 正在獲取設備截圖..." + " "*20, end="", flush=True)
-                
-            cap_start = time.time()
-            screen = self.device.screenshot()
-            cap_time = time.time() - cap_start
-            
-            if screen is None:
-                time.sleep(1)
-                continue
-                
-            matched_anything = False
-            
-            match_start = time.time()
-            
-            # 1. 尋找主畫面錨點 (scene_anchors)
-            if self.debug_mode:
-                now_str = time.strftime("%H:%M:%S")
-                print(f"\r[{now_str}] 🔍 [1/4] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
-                
-            scene_paths = list(self.scene_anchors_dir.rglob("*.png"))
-            scene_match = scan_category(scene_paths, 0.75, "主畫面")
-            
-            # 2. 尋找免費廣告 (free_ad_icons)
-            if self.debug_mode:
-                now_str = time.strftime("%H:%M:%S")
-                print(f"\r[{now_str}] 🔍 [2/4] 正在比對 免費廣告 (free_ad_icons)..." + " "*10, end="", flush=True)
-                
-            free_ad_paths = list(self.free_ad_icons_dir.rglob("*.png"))
-            
-            keys_to_remove = [k for k in self.click_counts.keys() if k not in [p.name for p in free_ad_paths]]
-            for k in keys_to_remove:
-                del self.click_counts[k]
-                
-            free_ad_match = scan_category(free_ad_paths, 0.75, "免費廣告按鈕")
-            
-            if free_ad_match:
-                name = free_ad_match.template_path.name
-                self.click_counts[name] = self.click_counts.get(name, 0) + 1
-                
-                if self.click_counts[name] > 3:
-                    print("\n❌ [嚴重錯誤] 免費廣告按鈕連點 3 輪仍無反應，畫面卡死！")
-                    self.save_debug_error(screen, f"Stuck_ad_{name}")
-                    print("💡 [提示] 你可以長按 ESC 來截圖除錯。程式將自動跳出。")
-                    break
-                else:
-                    print(f"\n📺 [比對成功] 找到免費廣告按鈕: '{name}' (信心值: {free_ad_match.confidence:.2f})")
-                    print(f"👉 [目前動作] 執行連點 5 下進入廣告 (第 {self.click_counts[name]}/3 輪)")
-                    for i in range(1, 6):
-                        tx, ty = self.get_click_point(free_ad_match, i)
-                        self.device.tap(tx, ty)
-                        time.sleep(0.1)
-                        
-                        if i % 2 == 0 and i < 5:
-                            v_screen = self.device.screenshot()
-                            if v_screen is not None:
-                                bx, by, bw, bh = free_ad_match.bbox
-                                roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
-                                v_res = self.matcher.match_template(v_screen, free_ad_match.template_path, threshold=0.75, roi=roi)
-                                if not v_res or v_res.confidence < free_ad_match.confidence - 0.10:
-                                    print(f"✅ [提早確認] 按鈕在第 {i} 下點擊後已消失，中斷連點防誤觸！")
-                                    break
-                    
-                    if self.debug_mode:
-                        now_str = time.strftime("%H:%M:%S")
-                        print(f"[{now_str}] ⏱️ [Debug 效能] 截圖: {cap_time:.2f}s | 比對: {time.time() - match_start:.2f}s | 總計: {time.time() - loop_start_time:.2f}s")
-                    
-                    # 不死等，積極輪詢：只要一消失就算成功 (廣告讀取可能需要 5~10 秒)
-                    disappeared = False
-                    last_verify_conf = 0.0
-                    for _ in range(15): # 最多等約 10~15 秒
-                        time.sleep(0.5)
-                        verify_screen = self.device.screenshot()
-                        if verify_screen is None: continue
-                        
-                        bx, by, bw, bh = free_ad_match.bbox
-                        roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
-                        verify_match = self.matcher.match_template(verify_screen, free_ad_match.template_path, threshold=0.75, roi=roi)
-                        
-                        if not verify_match or verify_match.confidence < free_ad_match.confidence - 0.10:
-                            disappeared = True
-                            break
-                            
-                        last_verify_conf = verify_match.confidence
-                    
-                    if disappeared:
-                        self.click_counts[name] = 0
-                        print("✅ [確認] 免費廣告按鈕已消失，成功觸發廣告！")
-                        print(f"⏳ [休息] 廣告播放中，進入深度休眠 {self.ad_wait} 秒...")
-                        time.sleep(self.ad_wait)
-                    else:
-                        print(f"⚠️ [警告] 按鈕仍然存在 (最初信心值: {free_ad_match.confidence:.2f} -> 當前信心值: {last_verify_conf:.2f})，點擊可能未生效，準備在下一輪重試...")
-                        
-                matched_anything = True
-                continue
-                
-            if scene_match:
-                print(f"\n🏠 [比對成功] 偵測到主畫面: '{scene_match.template_path.name}' (信心值: {scene_match.confidence:.2f})")
-                print("🎉 [任務完成] 無任何免費廣告按鈕，今日所有廣告已觀看完畢！")
-                break
-                
-            # 3. 尋找關閉按鈕 (close_icons)
-            if self.debug_mode:
-                now_str = time.strftime("%H:%M:%S")
-                print(f"\r[{now_str}] 🔍 [3/4] 正在比對 關閉按鈕 (close_icons)..." + " "*10, end="", flush=True)
-                
-            close_paths = list(self.close_icons_dir.rglob("*.png"))
-            close_match = scan_category(close_paths, 0.85, "關閉按鈕")
-            
-            if close_match:
-                name = close_match.template_path.name
-                self.click_counts[name] = self.click_counts.get(name, 0) + 1
-                
-                if self.click_counts[name] > 3:
-                    print(f"\n⏭️ [跳過] 關閉按鈕 '{name}' 連點 3 輪仍存在，可能不是按鈕，繼續掃描。")
-                    self.save_debug_error(screen, f"Stuck_close_{name}")
-                else:
-                    print(f"\n🎯 [比對成功] 找到關閉廣告按鈕: '{name}' (信心值: {close_match.confidence:.2f})")
-                    print(f"👉 [目前動作] 執行連點 5 下 ({self.click_counts[name]}/3 輪)")
-                    for i in range(1, 6):
-                        tx, ty = self.get_click_point(close_match, i)
-                        self.device.tap(tx, ty)
-                        time.sleep(0.1)
-                        
-                        # 每點兩下檢查一次，避免按鈕消失後誤觸下一頁
-                        if i % 2 == 0 and i < 5:
-                            v_screen = self.device.screenshot()
-                            if v_screen is not None:
-                                bx, by, bw, bh = close_match.bbox
-                                roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
-                                v_res = self.matcher.match_template(v_screen, close_match.template_path, threshold=0.85, roi=roi)
-                                if not v_res or v_res.confidence < close_match.confidence - 0.10:
-                                    print(f"✅ [提早確認] 按鈕在第 {i} 下點擊後已消失，中斷連點防誤觸！")
-                                    break
-                    
-                    if self.debug_mode:
-                        now_str = time.strftime("%H:%M:%S")
-                        print(f"[{now_str}] ⏱️ [Debug 效能] 截圖: {cap_time:.2f}s | 比對: {time.time() - match_start:.2f}s | 總計: {time.time() - loop_start_time:.2f}s")
-                    time.sleep(1)
-                    
-                matched_anything = True
-                continue
-                
-            # 4. 尋找獲得道具 (got_icons)
-            if self.debug_mode:
-                now_str = time.strftime("%H:%M:%S")
-                print(f"\r[{now_str}] 🔍 [4/4] 正在比對 獲得道具 (got_icons)..." + " "*10, end="", flush=True)
-                
-            got_paths = list(self.got_icons_dir.rglob("*.png"))
-            got_match = scan_category(got_paths, 0.70, "獲得道具")
-            
-            if got_match:
-                name = got_match.template_path.name
-                self.click_counts[name] = self.click_counts.get(name, 0) + 1
-                
-                if self.click_counts[name] > 3:
-                    print(f"\n⏭️ [跳過] 獲得道具 '{name}' 連點 3 輪仍存在，可能卡住，繼續掃描。")
-                    self.save_debug_error(screen, f"Stuck_got_{name}")
-                else:
-                    print(f"\n🎁 [比對成功] 找到獲得道具按鈕: '{name}' (信心值: {got_match.confidence:.2f})")
-                    print(f"👉 [目前動作] 執行連點 5 下領取 ({self.click_counts[name]}/3 輪)")
-                    for i in range(1, 6):
-                        tx, ty = self.get_click_point(got_match, i)
-                        self.device.tap(tx, ty)
-                        time.sleep(0.1)
-                        
-                        if i % 2 == 0 and i < 5:
-                            v_screen = self.device.screenshot()
-                            if v_screen is not None:
-                                bx, by, bw, bh = got_match.bbox
-                                roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
-                                v_res = self.matcher.match_template(v_screen, got_match.template_path, threshold=0.70, roi=roi)
-                                if not v_res or v_res.confidence < got_match.confidence - 0.10:
-                                    print(f"✅ [提早確認] 按鈕在第 {i} 下點擊後已消失，中斷連點防誤觸！")
-                                    break
-                    
-                    if self.debug_mode:
-                        now_str = time.strftime("%H:%M:%S")
-                        print(f"[{now_str}] ⏱️ [Debug 效能] 截圖: {cap_time:.2f}s | 比對: {time.time() - match_start:.2f}s | 總計: {time.time() - loop_start_time:.2f}s")
-                    print("⏳ [休息] 領取道具後，等待 0.5 秒...")
-                    time.sleep(0.5)
-                    
-                matched_anything = True
-                continue
-                
-            if not matched_anything:
-                # 在沒比對到任何東西時，才去檢查是不是跳出遊戲了
-                pkg = self.check_foreground_app()
-                if pkg and pkg != "com.ageofeternity.global" and pkg != "Null":
-                    print(f"\n⚠️ [警告] 當前 App 為 {pkg}，已跳出遊戲！")
-                    self.save_debug_error(screen, f"AppJump_{pkg}")
-                    print("👉 [目前動作] 執行 Home 鍵並重新喚醒遊戲...")
-                    self.device.shell(["input", "keyevent", "3"])
-                    time.sleep(1)
-                    self.device.shell(["monkey", "-p", "com.ageofeternity.global", "-c", "android.intent.category.LAUNCHER", "1"])
-                    time.sleep(3)
-                    continue
+                # 1. 攔截 ESC 鍵
+                if self.force_esc_trigger or keyboard.is_pressed('esc'):
+                    self.force_esc_trigger = False
+                    raise UserInterrupt()
                     
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    total_time = time.time() - loop_start_time
-                    match_time = time.time() - match_start
-                    print(f"\r[{now_str}] ⏱️ 截圖: {cap_time:.2f}s | 比對: {match_time:.2f}s | 總計: {total_time:.2f}s (觀察中...)" + " "*10, end="", flush=True)
-                else:
-                    print("👀 [觀察中] 畫面無已知特徵 (正在看廣告或轉場中)... 等待 0.5 秒" + " "*10, end="\r", flush=True)
+                    print(f"\r[{now_str}] 📸 正在獲取設備截圖..." + " "*20, end="", flush=True)
+                    
+                cap_start = time.time()
+                screen = self._safe_screenshot()
+                cap_time = time.time() - cap_start
                 
-                time.sleep(0.5)
+                if screen is None:
+                    time.sleep(1)
+                    continue
+                    
+                matched_anything = False
+                match_start = time.time()
+                
+                # 1. 尋找主畫面錨點 (scene_anchors)
+                if self.debug_mode:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"\r[{now_str}] 🔍 [1/4] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
+                    
+                scene_paths = list(self.scene_anchors_dir.rglob("*.png"))
+                scene_match = scan_category(scene_paths, 0.75, "主畫面")
+                
+                # 2. 尋找免費廣告 (free_ad_icons)
+                if self.debug_mode:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"\r[{now_str}] 🔍 [2/4] 正在比對 免費廣告 (free_ad_icons)..." + " "*10, end="", flush=True)
+                    
+                free_ad_paths = list(self.free_ad_icons_dir.rglob("*.png"))
+                free_ad_match = scan_category(free_ad_paths, 0.75, "免費廣告按鈕")
+                
+                if free_ad_match:
+                    name = free_ad_match.template_path.name
+                    print(f"\n📺 [比對成功] 找到免費廣告按鈕: '{name}' (信心值: {free_ad_match.confidence:.2f})")
+                    
+                    disappeared = False
+                    for i in range(1, 11):
+                        tx, ty = self.get_click_point(free_ad_match, ((i - 1) % 5) + 1)
+                        print(f"👉 [點擊] 執行第 {i}/10 次點擊")
+                        self.device.tap(tx, ty)
+                        self.sleep_or_esc(0.5)
+                        
+                        v_screen = self._safe_screenshot()
+                        if v_screen is not None:
+                            bx, by, bw, bh = free_ad_match.bbox
+                            roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
+                            v_res = self.matcher.match_template(v_screen, free_ad_match.template_path, threshold=0.75, roi=roi)
+                            if not v_res or v_res.confidence < free_ad_match.confidence - 0.10:
+                                print(f"✅ [確認] 廣告按鈕在第 {i} 次點擊後已消失！")
+                                disappeared = True
+                                break
+                    
+                    if disappeared:
+                        print(f"⏳ [休息] 廣告播放中，進入深度休眠 {self.ad_wait} 秒...")
+                        if self.sleep_or_esc(self.ad_wait):
+                            continue
+                    else:
+                        print(f"\n❌ [嚴重錯誤] 免費廣告按鈕 '{name}' 連點 10 次仍無反應！")
+                        raise AppRecoveryNeeded(reason=f"Stuck_ad_{name}", screen=screen)
+                            
+                    matched_anything = True
+                    continue
+                    
+                if scene_match:
+                    print(f"\n    🏠 [比對成功] 偵測到主畫面: '{scene_match.template_path.name}' (信心值: {scene_match.confidence:.2f})")
+                    print("🎉 [任務完成] 無任何免費廣告按鈕，今日所有廣告已觀看完畢！")
+                    break
+                    
+                # 3. 尋找關閉按鈕 (close_icons)
+                if self.debug_mode:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"\r[{now_str}] 🔍 [3/4] 正在比對 關閉按鈕 (close_icons)..." + " "*10, end="", flush=True)
+                    
+                close_paths = list(self.close_icons_dir.rglob("*.png"))
+                close_match = scan_category(close_paths, 0.85, "關閉按鈕")
+                
+                if close_match:
+                    name = close_match.template_path.name
+                    print(f"\n🎯 [比對成功] 找到關閉廣告按鈕: '{name}' (信心值: {close_match.confidence:.2f})")
+                    
+                    disappeared = False
+                    for i in range(1, 11):
+                        tx, ty = self.get_click_point(close_match, ((i - 1) % 5) + 1)
+                        print(f"👉 [點擊] 執行第 {i}/10 次點擊")
+                        self.device.tap(tx, ty)
+                        self.sleep_or_esc(0.5)
+                        
+                        v_screen = self._safe_screenshot()
+                        if v_screen is not None:
+                            bx, by, bw, bh = close_match.bbox
+                            roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
+                            v_res = self.matcher.match_template(v_screen, close_match.template_path, threshold=0.85, roi=roi)
+                            if not v_res or v_res.confidence < close_match.confidence - 0.10:
+                                print(f"✅ [確認] 關閉按鈕在第 {i} 次點擊後已消失！")
+                                disappeared = True
+                                break
+                                
+                    if not disappeared:
+                        print(f"\n⏭️ [跳過] 關閉按鈕 '{name}' 連點 10 次仍存在，可能卡死或誤判。")
+                        self.save_debug_error(screen, f"Stuck_close_{name}")
+                        
+                    matched_anything = True
+                    continue
+                    
+                # 4. 尋找獲得道具 (got_icons)
+                if self.debug_mode:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"\r[{now_str}] 🔍 [4/4] 正在比對 獲得道具 (got_icons)..." + " "*10, end="", flush=True)
+                    
+                got_paths = list(self.got_icons_dir.rglob("*.png"))
+                got_match = scan_category(got_paths, 0.70, "獲得道具")
+                
+                if got_match:
+                    name = got_match.template_path.name
+                    print(f"\n🎁 [比對成功] 找到獲得道具按鈕: '{name}' (信心值: {got_match.confidence:.2f})")
+                    
+                    disappeared = False
+                    for i in range(1, 11):
+                        tx, ty = self.get_click_point(got_match, ((i - 1) % 5) + 1)
+                        print(f"👉 [點擊] 執行第 {i}/10 次點擊")
+                        self.device.tap(tx, ty)
+                        self.sleep_or_esc(0.5)
+                        
+                        v_screen = self._safe_screenshot()
+                        if v_screen is not None:
+                            bx, by, bw, bh = got_match.bbox
+                            roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
+                            v_res = self.matcher.match_template(v_screen, got_match.template_path, threshold=0.70, roi=roi)
+                            if not v_res or v_res.confidence < got_match.confidence - 0.10:
+                                print(f"✅ [確認] 獲得道具按鈕在第 {i} 次點擊後已消失！")
+                                disappeared = True
+                                break
+                                
+                    if not disappeared:
+                        print(f"\n⏭️ [跳過] 獲得道具 '{name}' 連點 10 次仍存在，可能卡住，繼續掃描。")
+                        self.save_debug_error(screen, f"Stuck_got_{name}")
+                    else:
+                        print("⏳ [休息] 領取道具後，等待 0.5 秒...")
+                        self.sleep_or_esc(0.5)
+                        
+                    matched_anything = True
+                    continue
+                    
+                if not matched_anything:
+                    pkg = self.check_foreground_app()
+                    if pkg and pkg != "com.ageofeternity.global" and pkg != "Null":
+                        raise AppRecoveryNeeded(reason=pkg, screen=screen)
+                        
+                    if self.debug_mode:
+                        now_str = time.strftime("%H:%M:%S")
+                        total_time = time.time() - loop_start_time
+                        match_time = time.time() - match_start
+                        print(f"\r[{now_str}] ⏱️ 截圖: {cap_time:.2f}s | 比對: {match_time:.2f}s | 總計: {total_time:.2f}s (觀察中...)" + " "*10, end="", flush=True)
+                    else:
+                        print("👀 [觀察中] 畫面無已知特徵 (正在看廣告或轉場中)... 等待 0.5 秒" + " "*10, end="\r", flush=True)
+                    
+                    self.sleep_or_esc(0.5)
             
+            except AppRecoveryNeeded as e:
+                self.recover_from_app_jump(screen=e.screen, reason=e.reason)
+            except UserInterrupt:
+                self.force_esc_trigger = False
+                print("\n\n🛑 [中斷] 偵測到 ESC 按鍵！")
+                screen = self._safe_screenshot()
+                if screen is not None:
+                    self.handle_esc_interact(screen)
+                
         print("\n==================================================")
         print("🛑 廣告模組執行結束")
         print("==================================================")
+
+if __name__ == "__main__":
+    runner = ReactiveRunner(debug=True)
+    runner.run()

@@ -24,3 +24,6 @@ class NavigationError(BotError):
 class TaskFailedError(BotError):
     """Raised when a task reaches a known failed state."""
 
+
+class TaskSkippedError(BotError):
+    """Raised when a task safely stops and should let later tasks continue."""

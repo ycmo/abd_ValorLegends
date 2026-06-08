@@ -5,7 +5,7 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.task_runner import BaseTask
+from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult, Roi
 
 
@@ -29,6 +29,10 @@ class SecretRealmTask(BaseTask):
     REALM_ATTEMPT_PLUS_ROI: Roi = (300, 50, 55, 40)
     PURCHASE_DIALOG_ROI: Roi = (215, 70, 530, 390)
     SWEEP_ALL_ROI: Roi = (760, 390, 200, 150)
+    task_scene_anchors = (
+        TaskSceneAnchor("lost_forest_selected_tab.png", threshold=0.75, roi=LEFT_TAB_ROI),
+        TaskSceneAnchor("lost_forest_tab.png", threshold=0.78, roi=LEFT_TAB_ROI),
+    )
 
     def execute(self) -> str:
         self._ensure_lost_forest_selected()
@@ -123,9 +127,7 @@ class SecretRealmTask(BaseTask):
         raise TaskFailedError(f"Lost Forest screen not visible {label}")
 
     def _dismiss_possible_reward_overlay(self) -> None:
-        for _ in range(2):
-            self.context.controller.tap(80, 500)
-            time.sleep(TAP_COOLDOWN_SECONDS)
+        self.dismiss_reward_overlay_by_blank_taps(max_taps=2)
 
     def _tap_task_asset(
         self,

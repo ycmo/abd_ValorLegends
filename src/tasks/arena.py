@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 import time
-from typing import Optional
+from typing import NoReturn, Optional
 
 import cv2
 import numpy as np
 
-from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
-from src.exceptions import TaskFailedError
+from src.config import CAPTURES_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.exceptions import BotError, TaskFailedError, TaskSkippedError
 from src.ocr_utils import extract_arena_powers_easyocr
 from src.scene_detector import Scene
-from src.task_runner import BaseTask
-from src.vision_matcher import MatchResult, Roi
+from src.task_runner import BaseTask, TaskSceneAnchor
+from src.vision_matcher import MatchResult, Roi, write_image
 
 
 class ArenaTask(BaseTask):
@@ -26,10 +27,13 @@ class ArenaTask(BaseTask):
         "arena_back_button.png",
     )
 
-    MAX_POWER_K = 7000
+    MAX_POWER_K = 6500
     TARGET_FIGHTS = 8
     MAX_ROUNDS = 5
-    OCR_MIN_CONFIDENCE = 0.70
+    OCR_MIN_CONFIDENCE = 0.60
+    OCR_LOW_POWER_SAFE_MAX_K = 1000
+    OCR_LOW_POWER_MIN_CONFIDENCE = 0.50
+    OCR_OVERPOWERED_MIN_CONFIDENCE = 0.50
 
     ARENA_MAIN_ROI: Roi = (760, 0, 200, 105)
     OPPONENT_LIST_ROI: Roi = (760, 0, 160, 120)
@@ -37,6 +41,11 @@ class ArenaTask(BaseTask):
     ACTION_BUTTON_ROI: Roi = (680, 420, 220, 85)
     CONTINUE_BUTTON_ROI: Roi = (380, 470, 210, 70)
     BACK_BUTTON_ROI: Roi = (0, 0, 100, 90)
+    OPPONENT_LIST_CLOSE_POINT = (846, 70)
+    task_scene_anchors = (
+        TaskSceneAnchor("arena_main_anchor.png", threshold=0.84, roi=ARENA_MAIN_ROI),
+        TaskSceneAnchor("opponent_list_anchor.png", threshold=0.84, roi=OPPONENT_LIST_ROI),
+    )
 
     CHECKBOX_X = (436, 812)
     CHECKBOX_Y = (147, 223, 299, 375)
@@ -104,20 +113,28 @@ class ArenaTask(BaseTask):
                 time.sleep(TAP_COOLDOWN_SECONDS)
                 screen = self._require_opponent_list_screen()
                 if self._checkbox_state(screen, opponent["row"], opponent["col"]) != "unchecked":
-                    raise TaskFailedError(
+                    self._skip_current_opponent_list(
+                        screen,
                         "Arena failed to verify over-7000k opponent was unchecked: "
-                        f"row={opponent['row']} col={opponent['col']} power={opponent['power_text']}"
+                        f"row={opponent['row']} col={opponent['col']} power={opponent['power_text']}",
                     )
             elif state != "unchecked":
-                raise TaskFailedError(
+                self._skip_current_opponent_list(
+                    screen,
                     "Arena checkbox state is uncertain for over-7000k opponent: "
-                    f"row={opponent['row']} col={opponent['col']} power={opponent['power_text']}"
+                    f"row={opponent['row']} col={opponent['col']} power={opponent['power_text']}",
                 )
 
         screen = self._require_opponent_list_screen()
-        selected_count = self._count_checked_opponents(screen)
+        try:
+            selected_count = self._count_checked_opponents(screen)
+        except TaskFailedError as exc:
+            self._skip_current_opponent_list(screen, str(exc))
         if selected_count <= 0:
-            raise TaskFailedError("Arena has no checked safe opponents after filtering over-7000k targets")
+            self._skip_current_opponent_list(
+                screen,
+                "Arena has no checked safe opponents after filtering over-7000k targets",
+            )
 
         self._tap_task_asset(
             "start Arena challenge",
@@ -130,19 +147,31 @@ class ArenaTask(BaseTask):
 
     def _read_opponents(self, screen) -> list[dict]:
         opponents = extract_arena_powers_easyocr(screen, reader=self._get_ocr_reader())
-        uncertain = [
-            item
-            for item in opponents
-            if item["power_k"] < 0 or item.get("confidence", 0.0) < self.OCR_MIN_CONFIDENCE
-        ]
+        uncertain = [item for item in opponents if not self._is_ocr_power_confident_enough(item)]
         if uncertain:
             detail = "; ".join(
                 f"row={item['row']} col={item['col']} text={item['power_text']!r} "
                 f"conf={item.get('confidence', 0.0):.3f}"
                 for item in uncertain
             )
-            raise TaskFailedError(f"Arena OCR is uncertain; stopping before selecting opponents: {detail}")
+            self._skip_current_opponent_list(
+                screen,
+                f"Arena OCR is uncertain; stopping before selecting opponents: {detail}",
+            )
         return opponents
+
+    def _is_ocr_power_confident_enough(self, item: dict) -> bool:
+        power_k = item["power_k"]
+        confidence = item.get("confidence", 0.0)
+        if power_k < 0:
+            return False
+        if confidence >= self.OCR_MIN_CONFIDENCE:
+            return True
+        if power_k > self.MAX_POWER_K and confidence >= self.OCR_OVERPOWERED_MIN_CONFIDENCE:
+            return True
+        if power_k <= self.OCR_LOW_POWER_SAFE_MAX_K and confidence >= self.OCR_LOW_POWER_MIN_CONFIDENCE:
+            return True
+        return False
 
     def _wait_for_battle_result_and_continue(self) -> None:
         deadline = time.time() + 150.0
@@ -171,6 +200,37 @@ class ArenaTask(BaseTask):
             ):
                 return
         raise TaskFailedError(f"Arena main screen not visible {label}")
+
+    def _skip_current_opponent_list(self, screen, reason: str) -> NoReturn:
+        screenshot_path = self._save_uncertain_screenshot(screen)
+        print(f"saved_screenshot={screenshot_path}", flush=True)
+        try:
+            self._return_from_opponent_list_to_daily_tasks()
+        except BotError as exc:
+            raise TaskFailedError(
+                f"{reason}; saved_screenshot={screenshot_path}; safe return failed: {exc}"
+            ) from exc
+        raise TaskSkippedError(f"{reason}; saved_screenshot={screenshot_path}")
+
+    def _save_uncertain_screenshot(self, screen) -> str:
+        filename = datetime.now().strftime("arena_uncertain_%Y%m%d_%H%M%S_%f.png")
+        path = CAPTURES_DIR / "arena_uncertain" / filename
+        return str(write_image(path, screen))
+
+    def _return_from_opponent_list_to_daily_tasks(self) -> None:
+        self.context.controller.tap(*self.OPPONENT_LIST_CLOSE_POINT)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+
+        if self._is_daily_tasks_visible():
+            return
+        if not self._match_task_asset(
+            "arena_main_anchor.png",
+            roi=self.ARENA_MAIN_ROI,
+            threshold=0.84,
+            timeout_seconds=3.0,
+        ):
+            raise TaskFailedError("Arena opponent list did not close after tapping top-right X")
+        self._return_to_daily_tasks()
 
     def _return_to_daily_tasks(self) -> None:
         if self._match_task_asset(

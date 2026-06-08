@@ -5,6 +5,7 @@
 ```text
 daily_tasks_title.png
 daily_tasks_entry.png
+daily_tasks_entry_alt.png
 go_button.png
 main_lobby_anchor.png
 loading_anchor.png
@@ -18,3 +19,4 @@ dialog_close_button.png
 
 第一版不自動點每日任務「領取」，所以不需要 `claim_button.png`。
 
+`daily_tasks_entry*.png` 會在右上角 ROI 內一起比對，用來涵蓋不同主畫面任務入口外觀。

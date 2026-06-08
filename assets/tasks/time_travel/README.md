@@ -14,5 +14,4 @@ Optional:
 confirm_button.png
 ```
 
-Policy: free + 50 gems only. Stop before 100 gems.
-
+Policy: free + every visible 50-gem tier only. Use OCR/template price checks and stop before 100 gems or any unknown price.

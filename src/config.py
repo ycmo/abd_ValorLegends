@@ -28,6 +28,7 @@ SCREENSHOT_INTERVAL_SECONDS = 1.5
 TRANSITION_WAIT_SECONDS = 2.0
 BATTLE_POLL_SECONDS = 3.0
 TAP_COOLDOWN_SECONDS = 1.0
+ADB_INPUT_TIMEOUT_SECONDS = 45
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class ResourcePolicy:
 class TaskSpec:
     key: str
     display_name: str
+    daily_text: str
     manual_dir: str
     kind: str
     policy: ResourcePolicy = field(default_factory=ResourcePolicy)
@@ -58,6 +60,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "arena": TaskSpec(
         key="arena",
         display_name="競技場",
+        daily_text="普通競技場挑戰2次",
         manual_dir="競技場",
         kind="battle",
         policy=ResourcePolicy(
@@ -69,6 +72,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "bounty": TaskSpec(
         key="bounty",
         display_name="懸賞委託",
+        daily_text="接取2個懸賞委託",
         manual_dir="懸賞委託",
         kind="dispatch",
         policy=ResourcePolicy(
@@ -80,6 +84,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "campaign": TaskSpec(
         key="campaign",
         display_name="戰役關卡",
+        daily_text="挑戰1次戰役關卡",
         manual_dir="戰役關卡",
         kind="battle",
         policy=ResourcePolicy(
@@ -91,6 +96,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "endless_trial": TaskSpec(
         key="endless_trial",
         display_name="無盡試煉",
+        daily_text="挑戰1次無盡試煉",
         manual_dir="無盡試煉",
         kind="battle",
         policy=ResourcePolicy(
@@ -102,6 +108,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "guild_dungeon": TaskSpec(
         key="guild_dungeon",
         display_name="公會副本",
+        daily_text="成功通關2次公會副本挑戰",
         manual_dir="公會副本",
         kind="battle",
         policy=ResourcePolicy(
@@ -113,6 +120,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "guild_wish": TaskSpec(
         key="guild_wish",
         display_name="公會祈願",
+        daily_text="進行1次公會祈願",
         manual_dir="公會祈願",
         kind="collect",
         policy=ResourcePolicy(
@@ -124,6 +132,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "midas": TaskSpec(
         key="midas",
         display_name="點金手",
+        daily_text="完成1次點金手",
         manual_dir="點金手",
         kind="collect",
         policy=ResourcePolicy(
@@ -135,6 +144,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "secret_realm": TaskSpec(
         key="secret_realm",
         display_name="秘境副本",
+        daily_text="挑戰/掃蕩任意秘境副本3次",
         manual_dir="秘境副本",
         kind="collect",
         policy=ResourcePolicy(
@@ -146,6 +156,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "summon": TaskSpec(
         key="summon",
         display_name="高級召喚",
+        daily_text="完成1次高級契約召喚",
         manual_dir="高級召喚",
         kind="collect",
         policy=ResourcePolicy(
@@ -157,6 +168,7 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     "time_travel": TaskSpec(
         key="time_travel",
         display_name="時間旅行",
+        daily_text="完成1次時間旅行",
         manual_dir="時間旅行",
         kind="collect",
         policy=ResourcePolicy(
@@ -168,3 +180,12 @@ TASK_SPECS: Dict[str, TaskSpec] = {
 }
 
 TASK_ORDER: Tuple[str, ...] = tuple(sorted(TASK_SPECS))
+
+TESTED_DAILY_TASK_ORDER: Tuple[str, ...] = (
+    "secret_realm",
+    "guild_wish",
+    "arena",
+    "summon",
+    "time_travel",
+    "midas",
+)

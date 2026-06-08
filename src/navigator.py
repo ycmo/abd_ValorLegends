@@ -28,6 +28,8 @@ class OpenTaskResult:
 class Navigator:
     """Scene navigation shared by all task runners."""
 
+    DAILY_ENTRY_ROI = (840, 0, 120, 120)
+
     def __init__(
         self,
         controller: DeviceController,
@@ -41,32 +43,24 @@ class Navigator:
         self.finder = finder
 
     def go_to_daily_tasks(self, max_steps: int = 6) -> bool:
-        daily_entry = SHARED_ASSETS_DIR / "daily_tasks_entry.png"
         for _ in range(max_steps):
             screen = self.controller.screenshot()
             detected = self.detector.detect(screen)
             if detected.scene == Scene.DAILY_TASKS:
                 return True
 
-            entry = None
-            if daily_entry.exists():
-                entry = self.matcher.match_template(screen, daily_entry, threshold=0.80)
+            entry = self._match_daily_tasks_entry(screen)
             if entry is not None:
                 self.controller.tap(*entry.center)
                 time.sleep(TRANSITION_WAIT_SECONDS)
                 continue
 
             if detected.scene == Scene.MAIN:
-                if not daily_entry.exists():
+                if not self._daily_tasks_entry_assets():
                     raise MissingAssetError(
-                        f"Main screen detected but daily task entry template is missing: {daily_entry}"
+                        f"Main screen detected but daily task entry template is missing: {SHARED_ASSETS_DIR}"
                     )
-                entry = self.matcher.match_template(screen, daily_entry, threshold=0.80)
-                if entry is None:
-                    raise NavigationError("Main screen detected but daily task entry was not found")
-                self.controller.tap(*entry.center)
-                time.sleep(TRANSITION_WAIT_SECONDS)
-                continue
+                raise NavigationError("Main screen detected but daily task entry was not found")
 
             return False
         return False
@@ -75,7 +69,10 @@ class Navigator:
         if not self.go_to_daily_tasks():
             raise NavigationError("Cannot reach daily tasks before opening task")
 
-        result = self.finder.scroll_to_task(spec)
+        result = self.finder.find_near_current_screen(spec)
+        if result.status == TaskSearchStatus.NOT_FOUND:
+            result = self.finder.scroll_to_task(spec)
+
         if result.status == TaskSearchStatus.DONE_OR_CLAIMABLE:
             return OpenTaskResult(
                 OpenTaskStatus.SKIPPED_DONE_OR_CLAIMABLE,
@@ -94,7 +91,7 @@ class Navigator:
         if detected.scene != Scene.DAILY_TASKS:
             raise NavigationError("Current screen is not Daily Tasks")
 
-        result = self.finder.find_on_current_screen(spec)
+        result = self.finder.find_near_current_screen(spec)
         if result.status == TaskSearchStatus.DONE_OR_CLAIMABLE:
             return OpenTaskResult(
                 OpenTaskStatus.SKIPPED_DONE_OR_CLAIMABLE,
@@ -118,19 +115,17 @@ class Navigator:
         back_asset: Optional[Path] = None,
     ) -> bool:
         """Return from a known feature screen by using visible in-game back arrows only."""
-        daily_entry = SHARED_ASSETS_DIR / "daily_tasks_entry.png"
         for _ in range(max_back_taps + 1):
             screen = self.controller.screenshot()
             detected = self.detector.detect(screen)
             if detected.scene == Scene.DAILY_TASKS:
                 return True
 
-            if daily_entry.exists():
-                entry = self.matcher.match_template(screen, daily_entry, threshold=0.80)
-                if entry is not None:
-                    self.controller.tap(*entry.center)
-                    time.sleep(TRANSITION_WAIT_SECONDS)
-                    continue
+            entry = self._match_daily_tasks_entry(screen)
+            if entry is not None:
+                self.controller.tap(*entry.center)
+                time.sleep(TRANSITION_WAIT_SECONDS)
+                continue
 
             if detected.scene == Scene.MAIN:
                 return self.go_to_daily_tasks(max_steps=2)
@@ -142,6 +137,15 @@ class Navigator:
             return False
 
         return self.go_to_daily_tasks(max_steps=2)
+
+    def _daily_tasks_entry_assets(self) -> list[Path]:
+        return sorted(SHARED_ASSETS_DIR.glob("daily_tasks_entry*.png"))
+
+    def _match_daily_tasks_entry(self, screen):
+        assets = self._daily_tasks_entry_assets()
+        if not assets:
+            return None
+        return self.matcher.match_any(screen, assets, threshold=0.80, roi=self.DAILY_ENTRY_ROI)
 
     def _tap_back_button_if_visible(self, screen, back_asset: Optional[Path] = None) -> bool:
         back_button = back_asset or SHARED_ASSETS_DIR / "back_button.png"

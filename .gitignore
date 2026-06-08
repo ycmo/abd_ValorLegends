@@ -7,6 +7,7 @@ scratch/
 .idea/
 .vscode/
 *.log
+*.bak
 screenshots/
 captures/
 legacy/
@@ -17,4 +18,14 @@ call_of_the_gale/runtime_captures/*
 !call_of_the_gale/runtime_captures/README.md
 call_of_the_gale/debug_output/*
 !call_of_the_gale/debug_output/README.md
+ads2/debug/
+ads2/assets/2_communication/
+ads2/assets/debug_errors/
+ads2/assets/review_crops/
+magic_shop/runtime_captures/*
+!magic_shop/runtime_captures/README.md
+magic_shop/debug_output/*
+!magic_shop/debug_output/README.md
+magic_shop/temp_captures/
 screenshot.png
+debug_screen.png

@@ -46,6 +46,15 @@ def _label_at(y: int) -> MatchResult:
     )
 
 
+def _go_at(y: int) -> MatchResult:
+    return MatchResult(
+        template_path=Path("go_button.png"),
+        confidence=0.95,
+        center=(840, y),
+        bbox=(768, y - 20, 144, 40),
+    )
+
+
 class DailyTaskFinderTests(TestCase):
     def test_bottom_edge_row_is_not_classified_done(self):
         finder = DailyTaskFinder(FakeController(), FakeMatcher(_label_at(502), go=None))
@@ -55,6 +64,14 @@ class DailyTaskFinderTests(TestCase):
         self.assertEqual(result.status, TaskSearchStatus.NOT_FOUND)
         self.assertIn("bottom edge", result.reason)
         self.assertIsNotNone(result.label_match)
+
+    def test_bottom_edge_row_with_go_button_is_ready(self):
+        finder = DailyTaskFinder(FakeController(), FakeMatcher(_label_at(502), go=_go_at(475)))
+
+        result = finder.find_on_current_screen(TASK_SPECS["secret_realm"])
+
+        self.assertEqual(result.status, TaskSearchStatus.READY)
+        self.assertIsNotNone(result.go_match)
 
     def test_missing_go_on_safe_visible_row_is_done_or_claimable(self):
         finder = DailyTaskFinder(FakeController(), FakeMatcher(_label_at(430), go=None))

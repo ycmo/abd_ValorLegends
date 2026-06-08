@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Dict, List
+from difflib import SequenceMatcher
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -89,10 +90,85 @@ ARENA_POWER_COL_X_RANGES = ((200, 350), (580, 730))
 ARENA_POWER_ROW_Y_RANGES = ((140, 180), (218, 258), (296, 336), (374, 414))
 
 
-def build_easyocr_reader():
+def build_easyocr_reader(
+    languages: Optional[Sequence[str]] = None,
+    *,
+    download_enabled: bool = True,
+):
     import easyocr
 
-    return easyocr.Reader(["en"], gpu=False, verbose=False)
+    return easyocr.Reader(list(languages or ["en"]), gpu=False, verbose=False, download_enabled=download_enabled)
+
+
+def read_texts_easyocr(
+    screen: np.ndarray,
+    *,
+    roi: Optional[Tuple[int, int, int, int]] = None,
+    reader=None,
+    languages: Optional[Sequence[str]] = None,
+    download_enabled: bool = False,
+) -> List[dict]:
+    """Read text fragments in a fixed ROI.
+
+    This is for page/state confirmation only. Callers should use fuzzy keyword
+    checks because stylized Chinese UI text can be misread, e.g. `高級契約` as
+    `高紐契約`.
+    """
+
+    if reader is None:
+        reader = build_easyocr_reader(languages or ["ch_tra", "en"], download_enabled=download_enabled)
+
+    image = screen
+    offset_x = 0
+    offset_y = 0
+    if roi is not None:
+        x, y, w, h = roi
+        height, width = screen.shape[:2]
+        x1 = max(0, int(x))
+        y1 = max(0, int(y))
+        x2 = min(width, x1 + max(0, int(w)))
+        y2 = min(height, y1 + max(0, int(h)))
+        image = screen[y1:y2, x1:x2]
+        offset_x = x1
+        offset_y = y1
+
+    if image.size == 0:
+        return []
+
+    ocr_results = reader.readtext(image, detail=1)
+    fragments = []
+    for box, text, confidence in ocr_results:
+        fragments.append(
+            {
+                "text": str(text),
+                "confidence": float(confidence),
+                "box": _offset_box(box, offset_x, offset_y),
+            }
+        )
+    return fragments
+
+
+def normalize_ocr_text(text: str) -> str:
+    return "".join(char for char in str(text) if char.isalnum() or "\u4e00" <= char <= "\u9fff")
+
+
+def fuzzy_text_score(observed: str, expected: str) -> float:
+    observed_norm = normalize_ocr_text(observed)
+    expected_norm = normalize_ocr_text(expected)
+    if not observed_norm or not expected_norm:
+        return 0.0
+    return float(SequenceMatcher(None, observed_norm, expected_norm).ratio())
+
+
+def contains_core_keywords(observed: str, expected: str) -> bool:
+    observed_norm = normalize_ocr_text(observed)
+    expected_norm = normalize_ocr_text(expected)
+    keywords = [char for char in expected_norm if "\u4e00" <= char <= "\u9fff"]
+    if len(keywords) <= 4:
+        required = keywords
+    else:
+        required = keywords[:2] + keywords[-2:]
+    return all(char in observed_norm for char in required)
 
 
 def extract_arena_powers_easyocr(screen: np.ndarray, reader=None) -> List[dict]:
@@ -168,3 +244,13 @@ def _box_x_values(box) -> List[float]:
         except (TypeError, ValueError, IndexError):
             continue
     return values
+
+
+def _offset_box(box, offset_x: int, offset_y: int) -> List[Tuple[float, float]]:
+    points = []
+    for point in box:
+        try:
+            points.append((float(point[0]) + offset_x, float(point[1]) + offset_y))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return points
