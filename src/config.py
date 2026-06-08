@@ -141,6 +141,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             notes="Tap free, 20 gem, and 50 gem Midas only.",
         ),
     ),
+    "magic_shop": TaskSpec(
+        key="magic_shop",
+        display_name="魔法商店",
+        daily_text="魔法商店購買1次商品",
+        manual_dir="魔法商店",
+        kind="collect",
+        policy=ResourcePolicy(
+            allowed_actions=("buy_whitelisted_coin_items", "refresh_when_coin_safe_and_100_gems"),
+            stop_conditions=("coins_below_12000k", "refresh_cost_not_100_gems", "uncertain_item_or_price"),
+            notes="Buy only approved coin items; refresh only when coins are at least 12000k and refresh cost is 100 gems.",
+        ),
+    ),
     "secret_realm": TaskSpec(
         key="secret_realm",
         display_name="秘境副本",

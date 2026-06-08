@@ -107,6 +107,7 @@ def read_texts_easyocr(
     reader=None,
     languages: Optional[Sequence[str]] = None,
     download_enabled: bool = False,
+    allowlist: Optional[str] = None,
 ) -> List[dict]:
     """Read text fragments in a fixed ROI.
 
@@ -135,7 +136,11 @@ def read_texts_easyocr(
     if image.size == 0:
         return []
 
-    ocr_results = reader.readtext(image, detail=1)
+    if allowlist:
+        ocr_results = reader.readtext(image, detail=1, allowlist=allowlist)
+    else:
+        ocr_results = reader.readtext(image, detail=1)
+
     fragments = []
     for box, text, confidence in ocr_results:
         fragments.append(

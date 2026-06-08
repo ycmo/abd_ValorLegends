@@ -1,9 +1,11 @@
+import os
 import sys
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import argparse
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from src.scene_detector import SceneDetector
@@ -15,6 +17,15 @@ from src.config import DEFAULT_SERIAL
 from magic_shop.magic_shop_task import MagicShopTask
 
 def main():
+    parser = argparse.ArgumentParser(description="Test Magic Shop")
+    parser.add_argument("--debug", action="store_true", help="Enable action debugging")
+    parser.add_argument("--dry-run", action="store_true", help="Only recognize items, do not click")
+    args = parser.parse_args()
+
+    if args.debug:
+        os.environ["VL_DEBUG_ACTIONS"] = "1"
+        print("🛠️ 已啟用 Debug 模式：動作截圖將存放在 captures/action_debug/ 目錄下")
+
     print("=======================================")
     print("  魔法商店自動化 - 獨立測試腳本")
     print("=======================================")
@@ -49,8 +60,7 @@ def main():
     
     print("🚀 開始執行魔法商店邏輯...")
     try:
-        # 我們直接呼叫 execute，因為不需要導航 (由你已經開好畫面)
-        result_msg = task.execute()
+        result_msg = task.execute(dry_run=args.dry_run)
         print(f"✅ 任務完成訊息: {result_msg}")
     except Exception as e:
         print(f"❌ 任務執行過程中發生錯誤: {e}")

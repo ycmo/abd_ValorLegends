@@ -1,6 +1,6 @@
 # Codex Notes
 
-> Last updated: 2026-06-07
+> Last updated: 2026-06-08
 > Purpose: fast handoff notes for Codex. Keep this short, factual, and implementation-focused.
 
 ## Read First
@@ -20,6 +20,7 @@
 - User plans to create `ads2/` later for a cleaner ad-blocking/ad-closing rewrite. Current `ads/` is usable but layered; do not expand it into a larger refactor unless explicitly asked.
 - `call_of_the_gale/` is the independent AGY/Codex workspace for `王國冒險 -> 疾風的呼喚`; do not mix it into daily-task routes until the mini-game flow is understood and approved.
 - `magic_shop/` is the independent AGY workspace for `魔法商店`; AGY may read/import shared `src/` tools but must not modify files outside `magic_shop/` until integration is explicitly approved.
+- 2026-06-08: user approved Magic Shop integration into the daily-task mainline for debug/optimization. `magic_shop` is now registered in `TASK_SPECS`/`TASK_CLASSES`; task label asset is `assets/tasks/magic_shop/task_label.png`, copied from `manual_screenshots/魔法商店/001_每日任務.png`.
 
 ## Runtime
 
@@ -74,6 +75,15 @@ Common commands:
 - `run-task midas` live-tested all allowed free/20/50 gem attempts and returned to Daily Tasks.
 - `run-current-task arena` live-tested Arena from a visible Daily Tasks row and returned to Daily Tasks.
 - 2026-06-06 live round completed existing closed-loop tasks except Midas, which the user had already tested: Secret Realm, Guild Wish, Arena, Summon, and Time Travel all returned to Daily Tasks.
+- Magic Shop has an initial mainline integration and can be invoked with `.\.venv-codex\Scripts\python.exe -m src.main --debug-actions run-task magic_shop`. It remains debug-stage and is not yet in `TESTED_DAILY_TASK_ORDER`.
+
+## Magic Shop Notes
+
+- Policy from `magic_shop/QA.md`: buy only approved coin items, refresh only when coins are at least `12000k` and the refresh cost is `100` gems, then return with the top-left in-game left arrow.
+- Mainline integration imports `MagicShopTask` from `magic_shop/magic_shop_task.py` through `src/tasks/magic_shop.py`; the buying logic remains in `magic_shop/`.
+- Return-to-Daily uses `magic_shop/assets/back_arrow.png`, cropped from `captures/magic_shop_probe.png`, and verifies Daily Tasks after tapping.
+- Offline checks on 2026-06-08 passed: compileall, `src.main list-tasks`, missing-asset check, Magic Shop scene match on `captures/magic_shop_probe.png`, and 44 unittest tests.
+- Live probe/run is still pending because ADB reported no connected devices after integration (`src.main devices` returned no serials).
 
 ## Current Safety Rules
 

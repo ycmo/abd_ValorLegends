@@ -5,8 +5,8 @@
 ## Scope
 
 - Task: develop automation for `魔法商店`.
-- This is an isolated module. Do not integrate into daily-task mainline until the route is proven and approved.
-- Do not modify files outside `magic_shop/`.
+- The user approved daily-task mainline integration on 2026-06-08 for debug/optimization.
+- Buying logic still lives in `magic_shop/`; mainline integration is only the thin task registry/spec path under `src/`.
 
 ## Known Inputs
 
@@ -29,7 +29,9 @@ python -m src.manual_screenshots --task 魔法商店 --index 1 --scene 要購買
 
 ## Current Status
 
-- Workspace scaffold created.
-- No route implementation yet.
-- Product policy for what Magic Shop should buy is not yet confirmed in this directory.
-
+- `MagicShopTask` is implemented in `magic_shop_task.py`.
+- It is registered as `magic_shop` in the main daily-task runner.
+- Daily task label asset: `assets/tasks/magic_shop/task_label.png`, copied from `manual_screenshots/魔法商店/001_每日任務.png`.
+- Return-to-Daily uses `magic_shop/assets/back_arrow.png`, cropped from `captures/magic_shop_probe.png`.
+- Offline checks passed on 2026-06-08: compileall, `src.main list-tasks`, missing-asset check, Magic Shop scene match on `captures/magic_shop_probe.png`, and 44 unittest tests.
+- Live run is still pending because ADB reported no connected devices after integration.
