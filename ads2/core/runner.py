@@ -309,6 +309,13 @@ class ReactiveRunner:
             print(f"\n⚠️ [警告] 截圖發生異常 ({type(e).__name__}): {e}")
             raise AppRecoveryNeeded(reason="ScreenshotError")
 
+    def _safe_tap(self, x, y):
+        try:
+            self.device.tap(x, y)
+        except Exception as e:
+            print(f"\n⚠️ [警告] 點擊發生異常 ({type(e).__name__}): {e}")
+            raise AppRecoveryNeeded(reason="TapError")
+
     def recover_from_app_jump(self, screen=None, reason="Unknown"):
         print(f"\n⚠️ [警告] 觸發返回遊戲機制 (原因: {reason})")
         if screen is not None:
@@ -342,7 +349,7 @@ class ReactiveRunner:
         print("--------------------------------------------------")
         
         # 自訂掃描器：優先比對新圖，並在失敗時印出最高信心值
-        def scan_category(paths, threshold, category_name):
+        def scan_category(paths, threshold, category_name, roi=None):
             if not paths: return None
             # 依照修改時間排序，最新切好的圖排最前面 (優先比對)
             paths = sorted(paths, key=lambda p: p.stat().st_mtime, reverse=True)
@@ -351,7 +358,7 @@ class ReactiveRunner:
             is_first = True
             
             for p in paths:
-                res = self.matcher.match_template(screen, p, threshold=0.1)
+                res = self.matcher.match_template(screen, p, threshold=0.1, roi=roi)
                 
                 # 如果是最新的特徵圖 (排序第一個)，且是在最近 10 分鐘內建立的，才印出分數幫助除錯
                 # 並且在「驗證廣告消失」的密集輪詢時不印，避免洗版
@@ -436,7 +443,7 @@ class ReactiveRunner:
                     for i in range(1, 11):
                         tx, ty = self.get_click_point(free_ad_match, ((i - 1) % 5) + 1)
                         print(f"👉 [點擊] 執行第 {i}/10 次點擊")
-                        self.device.tap(tx, ty)
+                        self._safe_tap(tx, ty)
                         self.sleep_or_esc(0.5)
                         
                         v_screen = self._safe_screenshot()
@@ -471,17 +478,21 @@ class ReactiveRunner:
                     print(f"\r[{now_str}] 🔍 [3/4] 正在比對 關閉按鈕 (close_icons)..." + " "*10, end="", flush=True)
                     
                 close_paths = list(self.close_icons_dir.rglob("*.png"))
-                close_match = scan_category(close_paths, 0.85, "關閉按鈕")
                 
+                # 優化：關閉按鈕幾乎都在畫面上半部，只掃描上半部 40% 區域，大幅減少運算量
+                h, w = screen.shape[:2]
+                close_roi = (0, 0, w, int(h * 0.4))
+                close_match = scan_category(close_paths, 0.85, "關閉按鈕", roi=close_roi)
+
                 if close_match:
                     name = close_match.template_path.name
                     print(f"\n🎯 [比對成功] 找到關閉廣告按鈕: '{name}' (信心值: {close_match.confidence:.2f})")
-                    
+
                     disappeared = False
                     for i in range(1, 11):
                         tx, ty = self.get_click_point(close_match, ((i - 1) % 5) + 1)
                         print(f"👉 [點擊] 執行第 {i}/10 次點擊")
-                        self.device.tap(tx, ty)
+                        self._safe_tap(tx, ty)
                         self.sleep_or_esc(0.5)
                         
                         v_screen = self._safe_screenshot()
@@ -517,7 +528,7 @@ class ReactiveRunner:
                     for i in range(1, 11):
                         tx, ty = self.get_click_point(got_match, ((i - 1) % 5) + 1)
                         print(f"👉 [點擊] 執行第 {i}/10 次點擊")
-                        self.device.tap(tx, ty)
+                        self._safe_tap(tx, ty)
                         self.sleep_or_esc(0.5)
                         
                         v_screen = self._safe_screenshot()
