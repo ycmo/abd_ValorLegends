@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description="Test Magic Shop")
     parser.add_argument("--debug", action="store_true", help="Enable action debugging")
     parser.add_argument("--dry-run", action="store_true", help="Only recognize items, do not click")
+    parser.add_argument("--ask-refresh", action="store_true", help="Ask user for confirmation before refreshing the shop")
     args = parser.parse_args()
 
     if args.debug:
@@ -60,7 +61,7 @@ def main():
     
     print("🚀 開始執行魔法商店邏輯...")
     try:
-        result_msg = task.execute(dry_run=args.dry_run)
+        result_msg = task.execute(dry_run=args.dry_run, ask_refresh=args.ask_refresh)
         print(f"✅ 任務完成訊息: {result_msg}")
     except Exception as e:
         print(f"❌ 任務執行過程中發生錯誤: {e}")

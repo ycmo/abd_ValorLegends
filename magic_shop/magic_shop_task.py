@@ -296,7 +296,7 @@ class MagicShopTask(BaseTask):
 
         return bought_count
 
-    def execute(self, dry_run: bool = False) -> str:
+    def execute(self, dry_run: bool = False, ask_refresh: bool = False) -> str:
         if dry_run:
             print("🔍 啟動「辨識測試模式 (Dry Run)」...")
             print("此模式下不會做任何點擊與滑動，僅儲存比對框線截圖並印出信心度。")
@@ -360,14 +360,21 @@ class MagicShopTask(BaseTask):
                 print(f"  ❌ [判定結果] 系統建議：不應該刷新！(理由：金幣僅剩 {current_coins}k，低於 12000k 安全線，需保留財力)")
 
             # --------------------------------------------------
-            # 最後詢問使用者是否要刷新
+            # 最後確認是否要刷新
             # --------------------------------------------------
             default_ans = 'y' if can_refresh else 'n'
-            ans = input(f"\n👉 請問要刷新嗎? (y/n) [預設為 {default_ans}]: ").strip().lower()
 
-            # 如果直接按 Enter，就採用預設值
-            if not ans:
+            if ask_refresh:
+                ans = input(f"\n👉 請問要刷新嗎? (y/n) [預設為 {default_ans}]: ").strip().lower()
+                # 如果直接按 Enter，就採用預設值
+                if not ans:
+                    ans = default_ans
+            else:
                 ans = default_ans
+                if ans == 'y':
+                    print("\n🔄 系統判定可刷新，自動進入下一輪...")
+                else:
+                    print("\n🛑 系統判定不應刷新，自動結束任務。")
 
             if ans == 'y':
                 if not can_refresh:

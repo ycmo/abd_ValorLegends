@@ -34,11 +34,12 @@ class FakeNavigator:
 
 
 class FakeSummonTask(SummonTask):
-    def __init__(self, scene, page_match_sequence=None, daily_sequence=None):
+    def __init__(self, scene, page_match_sequence=None, daily_sequence=None, confirm_match_sequence=None):
         self.tapped = []
         self.blank_taps = []
         self.page_match_sequence = list(page_match_sequence or [])
         self.daily_sequence = list(daily_sequence or [])
+        self.confirm_match_sequence = list(confirm_match_sequence or [])
         self.context = SimpleNamespace(
             controller=FakeController(),
             detector=FakeDetector(scene),
@@ -48,6 +49,8 @@ class FakeSummonTask(SummonTask):
     def _match_task_asset(self, asset_name, **kwargs):
         if asset_name == "advanced_contract_label.png" and self.page_match_sequence:
             return object() if self.page_match_sequence.pop(0) else None
+        if asset_name == "confirm_button.png" and self.confirm_match_sequence:
+            return object() if self.confirm_match_sequence.pop(0) else None
         return object() if asset_name == "advanced_contract_label.png" else None
 
     def _tap_task_asset(self, label, asset_name, **kwargs):
@@ -106,6 +109,25 @@ class SummonReturnTests(unittest.TestCase):
         task._screen_ocr_indicates_advanced_contract = lambda _screen: True
 
         task._require_summon_page()
+
+    def test_current_scene_can_resume_from_result_confirm_button(self):
+        task = FakeSummonTask(
+            Scene.UNKNOWN,
+            page_match_sequence=[False, True, True],
+            daily_sequence=[True],
+            confirm_match_sequence=[True],
+        )
+
+        result = task.execute_from_current_scene()
+
+        self.assertEqual(result, "summon result confirmed and returned")
+        self.assertEqual(
+            task.tapped,
+            [
+                ("confirm summon result", "confirm_button.png"),
+                ("leave summon page", "leave_button.png"),
+            ],
+        )
 
 
 if __name__ == "__main__":

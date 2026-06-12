@@ -96,7 +96,7 @@ class ArenaOcrTests(TestCase):
         self.assertGreaterEqual(powers[1]["confidence"], 0.86)
 
     def test_arena_accepts_low_confidence_very_low_power(self):
-        task = ArenaTask(context=object())
+        task = ArenaTask(context=SimpleNamespace())
         task._get_ocr_reader = lambda: object()
         opponents = [
             {"row": 1, "col": 1, "power_text": "8659k", "power_k": 8659, "confidence": 0.99},
@@ -115,7 +115,7 @@ class ArenaOcrTests(TestCase):
         self.assertEqual(result[4]["power_text"], "252k")
 
     def test_arena_accepts_low_confidence_overpowered_value_for_unchecking(self):
-        task = ArenaTask(context=object())
+        task = ArenaTask(context=SimpleNamespace())
         task._get_ocr_reader = lambda: object()
         opponents = [
             {"row": row, "col": col, "power_text": "3000k", "power_k": 3000, "confidence": 0.99}
@@ -130,7 +130,7 @@ class ArenaOcrTests(TestCase):
         self.assertEqual(result[5]["power_text"], "8130k")
 
     def test_arena_uncertain_ocr_saves_path_prints_and_skips(self):
-        task = ArenaTask(context=object())
+        task = ArenaTask(context=SimpleNamespace())
         task._get_ocr_reader = lambda: object()
         task.returned_to_daily = False
         task._return_from_opponent_list_to_daily_tasks = lambda: setattr(task, "returned_to_daily", True)
@@ -167,7 +167,7 @@ class ArenaVisionTests(TestCase):
 
     def test_checkbox_state_on_manual_opponent_list(self):
         screen = read_image(ARENA_DIR / "003_\u9078\u64c7\u5c0d\u624b.png", cv2.IMREAD_COLOR)
-        task = ArenaTask(context=object())
+        task = ArenaTask(context=SimpleNamespace())
 
         self.assertEqual(task._checkbox_state(screen, 1, 1), "checked")
         self.assertEqual(task._checkbox_state(screen, 1, 2), "unchecked")

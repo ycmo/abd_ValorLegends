@@ -29,3 +29,6 @@ magic_shop/debug_output/*
 magic_shop/temp_captures/
 screenshot.png
 debug_screen.png
+
+# Ignore sensitive account credentials
+switch_account/accounts.json
