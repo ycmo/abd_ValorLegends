@@ -84,22 +84,20 @@ def crop_red_box_single_image(img_path: Path):
     y_min, y_max = 0, bh - 1
     x_min, x_max = 0, bw - 1
     
-    # 向內縮，直到該行/列的紅色比例極低（代表邊框被切完了）
-    while y_min < y_max:
-        if np.sum(roi_mask[y_min, x_min:x_max+1] > 0) > (x_max - x_min) * 0.2: y_min += 1
-        else: break
-            
-    while y_max > y_min:
-        if np.sum(roi_mask[y_max, x_min:x_max+1] > 0) > (x_max - x_min) * 0.2: y_max -= 1
-        else: break
-            
-    while x_min < x_max:
-        if np.sum(roi_mask[y_min:y_max+1, x_min] > 0) > (y_max - y_min) * 0.2: x_min += 1
-        else: break
-            
-    while x_max > x_min:
-        if np.sum(roi_mask[y_min:y_max+1, x_max] > 0) > (y_max - y_min) * 0.2: x_max -= 1
-        else: break
+    # 取中間 50% 區間來掃描，避開垂直邊框的干擾
+    mid_x1, mid_x2 = int(bw * 0.25), int(bw * 0.75)
+    mid_y1, mid_y2 = int(bh * 0.25), int(bh * 0.75)
+    
+    # 向內縮，直到該行/列沒有紅色（代表邊框被切完了）
+    while y_min < y_max and np.sum(roi_mask[y_min, mid_x1:mid_x2]) > 0:
+        y_min += 1
+    while y_max > y_min and np.sum(roi_mask[y_max, mid_x1:mid_x2]) > 0:
+        y_max -= 1
+        
+    while x_min < x_max and np.sum(roi_mask[mid_y1:mid_y2, x_min]) > 0:
+        x_min += 1
+    while x_max > x_min and np.sum(roi_mask[mid_y1:mid_y2, x_max]) > 0:
+        x_max -= 1
         
     # 安全保護，往內多縮 1 pixel 確保乾淨
     y_min = min(y_min + 1, y_max)
@@ -293,13 +291,30 @@ class ReactiveRunner:
         print("▶️ [自癒系統] 人機協同流程結束，恢復大迴圈...")
         print("==================================================\n")
 
-    def sleep_or_esc(self, seconds):
+    def sleep_or_esc(self, seconds, check_app=True):
         """可被 ESC 中斷的 sleep。如果被中斷，拋出 UserInterrupt。"""
+        def do_check():
+            if not check_app: return
+            pkg = self.check_foreground_app()
+            if pkg and pkg != "com.ageofeternity.global" and pkg != "Null":
+                print(f"\n⚠️ [警告] 睡眠/等待期間偵測到跳出遊戲 (目前為: {pkg})！立刻中斷自救。")
+                raise AppRecoveryNeeded(reason=pkg, screen=None)
+                
+        # 所有的 sleep 都先檢查
+        do_check()
+        
         end_time = time.time() + seconds
+        last_check_time = time.time()
         while time.time() < end_time:
             if self.force_esc_trigger or keyboard.is_pressed('esc'):
                 self.force_esc_trigger = True
                 raise UserInterrupt()
+                
+            # 每睡兩秒檢查一下
+            if time.time() - last_check_time >= 2.0:
+                do_check()
+                last_check_time = time.time()
+                
             time.sleep(0.1)
 
     def _safe_screenshot(self):
@@ -327,15 +342,14 @@ class ReactiveRunner:
         except Exception as e:
             print(f"⚠️ [警告] 執行 Home 鍵時發生錯誤: {e}")
             
-        if self.sleep_or_esc(1):
-            return
+        self.sleep_or_esc(1, check_app=False)
             
         try:
             self.device.shell(["monkey", "-p", "com.ageofeternity.global", "-c", "android.intent.category.LAUNCHER", "1"])
         except Exception as e:
             print(f"⚠️ [警告] 喚醒遊戲時發生錯誤 (可能已成功喚醒): {e}")
             
-        self.sleep_or_esc(3)
+        self.sleep_or_esc(3, check_app=False)
 
     def run(self):
         if not self.setup():
@@ -417,20 +431,21 @@ class ReactiveRunner:
                     continue
                     
                 matched_anything = False
+                close_successful = False
                 match_start = time.time()
                 
-                # 1. 尋找主畫面錨點 (scene_anchors)
-                if self.debug_mode:
-                    now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [1/4] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
-                    
-                scene_paths = list(self.scene_anchors_dir.rglob("*.png"))
-                scene_match = scan_category(scene_paths, 0.75, "主畫面")
+                # --------------------------------------------------------
+                # 重新調整優先級 (Priority)：
+                # 1. 免費廣告 (free_ad_icons) - 在主畫面上點擊廣告
+                # 2. 關閉按鈕 (close_icons) - 如果有未關閉的彈窗，先關掉
+                # 3. 獲得道具 (got_icons) - 因為看完廣告一定會跳這個
+                # 4. 主畫面錨點 (scene_anchors) - 用來判定是否已經全部看完
+                # --------------------------------------------------------
                 
-                # 2. 尋找免費廣告 (free_ad_icons)
+                # 1. 尋找免費廣告 (free_ad_icons)
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [2/4] 正在比對 免費廣告 (free_ad_icons)..." + " "*10, end="", flush=True)
+                    print(f"\r[{now_str}] 🔍 [1/4] 正在比對 免費廣告 (free_ad_icons)..." + " "*10, end="", flush=True)
                     
                 free_ad_paths = list(self.free_ad_icons_dir.rglob("*.png"))
                 free_ad_match = scan_category(free_ad_paths, 0.75, "免費廣告按鈕")
@@ -458,28 +473,22 @@ class ReactiveRunner:
                     
                     if disappeared:
                         print(f"⏳ [休息] 廣告播放中，進入深度休眠 {self.ad_wait} 秒...")
-                        if self.sleep_or_esc(self.ad_wait):
-                            continue
+                        self.sleep_or_esc(self.ad_wait)
                     else:
                         print(f"\n❌ [嚴重錯誤] 免費廣告按鈕 '{name}' 連點 10 次仍無反應！")
                         raise AppRecoveryNeeded(reason=f"Stuck_ad_{name}", screen=screen)
                             
                     matched_anything = True
-                    continue
-                    
-                if scene_match:
-                    print(f"\n    🏠 [比對成功] 偵測到主畫面: '{scene_match.template_path.name}' (信心值: {scene_match.confidence:.2f})")
-                    print("🎉 [任務完成] 無任何免費廣告按鈕，今日所有廣告已觀看完畢！")
-                    break
-                    
-                # 3. 尋找關閉按鈕 (close_icons)
+                    # 不回頭，重截一張最新畫面交給下一關
+                    screen = self._safe_screenshot()
+                    if screen is None: continue
+
+                # 2. 尋找關閉按鈕 (close_icons)
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [3/4] 正在比對 關閉按鈕 (close_icons)..." + " "*10, end="", flush=True)
+                    print(f"\r[{now_str}] 🔍 [2/4] 正在比對 關閉按鈕 (close_icons)..." + " "*10, end="", flush=True)
                     
                 close_paths = list(self.close_icons_dir.rglob("*.png"))
-                
-                # 優化：關閉按鈕幾乎都在畫面上半部，只掃描上半部 40% 區域，大幅減少運算量
                 h, w = screen.shape[:2]
                 close_roi = (0, 0, w, int(h * 0.4))
                 close_match = scan_category(close_paths, 0.85, "關閉按鈕", roi=close_roi)
@@ -510,12 +519,21 @@ class ReactiveRunner:
                         self.save_debug_error(screen, f"Stuck_close_{name}")
                         
                     matched_anything = True
-                    continue
-                    
-                # 4. 尋找獲得道具 (got_icons)
+                    close_successful = True
+                    # 不回頭，重截一張最新畫面交給下一關
+                    screen = self._safe_screenshot()
+                    if screen is None: continue
+
+                # 3. 尋找獲得道具 (got_icons)
+                if close_successful:
+                    print(f"\n⏳ [轉場等待] 廣告已關閉，強制等待 3 秒讓遊戲跳出獲得道具...")
+                    self.sleep_or_esc(3.0)
+                    screen = self._safe_screenshot()
+                    if screen is None: continue
+
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [4/4] 正在比對 獲得道具 (got_icons)..." + " "*10, end="", flush=True)
+                    print(f"\r[{now_str}] 🔍 [3/4] 正在比對 獲得道具 (got_icons)..." + " "*10, end="", flush=True)
                     
                 got_paths = list(self.got_icons_dir.rglob("*.png"))
                 got_match = scan_category(got_paths, 0.70, "獲得道具")
@@ -549,13 +567,37 @@ class ReactiveRunner:
                         self.sleep_or_esc(0.5)
                         
                     matched_anything = True
-                    continue
+                    # 不回頭，重截一張最新畫面交給下一關
+                    screen = self._safe_screenshot()
+                    if screen is None: continue
+
+                # 4. 尋找主畫面錨點 (scene_anchors)
+                if self.debug_mode:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"\r[{now_str}] 🔍 [4/4] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
+                    
+                scene_paths = list(self.scene_anchors_dir.rglob("*.png"))
+                scene_match = scan_category(scene_paths, 0.75, "主畫面")
+                
+                if scene_match:
+                    print(f"\n    🏠 [比對成功] 偵測到主畫面: '{scene_match.template_path.name}' (信心值: {scene_match.confidence:.2f})")
+                    
+                    # 雙重確認機制：為了防止遊戲剛關閉彈窗時，免費按鈕的進場動畫還沒跑完
+                    print("⏳ [二次確認] 疑似看完全部廣告，等待 2.5 秒讓遊戲 UI 動畫跑完...")
+                    self.sleep_or_esc(2.5)
+                    
+                    final_screen = self._safe_screenshot()
+                    if final_screen is not None:
+                        free_ad_paths = list(self.free_ad_icons_dir.rglob("*.png"))
+                        final_free_match = scan_category(free_ad_paths, 0.75, "免費廣告按鈕(最終確認)")
+                        if final_free_match:
+                            print("😅 [虛驚一場] 緩衝後發現免費廣告按鈕浮現了！繼續執行...")
+                            continue
+                            
+                    print("🎉 [任務完成] 經過二次確認，畫面上無免費廣告按鈕，今日所有廣告已觀看完畢！")
+                    break
                     
                 if not matched_anything:
-                    pkg = self.check_foreground_app()
-                    if pkg and pkg != "com.ageofeternity.global" and pkg != "Null":
-                        raise AppRecoveryNeeded(reason=pkg, screen=screen)
-                        
                     if self.debug_mode:
                         now_str = time.strftime("%H:%M:%S")
                         total_time = time.time() - loop_start_time
@@ -574,6 +616,10 @@ class ReactiveRunner:
                 screen = self._safe_screenshot()
                 if screen is not None:
                     self.handle_esc_interact(screen)
+                
+                # 清除在小畫家期間可能累積的 ESC 觸發，避免連截兩張
+                time.sleep(0.5)
+                self.force_esc_trigger = False
                 
         print("\n==================================================")
         print("🛑 廣告模組執行結束")

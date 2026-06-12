@@ -191,7 +191,19 @@ TASK_SPECS: Dict[str, TaskSpec] = {
     ),
 }
 
-TASK_ORDER: Tuple[str, ...] = tuple(sorted(TASK_SPECS))
+TASK_ORDER: Tuple[str, ...] = (
+    "arena",
+    "bounty",
+    "campaign",
+    "endless_trial",
+    "guild_dungeon",
+    "guild_wish",
+    "midas",
+    "secret_realm",
+    "summon",
+    "time_travel",
+    "magic_shop",
+)
 
 TESTED_DAILY_TASK_ORDER: Tuple[str, ...] = (
     "secret_realm",

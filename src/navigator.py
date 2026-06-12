@@ -9,6 +9,7 @@ from typing import Optional
 from src.adb_controller import DeviceController
 from src.config import SHARED_ASSETS_DIR, TRANSITION_WAIT_SECONDS, TaskSpec
 from src.daily_task_finder import DailyTaskFinder, TaskSearchStatus
+from src.debug_log import DebugLogger
 from src.exceptions import MissingAssetError, NavigationError
 from src.scene_detector import Scene, SceneDetector
 from src.vision_matcher import VisionMatcher
@@ -36,16 +37,19 @@ class Navigator:
         matcher: VisionMatcher,
         detector: SceneDetector,
         finder: DailyTaskFinder,
+        logger: Optional[DebugLogger] = None,
     ):
         self.controller = controller
         self.matcher = matcher
         self.detector = detector
         self.finder = finder
+        self.logger = logger or DebugLogger(False)
 
     def go_to_daily_tasks(self, max_steps: int = 6) -> bool:
-        for _ in range(max_steps):
+        for step in range(max_steps):
             screen = self.controller.screenshot()
             detected = self.detector.detect(screen)
+            self.logger.log(f"go_to_daily_tasks step={step + 1}/{max_steps} scene={detected.scene.value}")
             if detected.scene == Scene.DAILY_TASKS:
                 return True
 

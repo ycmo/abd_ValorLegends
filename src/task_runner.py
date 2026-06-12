@@ -14,6 +14,7 @@ from src.daily_task_finder import DailyTaskFinder
 from src.navigator import Navigator, OpenTaskStatus
 from src.scene_detector import SceneDetector
 from src.vision_matcher import VisionMatcher
+from src.debug_log import DebugLogger
 
 
 class TaskState(str, Enum):
@@ -39,6 +40,7 @@ class TaskContext:
     finder: DailyTaskFinder
     navigator: Navigator
     battle: BattleHandler
+    logger: DebugLogger
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,8 @@ class BaseTask:
 
     def __init__(self, context: TaskContext):
         self.context = context
+        if not hasattr(self.context, "logger"):
+            self.context.logger = DebugLogger(False)
 
     def run(self) -> TaskRunResult:
         started = time.time()

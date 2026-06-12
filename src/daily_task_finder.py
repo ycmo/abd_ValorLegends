@@ -16,6 +16,7 @@ from src.config import (
     TAP_COOLDOWN_SECONDS,
     TaskSpec,
 )
+from src.debug_log import DebugLogger
 from src.exceptions import MissingAssetError
 from src.vision_matcher import MatchResult, Roi, VisionMatcher
 
@@ -37,9 +38,10 @@ class TaskSearchResult:
 class DailyTaskFinder:
     """Finds a task row in the daily-task list and distinguishes Go vs claimable."""
 
-    def __init__(self, controller: DeviceController, matcher: VisionMatcher):
+    def __init__(self, controller: DeviceController, matcher: VisionMatcher, logger: Optional[DebugLogger] = None):
         self.controller = controller
         self.matcher = matcher
+        self.logger = logger or DebugLogger(False)
 
     def find_on_current_screen(self, spec: TaskSpec) -> TaskSearchResult:
         label_path = spec.task_label_asset

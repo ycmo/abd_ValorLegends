@@ -28,11 +28,45 @@ try:
         LEAVE_X, LEAVE_Y,
         SKIP_BTN_PATH,
         CHALLENGE_BTN_PATH,
-        DEPART_BTN_PATH
+        DEPART_BTN_PATH,
+        EXIT_BTN_PATH,
+        RETURN_06_PATH,
+        RETURN_07_PATH
     )
 except ImportError as e:
     print(f"錯誤: 模組載入失敗: {e}")
     sys.exit(1)
+
+def wait_and_click(device, matcher, path, wait_appear=10, wait_disappear=5, threshold=0.8):
+    """等待特徵出現並點擊，直到特徵消失（利用信心值判斷是否點擊成功）"""
+    # 1. 等待出現
+    appeared = False
+    for _ in range(wait_appear):
+        screen = device.screenshot()
+        match = matcher.match_template(screen, path, threshold=threshold)
+        if match:
+            appeared = True
+            break
+        time.sleep(1.0)
+        
+    if not appeared:
+        print(f"[Warning] 等待 {path.name} 出現超時！")
+        return False
+        
+    # 2. 點擊直到消失
+    for _ in range(wait_disappear):
+        screen = device.screenshot()
+        match = matcher.match_template(screen, path, threshold=threshold)
+        if match:
+            print(f"[Action] 點擊 {path.name} (信心值: {match.confidence:.2f})")
+            device.tap(*match.center)
+            time.sleep(1.5) # 給一點時間讓轉場發生
+        else:
+            print(f"[Info] {path.name} 已消失 (信心值低於門檻)，轉場成功！")
+            return True
+            
+    print(f"[Warning] {path.name} 連續點擊 {wait_disappear} 次仍未消失！")
+    return False
 
 def main():
     parser = argparse.ArgumentParser(description="疾風的呼喚：連續發射到 0 並出發")
@@ -57,14 +91,23 @@ def main():
     reader = build_easyocr_reader()
 
     while True:
-        # 1. 檢查卷軸數量
+        # 每次進入新迴圈先截圖
         screen = device.screenshot()
+
+        # 2. 檢查卷軸數量
         scrolls = get_scroll_count(screen, reader)
         
         if scrolls == 0:
-            print("[Info] 卷軸已歸零 (數量為 0)，點擊左上角「離開」！")
+            print("[Info] OCR 辨識卷軸為 0，準備一路退出！")
+            print("[Action] 點擊左上角「離開」...")
             device.tap(LEAVE_X, LEAVE_Y)
-            break
+            time.sleep(2.0)
+            
+            print("[Info] 準備銜接點擊「07_返回」...")
+            wait_and_click(device, matcher, RETURN_07_PATH, wait_appear=10, wait_disappear=5)
+            
+            print("[Info] 退場程序完畢，徹底結束程式！")
+            sys.exit(0)
         elif scrolls == -1:
             print("[Warning] 無法辨識卷軸數量，預設為還有卷軸，繼續執行...")
         else:
@@ -76,7 +119,7 @@ def main():
         if not success:
             print("[Warning] run_single_round 回報失敗，強行進入下一步找跳過...")
 
-        # 3. 過場動畫處理：尋找並反覆點擊「跳過」
+        # 3. 過場動畫處理：局部範圍特徵比對「跳過」按鈕
         print("[Info] 正在等待與處理過場動畫...")
         for _ in range(20):
             screen = device.screenshot()
@@ -85,24 +128,42 @@ def main():
             if matcher.match_template(screen, CHALLENGE_BTN_PATH, threshold=0.8):
                 break
                 
-            # 尋找「跳過」按鈕，若找到就點擊 (不中斷迴圈，讓它多點幾次防漏點)
-            match_skip = matcher.match_template(screen, SKIP_BTN_PATH, threshold=0.8)
+            # 限制在右下角範圍尋找「跳過」按鈕，配合去背的特徵圖防背景干擾
+            match_skip = matcher.match_template(screen, SKIP_BTN_PATH, threshold=0.7, roi=(750, 450, 200, 100))
             if match_skip:
-                print(f"[Action] 找到「跳過」按鈕，持續點擊！")
+                print(f"[Action] 找到「跳過」按鈕，位置 {match_skip.center}，持續點擊！")
                 device.tap(*match_skip.center)
                 
             time.sleep(1.0)
             
-        # 4. 結算畫面處理：尋找並點擊「繼續挑戰」
-        print("[Info] 正在等待結算畫面與「繼續挑戰」按鈕...")
+        # 4. 結算畫面處理：尋找並點擊「繼續挑戰」或「完成挑戰退出」
+        print("[Info] 正在等待結算畫面與「繼續挑戰 / 退出」按鈕...")
         for _ in range(30):
             screen = device.screenshot()
+            
+            # 判斷 05_繼續挑戰
             match_challenge = matcher.match_template(screen, CHALLENGE_BTN_PATH, threshold=0.8)
             if match_challenge:
-                print(f"[Action] 找到「繼續挑戰」按鈕，點擊！")
+                print(f"[Action] 找到「05_繼續挑戰」按鈕，點擊！")
                 device.tap(*match_challenge.center)
                 time.sleep(3.0) # 給畫面時間切換回棋盤
                 break
+                
+            # 判斷 05_完成挑戰退出
+            match_exit = matcher.match_template(screen, EXIT_BTN_PATH, threshold=0.8)
+            if match_exit:
+                print(f"\n[Action] 找到「05_完成挑戰退出」按鈕！")
+                wait_and_click(device, matcher, EXIT_BTN_PATH, wait_appear=1, wait_disappear=5)
+                
+                print("[Info] 準備銜接點擊遊戲盤面左上角的「返回箭頭」...")
+                wait_and_click(device, matcher, RETURN_06_PATH, wait_appear=10, wait_disappear=5)
+                
+                print("[Info] 準備銜接點擊「07_返回」...")
+                wait_and_click(device, matcher, RETURN_07_PATH, wait_appear=10, wait_disappear=5)
+                
+                print("[Info] 退場程序完畢，徹底結束程式！")
+                sys.exit(0)
+                
             time.sleep(1.0)
             
         print("[Info] 準備進行下一回合...")

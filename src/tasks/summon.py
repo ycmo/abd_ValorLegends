@@ -44,6 +44,16 @@ class SummonTask(BaseTask):
             )
             if match is not None:
                 return True
+        confirm_path = self.asset_path("confirm_button.png")
+        if confirm_path.exists():
+            match = self.context.matcher.match_template(
+                screen,
+                confirm_path,
+                threshold=0.88,
+                roi=self.CONFIRM_BUTTON_ROI,
+            )
+            if match is not None:
+                return True
         return self._screen_ocr_indicates_advanced_contract(screen)
 
     def execute(self) -> str:
@@ -66,6 +76,27 @@ class SummonTask(BaseTask):
         self._dismiss_post_confirm_reward_if_present()
         self._return_to_daily_tasks()
         return "free summon completed"
+
+    def execute_from_current_scene(self) -> str:
+        if self._match_task_asset(
+            "confirm_button.png",
+            roi=self.CONFIRM_BUTTON_ROI,
+            threshold=0.88,
+            timeout_seconds=1.0,
+        ):
+            self._tap_task_asset(
+                "confirm summon result",
+                "confirm_button.png",
+                roi=self.CONFIRM_BUTTON_ROI,
+                threshold=0.88,
+                timeout_seconds=2.0,
+                wait_after_seconds=TRANSITION_WAIT_SECONDS,
+            )
+            self._dismiss_post_confirm_reward_if_present()
+            self._return_to_daily_tasks()
+            return "summon result confirmed and returned"
+
+        return self.execute()
 
     def _dismiss_post_confirm_reward_if_present(self) -> None:
         self.context.controller.tap(80, 500)

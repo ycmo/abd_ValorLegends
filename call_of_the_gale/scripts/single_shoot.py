@@ -41,6 +41,9 @@ DEPART_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "depart_button.png"
 EMPTY_SLOT_PATH = Path(_THIS_DIR).parent / "assets" / "empty_slot.png"
 SKIP_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "skip_button.png"
 CHALLENGE_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "challenge_button.png"
+EXIT_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "exit_button.png"
+RETURN_06_PATH = Path(_THIS_DIR).parent / "assets" / "return_06_button.png"
+RETURN_07_PATH = Path(_THIS_DIR).parent / "assets" / "return_07_button.png"
 
 def save_debug_image(image, prefix):
     debug_dir = Path(_THIS_DIR).parent / "debug_output"
@@ -98,11 +101,17 @@ def parse_game_number(text):
         return -1
 
 def get_scroll_count(screen, reader):
-    x, y, w, h = SCROLL_ROI
+    # 調整 x 與 w 範圍：原本 860 切太右邊會把 0 的左半邊切掉變成 4，改為 850, 35
+    x, y, w, h = 850, 10, 35, 35
     crop = screen[y:y+h, x:x+w]
     crop_large = cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
     
-    results = reader.readtext(crop_large, allowlist='0123456789')
+    # 影像二值化：將白色數字轉成黑色字體白底，大幅提升 EasyOCR 辨識率
+    gray = cv2.cvtColor(crop_large, cv2.COLOR_BGR2GRAY)
+    _, bin_img = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
+    
+    # 加上 OoIl 容錯，再透過 parse_game_number 轉換
+    results = reader.readtext(bin_img, allowlist='0123456789OoIl')
     if not results:
         return -1
     
@@ -113,10 +122,7 @@ def get_scroll_count(screen, reader):
             best_text = text
             best_conf = float(conf)
             
-    try:
-        return int(best_text)
-    except ValueError:
-        return -1
+    return parse_game_number(best_text)
 
 def get_onigiri_count(screen, reader):
     x, y, w, h = ONIGIRI_ROI

@@ -1,0 +1,20 @@
+{
+    "em3": {
+        "type": "google",
+        "server": "em3"
+    },
+    "311": {
+        "type": "google",
+        "server": "311"
+    },
+    "14": {
+        "type": "email",
+        "email": "user@example.com",
+        "password": "password123"
+    },
+    "tiger": {
+        "type": "email",
+        "email": "another@example.com",
+        "password": "password456"
+    }
+}

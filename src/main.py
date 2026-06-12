@@ -27,6 +27,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Save before/after screenshots for every tap, swipe, and keyevent under captures/action_debug/",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print verbose progress logs to the console without saving extra screenshots.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("devices", help="List connected ADB devices")
@@ -117,8 +122,8 @@ def cmd_detect_scene(serial: str) -> int:
     return 0
 
 
-def cmd_go_daily(serial: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_go_daily(serial: str, debug_actions: Optional[bool] = None, console_debug: bool = False) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -135,8 +140,13 @@ def cmd_list_tasks() -> int:
     return 0
 
 
-def cmd_probe_task(serial: str, task_key: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_probe_task(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -156,8 +166,13 @@ def cmd_probe_task(serial: str, task_key: str, debug_actions: Optional[bool] = N
     return 0
 
 
-def cmd_probe_current_task(serial: str, task_key: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_probe_current_task(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -175,8 +190,13 @@ def cmd_probe_current_task(serial: str, task_key: str, debug_actions: Optional[b
     return 0
 
 
-def cmd_run_task(serial: str, task_key: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_run_task(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -187,8 +207,13 @@ def cmd_run_task(serial: str, task_key: str, debug_actions: Optional[bool] = Non
     return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
 
 
-def cmd_run_current_task(serial: str, task_key: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_run_current_task(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -199,8 +224,13 @@ def cmd_run_current_task(serial: str, task_key: str, debug_actions: Optional[boo
     return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
 
 
-def cmd_run_current_scene_task(serial: str, task_key: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_run_current_scene_task(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -211,8 +241,8 @@ def cmd_run_current_scene_task(serial: str, task_key: str, debug_actions: Option
     return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
 
 
-def cmd_run_all(serial: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_run_all(serial: str, debug_actions: Optional[bool] = None, console_debug: bool = False) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -227,8 +257,8 @@ def cmd_run_all(serial: str, debug_actions: Optional[bool] = None) -> int:
     return 1 if failed else 0
 
 
-def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None) -> int:
-    context = build_context(serial, debug=debug_actions)
+def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None, console_debug: bool = False) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
@@ -257,23 +287,23 @@ def main(argv: list = None) -> int:
         if args.command == "detect-scene":
             return cmd_detect_scene(args.serial)
         if args.command == "go-daily":
-            return cmd_go_daily(args.serial, args.debug_actions)
+            return cmd_go_daily(args.serial, args.debug_actions, args.debug)
         if args.command == "list-tasks":
             return cmd_list_tasks()
         if args.command == "probe-task":
-            return cmd_probe_task(args.serial, args.task, args.debug_actions)
+            return cmd_probe_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "probe-current-task":
-            return cmd_probe_current_task(args.serial, args.task, args.debug_actions)
+            return cmd_probe_current_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-task":
-            return cmd_run_task(args.serial, args.task, args.debug_actions)
+            return cmd_run_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-current-task":
-            return cmd_run_current_task(args.serial, args.task, args.debug_actions)
+            return cmd_run_current_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-current-scene-task":
-            return cmd_run_current_scene_task(args.serial, args.task, args.debug_actions)
+            return cmd_run_current_scene_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-tested-daily":
-            return cmd_run_tested_daily(args.serial, args.debug_actions)
+            return cmd_run_tested_daily(args.serial, args.debug_actions, args.debug)
         if args.command == "run-all":
-            return cmd_run_all(args.serial, args.debug_actions)
+            return cmd_run_all(args.serial, args.debug_actions, args.debug)
         parser.error(f"Unknown command: {args.command}")
         return 2
     except (AdbControllerError, BotError) as exc:

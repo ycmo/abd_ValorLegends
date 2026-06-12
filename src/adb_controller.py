@@ -17,10 +17,11 @@ from src.config import (
     DEFAULT_SERIAL,
     EXPECTED_SCREEN_SIZE,
 )
-from src.exceptions import ConfigurationError
+from src.debug_log import DebugLogger
+from src.exceptions import BotError, ConfigurationError
 
 
-class AdbControllerError(Exception):
+class AdbControllerError(BotError):
     """Low-level ADB command failure."""
 
 
@@ -32,9 +33,11 @@ class DeviceController:
         serial: str = DEFAULT_SERIAL,
         debug_actions: Optional[bool] = None,
         debug_dir: Optional[Path] = None,
+        logger: Optional[DebugLogger] = None,
     ):
         self.serial = serial
         self.debug_actions = ACTION_DEBUG_ENABLED if debug_actions is None else debug_actions
+        self.logger = logger or DebugLogger(False)
         base_debug_dir = debug_dir or ACTION_DEBUG_DIR
         self.debug_dir = (
             base_debug_dir / f"{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
@@ -111,12 +114,19 @@ class DeviceController:
         return img
 
     def _capture_screen(self) -> np.ndarray:
-        result = subprocess.run(
-            self.base_cmd + ["shell", "screencap", "-p"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-        )
+        cmd = self.base_cmd + ["shell", "screencap", "-p"]
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AdbControllerError(
+                f"ADB screenshot timed out after 30s: {' '.join(cmd)}"
+            ) from exc
+
         if result.returncode != 0:
             raise AdbControllerError(result.stderr.decode("utf-8", errors="ignore").strip())
         if not result.stdout:

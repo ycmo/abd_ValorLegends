@@ -5,7 +5,7 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.task_runner import BaseTask, TaskSceneAnchor
+from src.task_runner import BaseTask, TaskSceneAnchor, TaskRunResult, TaskState
 from src.vision_matcher import MatchResult, Roi
 
 
@@ -56,6 +56,20 @@ class MidasTask(BaseTask):
         if not completed:
             return "no active Midas button found; dialog closed"
         return "Midas taps: " + ", ".join(completed)
+
+    def _execute_and_return(self, started: float) -> TaskRunResult:
+        result = self.execute_from_current_scene()
+        # Midas is considered finished after tapping the dialog X. Keep this disabled for now
+        # because returning to Daily Tasks from this point can stall or mis-size the next screen.
+        # try:
+        #     self.context.navigator.return_to_daily_tasks()
+        # except BotError as exc:
+        #     return self._result(
+        #         TaskState.FAILED,
+        #         f"Task action finished but return_to_daily_tasks failed: {exc}",
+        #         started,
+        #     )
+        return self._result(TaskState.COMPLETED, result or "completed", started)
 
     def _allowed_buttons(self):
         return (
