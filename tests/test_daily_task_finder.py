@@ -40,17 +40,20 @@ class FakeMatcher:
 
     def match_template(self, screen, template_path: Path, threshold=0.0, roi=None, check_brightness=True):
         self.calls.append((template_path.name, threshold, roi))
+        result = None
         if template_path.name in self.labels_by_name:
-            return self.labels_by_name[template_path.name]
-        if template_path.name == "task_label.png":
-            return self.label
-        if template_path.name == "go_button.png":
-            return self.go
-        if template_path.name == "claim_button.png":
-            return self.claim
-        if template_path.name == "completed_button.png":
-            return self.done
-        return None
+            result = self.labels_by_name[template_path.name]
+        elif template_path.name == "task_label.png":
+            result = self.label
+        elif template_path.name == "go_button.png":
+            result = self.go
+        elif template_path.name == "claim_button.png":
+            result = self.claim
+        elif template_path.name == "completed_button.png":
+            result = self.done
+        if result is not None and result.confidence < threshold:
+            return None
+        return result
 
     def match_any(self, screen, template_paths, threshold=0.0, roi=None, check_brightness=True):
         best = None
@@ -205,7 +208,7 @@ class DailyTaskFinderTests(TestCase):
         self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
         self.assertEqual(result.claim_match.template_path.name, "claim_button.png")
 
-    def test_weak_label_with_go_button_is_ready_before_completed_fallback(self):
+    def test_weak_label_with_go_button_is_not_ready(self):
         weak = MatchResult(
             template_path=Path("task_label_wide.png"),
             confidence=0.62,
@@ -215,19 +218,36 @@ class DailyTaskFinderTests(TestCase):
         matcher = FakeMatcher(
             label=None,
             go=_go_at(430),
-            claim=_claim_at(430),
-            done=_done_at(430),
             labels_by_name={"task_label_wide.png": weak},
         )
         finder = DailyTaskFinder(FakeController(), matcher)
 
         result = finder.find_on_current_screen(TASK_SPECS["time_travel"])
 
-        self.assertEqual(result.status, TaskSearchStatus.READY)
-        self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
-        self.assertEqual(result.go_match.template_path.name, "go_button.png")
+        self.assertEqual(result.status, TaskSearchStatus.NOT_FOUND)
+        self.assertIsNone(result.label_match)
+        self.assertIsNone(result.go_match)
         self.assertIsNone(result.claim_match)
         self.assertIsNone(result.done_match)
+
+    def test_low_confidence_label_with_go_button_is_not_ready(self):
+        low_confidence = MatchResult(
+            template_path=Path("task_label_wide.png"),
+            confidence=0.80,
+            center=(330, 385),
+            bbox=(218, 374, 216, 22),
+        )
+        matcher = FakeMatcher(
+            label=None,
+            go=_go_at(385),
+            labels_by_name={"task_label_wide.png": low_confidence},
+        )
+        finder = DailyTaskFinder(FakeController(), matcher)
+
+        result = finder.find_on_current_screen(TASK_SPECS["arena"])
+
+        self.assertEqual(result.status, TaskSearchStatus.NOT_FOUND)
+        self.assertIsNone(result.go_match)
 
     def test_wide_task_label_candidate_can_find_row(self):
         matcher = FakeMatcher(

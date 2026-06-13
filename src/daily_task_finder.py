@@ -221,26 +221,12 @@ class DailyTaskFinder:
         if label is None:
             return None
 
-        go_roi = self._same_row_right_roi(
+        status_roi = self._same_row_right_roi(
             screen_width=screen.shape[1],
             screen_height=screen.shape[0],
             label=label,
         )
-        go = self._match_go_button(screen, go_roi)
-        if go is not None:
-            self.logger.log(
-                f"daily task weak label matched runnable task={spec.key} "
-                f"template={label.template_path.name} label_confidence={label.confidence:.3f} "
-                f"go_confidence={go.confidence:.3f}"
-            )
-            return TaskSearchResult(
-                TaskSearchStatus.READY,
-                label_match=label,
-                go_match=go,
-                reason="weak task label found with Go button on the same row",
-            )
-
-        claim = self._match_claim_button(screen, go_roi)
+        claim = self._match_claim_button(screen, status_roi)
         if claim is not None:
             self.logger.log(
                 f"daily task claim row matched task={spec.key} "
@@ -254,7 +240,7 @@ class DailyTaskFinder:
                 reason="weak task label found with claim button on the same row",
             )
 
-        done = self._match_done_button(screen, go_roi)
+        done = self._match_done_button(screen, status_roi)
         if done is None:
             return None
 
