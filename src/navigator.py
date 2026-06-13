@@ -8,7 +8,7 @@ from typing import Optional
 
 from src.adb_controller import DeviceController
 from src.config import SHARED_ASSETS_DIR, TRANSITION_WAIT_SECONDS, TaskSpec
-from src.daily_task_finder import DailyTaskFinder, TaskSearchStatus
+from src.daily_task_finder import DailyTaskFinder, TaskSearchResult, TaskSearchStatus
 from src.debug_log import DebugLogger
 from src.exceptions import MissingAssetError, NavigationError
 from src.scene_detector import Scene, SceneDetector
@@ -85,6 +85,7 @@ class Navigator:
         if result.status != TaskSearchStatus.READY or result.go_match is None:
             raise NavigationError(f"Cannot find runnable task row for {spec.display_name}: {result.reason}")
 
+        self._annotate_daily_task_tap(spec, result)
         self.controller.tap(*result.go_match.center)
         time.sleep(TRANSITION_WAIT_SECONDS)
         return OpenTaskResult(OpenTaskStatus.OPENED)
@@ -106,6 +107,7 @@ class Navigator:
                 f"Cannot find runnable task row on current screen for {spec.display_name}: {result.reason}"
             )
 
+        self._annotate_daily_task_tap(spec, result)
         self.controller.tap(*result.go_match.center)
         time.sleep(TRANSITION_WAIT_SECONDS)
         return OpenTaskResult(OpenTaskStatus.OPENED)
@@ -160,3 +162,29 @@ class Navigator:
             return False
         self.controller.tap(*match.center)
         return True
+
+    def _annotate_daily_task_tap(self, spec: TaskSpec, result: TaskSearchResult) -> None:
+        label = result.label_match
+        go = result.go_match
+        if go is None:
+            return
+
+        boxes = []
+        lines = [f"daily task: {spec.key} {spec.display_name}"]
+        if label is not None:
+            label_roi = DailyTaskFinder._task_list_roi(960, 540)
+            status_roi = DailyTaskFinder._same_row_right_roi(960, 540, label)
+            boxes.append((*label_roi, "label_roi"))
+            boxes.append((*label.bbox, "label"))
+            boxes.append((*status_roi, "status_roi"))
+            lines.append(
+                f"label {label.template_path.name} conf={label.confidence:.3f} "
+                f"center={label.center}"
+            )
+        boxes.append((*go.bbox, "go"))
+        lines.append(f"go {go.template_path.name} conf={go.confidence:.3f} center={go.center}")
+
+        annotate = getattr(self.controller, "annotate_next_tap_debug", None)
+        if annotate is not None:
+            annotate(lines=lines, boxes=boxes)
+        self.logger.log(" | ".join(lines), force=True)

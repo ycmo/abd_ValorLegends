@@ -22,12 +22,16 @@ def _go_match() -> MatchResult:
 class FakeController:
     def __init__(self):
         self.taps = []
+        self.annotations = []
 
     def screenshot(self):
         return np.zeros((540, 960, 3), dtype=np.uint8)
 
     def tap(self, x, y):
         self.taps.append((x, y))
+
+    def annotate_next_tap_debug(self, *, lines=(), boxes=()):
+        self.annotations.append((list(lines), list(boxes)))
 
 
 class FakeDetector:
@@ -64,13 +68,31 @@ class FakeMatcher:
 class NavigatorTaskOpenTests(TestCase):
     def test_open_task_from_daily_prefers_current_visible_row(self):
         controller = FakeController()
-        finder = FakeFinder(TaskSearchResult(TaskSearchStatus.READY, go_match=_go_match()))
+        finder = FakeFinder(
+            TaskSearchResult(
+                TaskSearchStatus.READY,
+                label_match=MatchResult(
+                    template_path=Path("task_label_wide.png"),
+                    confidence=0.98,
+                    center=(330, 300),
+                    bbox=(220, 288, 220, 24),
+                ),
+                go_match=_go_match(),
+            )
+        )
         navigator = Navigator(controller, FakeMatcher(), FakeDetector(), finder)
 
         result = navigator.open_task_from_daily(TASK_SPECS["guild_wish"])
 
         self.assertEqual(result.status, OpenTaskStatus.OPENED)
         self.assertEqual(controller.taps, [(840, 300)])
+        self.assertEqual(len(controller.annotations), 1)
+        lines, boxes = controller.annotations[0]
+        self.assertIn("daily task: guild_wish", lines[0])
+        self.assertTrue(any(box[-1] == "label_roi" for box in boxes))
+        self.assertTrue(any(box[-1] == "label" for box in boxes))
+        self.assertTrue(any(box[-1] == "status_roi" for box in boxes))
+        self.assertTrue(any(box[-1] == "go" for box in boxes))
         self.assertEqual(finder.current_calls, 1)
         self.assertEqual(finder.scroll_calls, 0)
 
