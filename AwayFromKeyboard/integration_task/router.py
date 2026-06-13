@@ -130,153 +130,202 @@ class RouteNavigator:
         if not target_files:
             return
             
-        for img_path in target_files:
-            threshold = 0.5 if "_lowconf" in img_path.name else 0.7
-            (cx, cy), (x, y, w, h), original_img = self.finder.find_largest_red_box_info(img_path)
+        import re
+        from collections import defaultdict
+        
+        grouped_files = defaultdict(list)
+        for f in target_files:
+            match = re.match(r'^([a-zA-Z]*\d+)', f.name)
+            if match:
+                prefix = match.group(1)
+            else:
+                prefix = f.name
+            grouped_files[prefix].append(f)
             
-            # 從原圖中切下目標當作 template
-            template = original_img[y:y+h, x:x+w]
-            
-            # 取得當前實機畫面 (相容 get_screen 或是 screenshot)
-            get_screen_func = getattr(self.controller, "get_screen", getattr(self.controller, "screenshot", None))
-            screen = get_screen_func() if get_screen_func else None
-            
+        get_screen_func = getattr(self.controller, "get_screen", getattr(self.controller, "screenshot", None))
+        
+        for prefix, group in grouped_files.items():
+            templates_info = []
+            has_swipe = False
+            for img_path in group:
+                threshold = 0.5 if "_lowconf" in img_path.name.lower() else 0.7
+                (cx, cy), (x, y, w, h), original_img = self.finder.find_largest_red_box_info(img_path)
+                template = original_img[y:y+h, x:x+w]
+                
+                name_lower = img_path.name.lower()
+                is_swipe_v = "_swipev" in name_lower
+                is_swipe_h = "_swipeh" in name_lower
+                if is_swipe_v or is_swipe_h:
+                    has_swipe = True
+                    
+                templates_info.append({
+                    "path": img_path,
+                    "threshold": threshold,
+                    "cx": cx, "cy": cy, "x": x, "y": y, "w": w, "h": h,
+                    "template": template,
+                    "is_swipe_v": is_swipe_v,
+                    "is_swipe_h": is_swipe_h
+                })
+                
             if get_screen_func is None:
+                cx, cy = templates_info[0]["cx"], templates_info[0]["cy"]
                 print(f"[Fallback] 無法取得實機畫面 -> 退回點擊原始紅框中心 ({cx}, {cy})")
                 self.controller.tap(cx, cy)
                 time.sleep(2.0)
                 continue
-
+                
             success = False
-            max_val = 0.0
+            best_overall_val = 0.0
+            best_overall_loc = None
+            best_overall_img = None
+            best_overall_w = 0
+            best_overall_h = 0
+            best_overall_roi = None
+            best_overall_threshold = 0.7
             
-            is_swipe_v = "_swipe_v" in img_path.name
-            is_swipe_h = "_swipe_h" in img_path.name
+            attempts_phase1 = 1 if has_swipe else 20
+            screen = None
             
-            if is_swipe_v or is_swipe_h:
-                # 第一階段：先比對一次
+            for attempt in range(attempts_phase1):
                 screen = get_screen_func()
-                if screen is not None:
-                    sh, sw = screen.shape[:2]
-                    if is_swipe_v:
+                if screen is None:
+                    continue
+                sh, sw = screen.shape[:2]
+                
+                for t_info in templates_info:
+                    x, y, w, h = t_info["x"], t_info["y"], t_info["w"], t_info["h"]
+                    if t_info["is_swipe_v"]:
                         roi_x1 = max(0, x - 50)
                         roi_x2 = min(sw, x + w + 50)
                         roi_y1 = 0
                         roi_y2 = sh
-                    else: # is_swipe_h
+                    elif t_info["is_swipe_h"]:
                         roi_x1 = 0
                         roi_x2 = sw
                         roi_y1 = max(0, y - 150)
                         roi_y2 = min(sh, y + h + 150)
+                    else:
+                        roi_x1 = max(0, x - 50)
+                        roi_x2 = min(sw, x + w + 50)
+                        roi_y1 = max(0, y - 150)
+                        roi_y2 = min(sh, y + h + 150)
                         
                     screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
-                    res = cv2.matchTemplate(screen_roi, template, cv2.TM_CCOEFF_NORMED)
+                    res = cv2.matchTemplate(screen_roi, t_info["template"], cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, max_loc = cv2.minMaxLoc(res)
                     
-                    if max_val >= threshold:
+                    if not has_swipe:
+                        print(f"  [Debug] 尋找 {t_info['path'].name} (第 {attempt+1}/{attempts_phase1} 次) - 當前最高信心度: {max_val:.2f}")
+                    
+                    if max_val > best_overall_val:
+                        best_overall_val = max_val
+                        best_overall_loc = max_loc
+                        best_overall_img = t_info["path"]
+                        best_overall_w = w
+                        best_overall_h = h
+                        best_overall_roi = (roi_x1, roi_x2, roi_y1, roi_y2)
+                        best_overall_threshold = t_info["threshold"]
+                        
+                    if max_val >= t_info["threshold"]:
                         abs_cx = roi_x1 + max_loc[0] + w // 2
                         abs_cy = roi_y1 + max_loc[1] + h // 2
-                        print(f"[Router] 執行 {img_path.name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
+                        print(f"[Router] 執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
                         self.controller.tap(abs_cx, abs_cy)
                         time.sleep(2.0)
                         success = True
-
-                # 第二階段：滑動後再比對一次
-                if not success and screen is not None:
-                    print(f"  [Debug] 尋找 {img_path.name} 失敗 (信心度 {max_val:.2f})，準備動態滑動...")
-                    
-                    # 動態滑動
-                    cx_orig = x + w // 2
-                    cy_orig = y + h // 2
-                    
-                    if is_swipe_v:
-                        start_y = min(sh - 10, cy_orig + 150)
-                        end_y = max(10, cy_orig - 150)
-                        self.controller.swipe(cx_orig, start_y, cx_orig, end_y, duration_ms=500)
-                    else:
-                        start_x = min(sw - 10, cx_orig + 150)
-                        end_x = max(10, cx_orig - 150)
-                        self.controller.swipe(start_x, cy_orig, end_x, cy_orig, duration_ms=500)
+                        break
                         
-                    time.sleep(1.5)
+                if success:
+                    break
+                else:
+                    if not has_swipe:
+                        time.sleep(0.3)
+                        
+            if not success and has_swipe and screen is not None:
+                print(f"  [Debug] 群組 {prefix} 階段一尋找失敗 (最高信心度 {best_overall_val:.2f})，準備動態滑動...")
+                swipe_t = next(t for t in templates_info if t["is_swipe_v"] or t["is_swipe_h"])
+                cx_orig = swipe_t["x"] + swipe_t["w"] // 2
+                cy_orig = swipe_t["y"] + swipe_t["h"] // 2
+                sh, sw = screen.shape[:2]
+                
+                if swipe_t["is_swipe_v"]:
+                    start_y = min(sh - 10, cy_orig + 150)
+                    end_y = max(10, cy_orig - 150)
+                    self.controller.swipe(cx_orig, start_y, cx_orig, end_y, duration_ms=500)
+                else:
+                    start_x = min(sw - 10, cx_orig + 150)
+                    end_x = max(10, cx_orig - 150)
+                    self.controller.swipe(start_x, cy_orig, end_x, cy_orig, duration_ms=500)
                     
+                time.sleep(1.5)
+                
+                for attempt in range(10):
                     screen = get_screen_func()
-                    if screen is not None:
-                        sh, sw = screen.shape[:2]
-                        if is_swipe_v:
+                    if screen is None:
+                        continue
+                    sh, sw = screen.shape[:2]
+                    
+                    for t_info in templates_info:
+                        x, y, w, h = t_info["x"], t_info["y"], t_info["w"], t_info["h"]
+                        if t_info["is_swipe_v"]:
                             roi_x1 = max(0, x - 50)
                             roi_x2 = min(sw, x + w + 50)
                             roi_y1 = 0
                             roi_y2 = sh
-                        else:
+                        elif t_info["is_swipe_h"]:
                             roi_x1 = 0
                             roi_x2 = sw
                             roi_y1 = max(0, y - 150)
                             roi_y2 = min(sh, y + h + 150)
+                        else:
+                            roi_x1 = max(0, x - 50)
+                            roi_x2 = min(sw, x + w + 50)
+                            roi_y1 = max(0, y - 150)
+                            roi_y2 = min(sh, y + h + 150)
                             
                         screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
-                        res = cv2.matchTemplate(screen_roi, template, cv2.TM_CCOEFF_NORMED)
+                        res = cv2.matchTemplate(screen_roi, t_info["template"], cv2.TM_CCOEFF_NORMED)
                         _, max_val, _, max_loc = cv2.minMaxLoc(res)
                         
-                        if max_val >= threshold:
+                        print(f"  [Debug] 滑動後尋找 {t_info['path'].name} (第 {attempt+1}/10 次) - 當前最高信心度: {max_val:.2f}")
+                        
+                        if max_val > best_overall_val:
+                            best_overall_val = max_val
+                            best_overall_loc = max_loc
+                            best_overall_img = t_info["path"]
+                            best_overall_w = w
+                            best_overall_h = h
+                            best_overall_roi = (roi_x1, roi_x2, roi_y1, roi_y2)
+                            best_overall_threshold = t_info["threshold"]
+                            
+                        if max_val >= t_info["threshold"]:
                             abs_cx = roi_x1 + max_loc[0] + w // 2
                             abs_cy = roi_y1 + max_loc[1] + h // 2
-                            print(f"[Router] 滑動後執行 {img_path.name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
+                            print(f"[Router] 滑動後執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
                             self.controller.tap(abs_cx, abs_cy)
                             time.sleep(2.0)
                             success = True
-            else:
-                for attempt in range(20):
-                    screen = get_screen_func()
-                    if screen is None:
-                        continue
-                    
-                    # 取得畫面的長寬
-                    sh, sw = screen.shape[:2]
-                    
-                    # 放寬 ROI: x 軸放寬 50，y 軸放寬 150
-                    roi_x1 = max(0, x - 50)
-                    roi_x2 = min(sw, x + w + 50)
-                    roi_y1 = max(0, y - 150)
-                    roi_y2 = min(sh, y + h + 150)
-                    
-                    screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
-                    
-                    # 進行影像比對
-                    res = cv2.matchTemplate(screen_roi, template, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, max_loc = cv2.minMaxLoc(res)
-                    
-                    print(f"  [Debug] 尋找 {img_path.name} (第 {attempt+1}/20 次) - 當前最高信心度: {max_val:.2f}")
-                    
-                    if max_val >= threshold:
-                        abs_cx = roi_x1 + max_loc[0] + w // 2
-                        abs_cy = roi_y1 + max_loc[1] + h // 2
-                        print(f"[Router] 執行 {img_path.name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
-                        self.controller.tap(abs_cx, abs_cy)
-                        time.sleep(2.0)
-                        success = True
+                            break
+                            
+                    if success:
                         break
                     else:
                         time.sleep(0.3)
                         
             if not success:
-                # 建立 debug 圖片
                 debug_dir = self.base_dir / "debug"
                 debug_dir.mkdir(parents=True, exist_ok=True)
-                debug_img_path = debug_dir / f"fallback_{img_path.name}"
+                failed_name = best_overall_img.name if best_overall_img else prefix
+                debug_img_path = debug_dir / f"fallback_{failed_name}"
                 
-                # 畫 ROI 藍框 (BGR: 255, 0, 0)
-                if screen is not None:
+                if screen is not None and best_overall_roi is not None and best_overall_loc is not None:
+                    roi_x1, roi_x2, roi_y1, roi_y2 = best_overall_roi
                     cv2.rectangle(screen, (roi_x1, roi_y1), (roi_x2, roi_y2), (255, 0, 0), 2)
-                    
-                    # 畫找到的最高分黃框 (BGR: 0, 255, 255)
-                    abs_max_x = roi_x1 + max_loc[0]
-                    abs_max_y = roi_y1 + max_loc[1]
-                    cv2.rectangle(screen, (abs_max_x, abs_max_y), (abs_max_x + w, abs_max_y + h), (0, 255, 255), 2)
-                    
-                    # 支援 Windows 中文路徑存檔
+                    abs_max_x = roi_x1 + best_overall_loc[0]
+                    abs_max_y = roi_y1 + best_overall_loc[1]
+                    cv2.rectangle(screen, (abs_max_x, abs_max_y), (abs_max_x + best_overall_w, abs_max_y + best_overall_h), (0, 255, 255), 2)
                     is_success, im_buf_arr = cv2.imencode(".png", screen)
                     if is_success:
                         im_buf_arr.tofile(str(debug_img_path))
                 
-                raise ValueError(f"比對失敗！執行 {img_path.name} 找不到目標 (最高信心度 {max_val:.2f} < {threshold})。\n已將偵錯畫面存至: {debug_img_path}")
+                raise ValueError(f"比對失敗！步驟群組 {prefix} 找不到目標 (最高信心度 {best_overall_val:.2f} < {best_overall_threshold})。\n已將偵錯畫面存至: {debug_img_path}")

@@ -109,7 +109,7 @@ class TestRouter(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             navigator.execute_route()
             
-        self.assertIn("比對失敗！執行 01_first.png 找不到目標", str(context.exception))
+        self.assertIn("比對失敗！步驟群組 01 找不到目標", str(context.exception))
         
         # 驗證 fallback 不會觸發點擊
         self.assertEqual(len(controller.taps), 0)

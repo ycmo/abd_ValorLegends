@@ -45,18 +45,25 @@ def main():
             print("=" * 60 + "\n")
             
             # 加上 try-except 捕捉 subprocess 可能的系統級崩潰
+            script_failed = False
             try:
                 result = subprocess.run(full_cmd, cwd=str(project_root))
                 if result.returncode != 0:
                     print(f"⚠️ [警告] 外部指令執行結束，但回傳錯誤碼 (returncode={result.returncode})")
+                    script_failed = True
                 else:
                     print(f"✅ [成功] 外部腳本執行完畢！")
             except Exception as e:
                 print(f"❌ [錯誤] 執行外部指令時發生崩潰: {e}")
+                script_failed = True
                 
             print(f"\n[Router] 外部腳本執行完畢，檢查是否有離場路由...")
             navigator.execute_route(phase="exit")
             print(f"✅ [成功] 離場路由執行完畢！")
+            
+            if script_failed:
+                print("❌ [錯誤] 由於外部腳本執行失敗，結束路由任務並拋出錯誤碼以觸發 Fail-Fast。")
+                sys.exit(1)
         else:
             print(f"⚠️ [提示] 找不到 '{route_name}' 對應的外部指令配置，不執行額外動作。")
             
