@@ -66,6 +66,7 @@ class VisionMatcher:
         template_path: Path,
         threshold: Optional[float] = None,
         roi: Optional[Roi] = None,
+        check_brightness: bool = True,
     ) -> Optional[MatchResult]:
         if not template_path.exists():
             return None
@@ -126,7 +127,7 @@ class VisionMatcher:
             r_bright = sum(r_mean)
             
             # 亮度檢查：如果畫面上的按鈕亮度低於模板的 75%，代表它是「反灰/已失效」的按鈕，忽略它！
-            if t_bright > 10 and (r_bright / t_bright) < 0.75:
+            if check_brightness and t_bright > 10 and (r_bright / t_bright) < 0.75:
                 continue
                 
             best_pt = pt
@@ -154,10 +155,17 @@ class VisionMatcher:
         template_paths: Iterable[Path],
         threshold: Optional[float] = None,
         roi: Optional[Roi] = None,
+        check_brightness: bool = True,
     ) -> Optional[MatchResult]:
         best: Optional[MatchResult] = None
         for path in template_paths:
-            result = self.match_template(screen, path, threshold=threshold, roi=roi)
+            result = self.match_template(
+                screen,
+                path,
+                threshold=threshold,
+                roi=roi,
+                check_brightness=check_brightness,
+            )
             if result is None:
                 continue
             if best is None or result.confidence > best.confidence:
@@ -171,6 +179,7 @@ class VisionMatcher:
         pattern: str = "*.png",
         threshold: Optional[float] = None,
         roi: Optional[Roi] = None,
+        check_brightness: bool = True,
     ) -> Optional[MatchResult]:
         if not template_dir.exists():
             return None
@@ -179,6 +188,7 @@ class VisionMatcher:
             sorted(template_dir.glob(pattern)),
             threshold=threshold,
             roi=roi,
+            check_brightness=check_brightness,
         )
 
     def save_debug(self, screen: np.ndarray, result: MatchResult, path: Path) -> Path:

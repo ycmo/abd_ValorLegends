@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
@@ -12,6 +11,7 @@ import cv2
 
 from src.adb_controller import AdbControllerError, DeviceController
 from src.config import DEFAULT_SERIAL, MANUAL_SCREENSHOTS_DIR
+from src.paint_cropper import run_paint_crop_workflow
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -20,7 +20,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--index", required=True, help="Screenshot index, e.g. 1 or 001")
     parser.add_argument("--scene", help="Scene name, e.g. 每日任務")
     parser.add_argument("--serial", default=DEFAULT_SERIAL, help=f"ADB serial, default: {DEFAULT_SERIAL}")
-    parser.add_argument("--open-paint", action="store_true", help="Open saved image in mspaint (default)")
     parser.add_argument("--no-open-paint", action="store_true", help="Do not open saved image in mspaint")
     return parser
 
@@ -63,12 +62,12 @@ def main(argv: list = None) -> int:
     print(output_path.stat().st_size)
 
     if not args.no_open_paint:
-        open_in_paint(output_path)
+        saved = run_paint_crop_workflow(output_path)
+        if saved:
+            print("saved_crops:")
+            for saved_path in saved:
+                print(f"  {saved_path}")
     return 0
-
-
-def open_in_paint(path: Path) -> None:
-    subprocess.Popen(["mspaint", str(path.resolve())])
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from src.adb_controller import AdbControllerError, DeviceController
 from src.config import CAPTURES_DIR, DEFAULT_SERIAL, EXPECTED_SCREEN_SIZE, TASK_ORDER, TASK_SPECS, TESTED_DAILY_TASK_ORDER
 from src.daily_runner import DailyRunner, build_context
 from src.exceptions import BotError, ConfigurationError
+from src.paint_cropper import run_paint_crop_workflow
 from src.scene_detector import SceneDetector
 from src.tasks import TASK_CLASSES
 from src.vision_matcher import VisionMatcher
@@ -106,6 +107,11 @@ def cmd_screenshot(serial: str, name: str) -> int:
     path = CAPTURES_DIR / name
     controller.save_screenshot(path)
     print(path)
+    saved = run_paint_crop_workflow(path)
+    if saved:
+        print("saved_crops:")
+        for saved_path in saved:
+            print(f"  {saved_path}")
     return 0
 
 
