@@ -111,6 +111,31 @@ class NavigatorTaskOpenTests(TestCase):
         self.assertEqual(finder.current_calls, 1)
         self.assertEqual(finder.scroll_calls, 1)
 
+    def test_open_task_from_daily_scrolls_after_weak_done_candidate(self):
+        controller = FakeController()
+        finder = FakeFinder(
+            TaskSearchResult(
+                TaskSearchStatus.DONE_OR_CLAIMABLE,
+                done_match=MatchResult(
+                    template_path=Path("completed_button.png"),
+                    confidence=0.95,
+                    center=(840, 380),
+                    bbox=(768, 360, 144, 40),
+                ),
+                weak_match=True,
+                reason="weak task label found with completed button on the same row",
+            ),
+            TaskSearchResult(TaskSearchStatus.READY, go_match=_go_match()),
+        )
+        navigator = Navigator(controller, FakeMatcher(), FakeDetector(), finder)
+
+        result = navigator.open_task_from_daily(TASK_SPECS["time_travel"])
+
+        self.assertEqual(result.status, OpenTaskStatus.OPENED)
+        self.assertEqual(controller.taps, [(840, 300)])
+        self.assertEqual(finder.current_calls, 1)
+        self.assertEqual(finder.scroll_calls, 1)
+
     def test_open_task_from_daily_skips_current_done_row_without_scrolling(self):
         controller = FakeController()
         finder = FakeFinder(

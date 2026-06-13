@@ -34,6 +34,7 @@ class TaskSearchResult:
     go_match: Optional[MatchResult] = None
     claim_match: Optional[MatchResult] = None
     done_match: Optional[MatchResult] = None
+    weak_match: bool = False
     reason: str = ""
 
 
@@ -139,17 +140,23 @@ class DailyTaskFinder:
     ) -> TaskSearchResult:
         self._scroll_to_top(reset_to_top_swipes)
         last = TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="not searched yet")
+        weak_done_candidate: Optional[TaskSearchResult] = None
         for attempt in range(max_swipes + 1):
             last = self.find_on_current_screen(spec)
             if last.status != TaskSearchStatus.NOT_FOUND:
-                return last
+                if last.status == TaskSearchStatus.DONE_OR_CLAIMABLE and last.weak_match:
+                    weak_done_candidate = weak_done_candidate or last
+                else:
+                    return last
             if attempt >= max_swipes:
                 break
             if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=420, wait_seconds=TAP_COOLDOWN_SECONDS):
+                if weak_done_candidate is not None:
+                    return weak_done_candidate
                 if last.label_match is not None:
                     return last
                 return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="task label not visible before list bottom")
-        return last
+        return weak_done_candidate or last
 
     def _scroll_to_top(self, swipes: int) -> None:
         for _ in range(swipes):
@@ -237,6 +244,7 @@ class DailyTaskFinder:
                 TaskSearchStatus.DONE_OR_CLAIMABLE,
                 label_match=label,
                 claim_match=claim,
+                weak_match=True,
                 reason="weak task label found with claim button on the same row",
             )
 
@@ -253,6 +261,7 @@ class DailyTaskFinder:
             TaskSearchStatus.DONE_OR_CLAIMABLE,
             label_match=label,
             done_match=done,
+            weak_match=True,
             reason="weak task label found with completed button on the same row",
         )
 

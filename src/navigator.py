@@ -74,7 +74,9 @@ class Navigator:
             raise NavigationError("Cannot reach daily tasks before opening task")
 
         result = self.finder.find_near_current_screen(spec)
-        if result.status == TaskSearchStatus.NOT_FOUND:
+        if result.status == TaskSearchStatus.NOT_FOUND or (
+            result.status == TaskSearchStatus.DONE_OR_CLAIMABLE and result.weak_match
+        ):
             result = self.finder.scroll_to_task(spec)
 
         if result.status == TaskSearchStatus.DONE_OR_CLAIMABLE:
@@ -97,6 +99,8 @@ class Navigator:
             raise NavigationError("Current screen is not Daily Tasks")
 
         result = self.finder.find_near_current_screen(spec)
+        if result.status == TaskSearchStatus.DONE_OR_CLAIMABLE and result.weak_match:
+            result = self.finder.scroll_to_task(spec)
         if result.status == TaskSearchStatus.DONE_OR_CLAIMABLE:
             return OpenTaskResult(
                 OpenTaskStatus.SKIPPED_DONE_OR_CLAIMABLE,

@@ -6,7 +6,7 @@ from unittest import TestCase
 import numpy as np
 
 from src.config import TASK_SPECS
-from src.daily_task_finder import DailyTaskFinder, TaskSearchStatus
+from src.daily_task_finder import DailyTaskFinder, TaskSearchResult, TaskSearchStatus
 from src.vision_matcher import MatchResult
 
 
@@ -70,6 +70,28 @@ class FakeMatcher:
             if best is None or result.confidence > best.confidence:
                 best = result
         return best
+
+
+class ScriptedFinder(DailyTaskFinder):
+    def __init__(self, results: list[TaskSearchResult], swipe_results: list[bool] | None = None):
+        self.results = list(results)
+        self.swipe_results = list(swipe_results or [])
+        self.swipes = 0
+        self.reset_calls = 0
+
+    def find_on_current_screen(self, spec):
+        if not self.results:
+            raise AssertionError("No scripted search result left")
+        return self.results.pop(0)
+
+    def _scroll_to_top(self, swipes: int) -> None:
+        self.reset_calls += 1
+
+    def _swipe_until_changed(self, *args, **kwargs) -> bool:
+        self.swipes += 1
+        if self.swipe_results:
+            return self.swipe_results.pop(0)
+        return True
 
 
 def _label_at(y: int) -> MatchResult:
@@ -187,6 +209,7 @@ class DailyTaskFinderTests(TestCase):
         self.assertEqual(result.status, TaskSearchStatus.DONE_OR_CLAIMABLE)
         self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
         self.assertEqual(result.done_match.template_path.name, "completed_button.png")
+        self.assertTrue(result.weak_match)
 
     def test_weak_label_with_claim_button_is_done_or_claimable(self):
         weak = MatchResult(
@@ -207,6 +230,7 @@ class DailyTaskFinderTests(TestCase):
         self.assertEqual(result.status, TaskSearchStatus.DONE_OR_CLAIMABLE)
         self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
         self.assertEqual(result.claim_match.template_path.name, "claim_button.png")
+        self.assertTrue(result.weak_match)
 
     def test_weak_label_with_go_button_is_not_ready(self):
         weak = MatchResult(
@@ -261,3 +285,38 @@ class DailyTaskFinderTests(TestCase):
 
         self.assertEqual(result.status, TaskSearchStatus.READY)
         self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
+
+    def test_scroll_to_task_prefers_ready_after_weak_done_candidate(self):
+        weak_done = TaskSearchResult(
+            TaskSearchStatus.DONE_OR_CLAIMABLE,
+            label_match=_wide_label_at(360),
+            done_match=_done_at(360),
+            weak_match=True,
+            reason="weak task label found with completed button on the same row",
+        )
+        ready = TaskSearchResult(
+            TaskSearchStatus.READY,
+            label_match=_label_at(340),
+            go_match=_go_at(340),
+        )
+        finder = ScriptedFinder([weak_done, ready])
+
+        result = finder.scroll_to_task(TASK_SPECS["time_travel"])
+
+        self.assertEqual(result.status, TaskSearchStatus.READY)
+        self.assertEqual(result.go_match.template_path.name, "go_button.png")
+        self.assertEqual(finder.swipes, 1)
+
+    def test_scroll_to_task_returns_weak_done_only_after_list_bottom(self):
+        weak_done = TaskSearchResult(
+            TaskSearchStatus.DONE_OR_CLAIMABLE,
+            label_match=_wide_label_at(360),
+            done_match=_done_at(360),
+            weak_match=True,
+            reason="weak task label found with completed button on the same row",
+        )
+        finder = ScriptedFinder([weak_done], swipe_results=[False])
+
+        result = finder.scroll_to_task(TASK_SPECS["time_travel"])
+
+        self.assertEqual(result, weak_done)
