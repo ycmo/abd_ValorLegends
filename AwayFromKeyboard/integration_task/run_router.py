@@ -1,23 +1,20 @@
 import sys
 from pathlib import Path
 
-# 加入當下目錄以利載入 router
+# 加入當下目錄與父目錄以利載入模組
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
+parent_dir = current_dir.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 from router import RouteNavigator
 import subprocess
+import task_config
 
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
-
-ROUTE_COMMAND_MAP = {
-    "點金手": ["-m", "src.main", "--debug", "run-task", "midas"],
-    "疾風呼喚": ["call_of_the_gale/scripts/auto_shoot.py"],
-    "看廣告": ["ads2/cli.py", "run"],
-    "每日任務": ["-m", "src.main", "--debug", "run-all"],
-}
 
 def main():
     # 支援從命令列接收引數當作 route_name，預設為「點金手」
@@ -36,8 +33,8 @@ def main():
         print(f"✅ [成功] 路由任務 '{route_name}' 進場導航完畢！準備執行對應指令...")
         
         # 尋找對應指令並執行
-        if route_name in ROUTE_COMMAND_MAP:
-            cmd_args = ROUTE_COMMAND_MAP[route_name]
+        cmd_args = task_config.get_command_for_task(route_name)
+        if cmd_args:
             project_root = current_dir.parent.parent
             python_exe = sys.executable
             

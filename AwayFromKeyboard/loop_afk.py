@@ -32,32 +32,8 @@ def main():
     parser.add_argument("--skip-current", action="store_true", help="略過起始帳號的掛機任務，直接切換到下一個帳號")
     args = parser.parse_args()
 
-    config_path = Path(__file__).parent / "afk_tasks.txt"
-    if not config_path.exists():
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write("# AFK 任務排程設定檔\n"
-                    "# 說明:\n"
-                    "# 1. 程式會「由上往下」依序執行這些任務。您可以自由調換行數。\n"
-                    "# 2. 將等號右邊改為 Y (或 O) 代表執行，改為 N (或 X) 代表跳過。\n\n"
-                    "點金手 = Y\n"
-                    "疾風呼喚 = Y\n"
-                    "看廣告 = N\n"
-                    "每日任務 = N\n")
-        print("📝 [系統] 找不到設定檔，已自動建立預設的 afk_tasks.txt。")
-
-    # 讀取設定檔
-    configured_tasks = []
-    with open(config_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                k, v = line.split("=", 1)
-                k = k.strip()
-                v = v.strip().lower()
-                if v in ['y', 'o', '1', 'true', 'yes']:
-                    configured_tasks.append(k)
+    import task_config
+    configured_tasks = task_config.get_tasks_to_run()
 
     print(f"📌 載入任務設定成功！本次將執行: {', '.join(configured_tasks)}")
 
