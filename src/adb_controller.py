@@ -172,6 +172,23 @@ class DeviceController:
         self._next_tap_debug_lines = list(lines)
         self._next_tap_debug_boxes = list(boxes)
 
+    def save_annotated_debug(
+        self,
+        label: str,
+        image: np.ndarray,
+        *,
+        lines: Sequence[str] = (),
+        boxes: Sequence[Tuple[int, int, int, int, str]] = (),
+    ) -> Optional[Path]:
+        if not self.debug_actions:
+            return None
+        annotated = self._annotate_action_debug_image(
+            image,
+            debug_lines=lines,
+            debug_boxes=boxes,
+        )
+        return self._save_debug_image(label, annotated)
+
     def long_press(self, x: int, y: int, duration_ms: int = 800) -> None:
         self.swipe(x, y, x, y, duration_ms=duration_ms)
 
@@ -297,6 +314,7 @@ class DeviceController:
             "label": (0, 255, 0),
             "label_roi": (255, 0, 255),
             "go": (0, 0, 255),
+            "done_status": (0, 215, 255),
             "tap": (0, 0, 255),
             "roi": (255, 255, 0),
             "status_roi": (0, 165, 255),

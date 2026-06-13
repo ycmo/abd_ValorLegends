@@ -179,7 +179,7 @@ class DailyTaskFinderTests(TestCase):
 
         self.assertEqual(result.status, TaskSearchStatus.DONE_OR_CLAIMABLE)
         self.assertEqual(result.done_match.template_path.name, "completed_button.png")
-        self.assertIn("completed button", result.reason)
+        self.assertIn("done status button", result.reason)
 
     def test_claim_button_on_same_row_is_done_or_claimable(self):
         finder = DailyTaskFinder(FakeController(), FakeMatcher(_label_at(430), go=None, claim=_claim_at(430)))
@@ -188,7 +188,7 @@ class DailyTaskFinderTests(TestCase):
 
         self.assertEqual(result.status, TaskSearchStatus.DONE_OR_CLAIMABLE)
         self.assertEqual(result.claim_match.template_path.name, "claim_button.png")
-        self.assertIn("claim button", result.reason)
+        self.assertIn("done status button", result.reason)
 
     def test_weak_label_with_completed_button_is_done_or_claimable(self):
         weak = MatchResult(
@@ -292,7 +292,7 @@ class DailyTaskFinderTests(TestCase):
             label_match=_wide_label_at(360),
             done_match=_done_at(360),
             weak_match=True,
-            reason="weak task label found with completed button on the same row",
+            reason="weak task label found with done status button on the same row",
         )
         ready = TaskSearchResult(
             TaskSearchStatus.READY,
@@ -313,7 +313,7 @@ class DailyTaskFinderTests(TestCase):
             label_match=_wide_label_at(360),
             done_match=_done_at(360),
             weak_match=True,
-            reason="weak task label found with completed button on the same row",
+            reason="weak task label found with done status button on the same row",
         )
         finder = ScriptedFinder([weak_done], swipe_results=[False])
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -68,6 +68,7 @@ class DailyTaskFinder:
         if label is None:
             done_result = self._find_done_row(screen, spec, label_roi)
             if done_result is not None:
+                self._save_search_debug(screen, spec, label_roi, done_result)
                 return done_result
             return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="task label not visible")
         self.logger.log(
@@ -84,23 +85,17 @@ class DailyTaskFinder:
         if go is not None:
             return TaskSearchResult(TaskSearchStatus.READY, label_match=label, go_match=go)
 
-        claim = self._match_claim_button(screen, go_roi)
-        if claim is not None:
-            return TaskSearchResult(
+        done_status, done_status_kind = self._match_done_status_button(screen, go_roi)
+        if done_status is not None:
+            result = TaskSearchResult(
                 TaskSearchStatus.DONE_OR_CLAIMABLE,
                 label_match=label,
-                claim_match=claim,
-                reason="task label found with claim button on the same row",
+                claim_match=done_status if done_status_kind == "claim" else None,
+                done_match=done_status if done_status_kind == "completed" else None,
+                reason="task label found with done status button on the same row",
             )
-
-        done = self._match_done_button(screen, go_roi)
-        if done is not None:
-            return TaskSearchResult(
-                TaskSearchStatus.DONE_OR_CLAIMABLE,
-                label_match=label,
-                done_match=done,
-                reason="task label found with completed button on the same row",
-            )
+            self._save_search_debug(screen, spec, label_roi, result)
+            return result
 
         if self._row_too_close_to_bottom(screen_height=screen.shape[0], label=label):
             return TaskSearchResult(
@@ -233,37 +228,65 @@ class DailyTaskFinder:
             screen_height=screen.shape[0],
             label=label,
         )
-        claim = self._match_claim_button(screen, status_roi)
-        if claim is not None:
+        done_status, done_status_kind = self._match_done_status_button(screen, status_roi)
+        if done_status is not None:
             self.logger.log(
-                f"daily task claim row matched task={spec.key} "
+                f"daily task done status row matched task={spec.key} "
                 f"template={label.template_path.name} label_confidence={label.confidence:.3f} "
-                f"claim_confidence={claim.confidence:.3f}"
+                f"status_template={done_status.template_path.name} status_confidence={done_status.confidence:.3f}"
             )
             return TaskSearchResult(
                 TaskSearchStatus.DONE_OR_CLAIMABLE,
                 label_match=label,
-                claim_match=claim,
+                claim_match=done_status if done_status_kind == "claim" else None,
+                done_match=done_status if done_status_kind == "completed" else None,
                 weak_match=True,
-                reason="weak task label found with claim button on the same row",
+                reason="weak task label found with done status button on the same row",
             )
 
-        done = self._match_done_button(screen, status_roi)
-        if done is None:
-            return None
+        return None
 
-        self.logger.log(
-            f"daily task done row matched task={spec.key} "
-            f"template={label.template_path.name} label_confidence={label.confidence:.3f} "
-            f"done_confidence={done.confidence:.3f}"
-        )
-        return TaskSearchResult(
-            TaskSearchStatus.DONE_OR_CLAIMABLE,
-            label_match=label,
-            done_match=done,
-            weak_match=True,
-            reason="weak task label found with completed button on the same row",
-        )
+    def _match_done_status_button(self, screen, roi: Roi) -> Tuple[Optional[MatchResult], str]:
+        claim = self._match_claim_button(screen, roi)
+        completed = self._match_done_button(screen, roi)
+        candidates = [
+            (claim, "claim"),
+            (completed, "completed"),
+        ]
+        matches = [(match, kind) for match, kind in candidates if match is not None]
+        if not matches:
+            return None, ""
+        return max(matches, key=lambda item: item[0].confidence)
+
+    def _save_search_debug(self, screen, spec: TaskSpec, label_roi: Roi, result: TaskSearchResult) -> None:
+        save_debug = getattr(self.controller, "save_annotated_debug", None)
+        if save_debug is None:
+            return
+
+        boxes = [(*label_roi, "label_roi")]
+        lines = [
+            f"daily search: {spec.key} {spec.display_name}",
+            f"status={result.status.value} weak={result.weak_match}",
+        ]
+        if result.label_match is not None:
+            label = result.label_match
+            status_roi = self._same_row_right_roi(screen.shape[1], screen.shape[0], label)
+            boxes.append((*label.bbox, "label"))
+            boxes.append((*status_roi, "status_roi"))
+            lines.append(f"label {label.template_path.name} conf={label.confidence:.3f} center={label.center}")
+        if result.go_match is not None:
+            boxes.append((*result.go_match.bbox, "go"))
+            lines.append(f"go conf={result.go_match.confidence:.3f} center={result.go_match.center}")
+        status_match = result.claim_match or result.done_match
+        if status_match is not None:
+            boxes.append((*status_match.bbox, "done_status"))
+            lines.append(
+                f"done_status {status_match.template_path.name} "
+                f"conf={status_match.confidence:.3f} center={status_match.center}"
+            )
+        if result.reason:
+            lines.append(result.reason)
+        save_debug(f"daily_task_{spec.key}_{result.status.value}", screen, lines=lines, boxes=boxes)
 
     def _match_claim_button(self, screen, roi: Roi) -> Optional[MatchResult]:
         path = SHARED_ASSETS_DIR / "claim_button.png"

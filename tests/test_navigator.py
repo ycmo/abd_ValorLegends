@@ -123,7 +123,7 @@ class NavigatorTaskOpenTests(TestCase):
                     bbox=(768, 360, 144, 40),
                 ),
                 weak_match=True,
-                reason="weak task label found with completed button on the same row",
+                reason="weak task label found with done status button on the same row",
             ),
             TaskSearchResult(TaskSearchStatus.READY, go_match=_go_match()),
         )
