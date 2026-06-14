@@ -18,6 +18,7 @@ class MatchResult:
     confidence: float
     center: Tuple[int, int]
     bbox: Roi
+    brightness_ratio: Optional[float] = None
 
     @property
     def x(self) -> int:
@@ -56,9 +57,10 @@ def roi_from_ratio(screen: np.ndarray, ratio: Tuple[float, float, float, float])
 class VisionMatcher:
     """OpenCV template matcher with unicode-path image loading and ROI support."""
 
-    def __init__(self, threshold: float = MATCH_THRESHOLD, debug_dir: Optional[Path] = None):
+    def __init__(self, threshold: float = MATCH_THRESHOLD, debug_dir: Optional[Path] = None, debug_mode: bool = False):
         self.threshold = threshold
         self.debug_dir = debug_dir
+        self.debug_mode = debug_mode
 
     def match_template(
         self,
@@ -67,35 +69,17 @@ class VisionMatcher:
         threshold: Optional[float] = None,
         roi: Optional[Roi] = None,
         check_brightness: bool = True,
+        debug_mode: bool = False,
     ) -> Optional[MatchResult]:
-        if not template_path.exists():
+        prepared = self._prepare_match(screen, template_path, roi)
+        if prepared is None:
             return None
-
-        template_raw = read_image(template_path, cv2.IMREAD_UNCHANGED)
-        template, mask = self._split_template_and_mask(template_raw)
-        haystack, offset = self._crop(screen, roi)
-
+        template, mask, haystack, offset, result = prepared
         th, tw = template.shape[:2]
-        hh, hw = haystack.shape[:2]
-        if th > hh or tw > hw:
-            return None
 
-        # 檢查模板是否為「純色」或「全透明」(變異數為 0)
-        # OpenCV 的 TM_CCOEFF_NORMED 遇到純色模板時，會因為除以零而錯誤地回傳 1.0
-        if mask is not None:
-            valid_pixels = template[mask > 0]
-        else:
-            valid_pixels = template.reshape(-1, template.shape[-1])
-            
-        if len(valid_pixels) == 0 or np.all(valid_pixels.min(axis=0) == valid_pixels.max(axis=0)):
-            print(f"⚠️ [警告] 模板 '{template_path.name}' 為純色或全透明，已被系統忽略 (避免 1.0 誤判)")
-            return None
-
-        if mask is not None:
-            result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED, mask=mask)
-            result = np.nan_to_num(result, nan=-1.0, posinf=-1.0, neginf=-1.0)
-        else:
-            result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED)
+        if debug_mode or self.debug_mode:
+            _, max_val, _, _ = cv2.minMaxLoc(result)
+            print(f"  [Debug-Matcher] 尋找 '{template_path.name}' 最高信心度: {max_val:.4f}")
 
         min_score = self.threshold if threshold is None else threshold
         
@@ -110,28 +94,22 @@ class VisionMatcher:
         
         best_pt = None
         best_conf = 0.0
+        best_brightness_ratio: Optional[float] = None
         
         for pt in points:
             rx, ry = pt
             conf = float(result[ry, rx])
             matched_roi = haystack[ry:ry+th, rx:rx+tw]
             
-            if mask is not None:
-                t_mean = cv2.mean(template, mask=mask)[:3]
-                r_mean = cv2.mean(matched_roi, mask=mask)[:3]
-            else:
-                t_mean = cv2.mean(template)[:3]
-                r_mean = cv2.mean(matched_roi)[:3]
-                
-            t_bright = sum(t_mean)
-            r_bright = sum(r_mean)
+            brightness_ratio = self._brightness_ratio(template, matched_roi, mask)
             
             # 亮度檢查：如果畫面上的按鈕亮度低於模板的 75%，代表它是「反灰/已失效」的按鈕，忽略它！
-            if check_brightness and t_bright > 10 and (r_bright / t_bright) < 0.75:
+            if check_brightness and brightness_ratio is not None and brightness_ratio < 0.75:
                 continue
                 
             best_pt = pt
             best_conf = conf
+            best_brightness_ratio = brightness_ratio
             break
             
         if best_pt is None:
@@ -147,6 +125,32 @@ class VisionMatcher:
             confidence=confidence,
             center=(x + tw // 2, y + th // 2),
             bbox=(x, y, tw, th),
+            brightness_ratio=best_brightness_ratio,
+        )
+
+    def best_template_match(
+        self,
+        screen: np.ndarray,
+        template_path: Path,
+        roi: Optional[Roi] = None,
+    ) -> Optional[MatchResult]:
+        prepared = self._prepare_match(screen, template_path, roi)
+        if prepared is None:
+            return None
+        template, _mask, _haystack, offset, result = prepared
+        _min_val, max_val, _min_loc, max_loc = cv2.minMaxLoc(result)
+        th, tw = template.shape[:2]
+        rx, ry = max_loc
+        matched_roi = _haystack[ry:ry + th, rx:rx + tw]
+        brightness_ratio = self._brightness_ratio(template, matched_roi, _mask)
+        x = int(max_loc[0] + offset[0])
+        y = int(max_loc[1] + offset[1])
+        return MatchResult(
+            template_path=template_path,
+            confidence=float(max_val),
+            center=(x + tw // 2, y + th // 2),
+            bbox=(x, y, tw, th),
+            brightness_ratio=brightness_ratio,
         )
 
     def match_any(
@@ -252,3 +256,53 @@ class VisionMatcher:
         x2 = min(width, x1 + max(0, int(w)))
         y2 = min(height, y1 + max(0, int(h)))
         return screen[y1:y2, x1:x2], (x1, y1)
+
+    def _prepare_match(
+        self,
+        screen: np.ndarray,
+        template_path: Path,
+        roi: Optional[Roi],
+    ):
+        if not template_path.exists():
+            return None
+
+        template_raw = read_image(template_path, cv2.IMREAD_UNCHANGED)
+        template, mask = self._split_template_and_mask(template_raw)
+        haystack, offset = self._crop(screen, roi)
+
+        th, tw = template.shape[:2]
+        hh, hw = haystack.shape[:2]
+        if th > hh or tw > hw:
+            return None
+
+        if mask is not None:
+            valid_pixels = template[mask > 0]
+        else:
+            valid_pixels = template.reshape(-1, template.shape[-1])
+
+        if len(valid_pixels) == 0 or np.all(valid_pixels.min(axis=0) == valid_pixels.max(axis=0)):
+            print(f"⚠️ [警告] 模板 '{template_path.name}' 為純色或全透明，已被系統忽略 (避免 1.0 誤判)")
+            return None
+
+        if mask is not None:
+            result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED, mask=mask)
+            result = np.nan_to_num(result, nan=-1.0, posinf=-1.0, neginf=-1.0)
+        else:
+            result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED)
+
+        return template, mask, haystack, offset, result
+
+    @staticmethod
+    def _brightness_ratio(template: np.ndarray, matched_roi: np.ndarray, mask: Optional[np.ndarray]) -> Optional[float]:
+        if mask is not None:
+            t_mean = cv2.mean(template, mask=mask)[:3]
+            r_mean = cv2.mean(matched_roi, mask=mask)[:3]
+        else:
+            t_mean = cv2.mean(template)[:3]
+            r_mean = cv2.mean(matched_roi)[:3]
+
+        t_bright = sum(t_mean)
+        r_bright = sum(r_mean)
+        if t_bright <= 10:
+            return None
+        return float(r_bright / t_bright)

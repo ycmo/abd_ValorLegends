@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import SHARED_ASSETS_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
 from src.task_runner import BaseTask, TaskSceneAnchor, TaskRunResult, TaskState
 from src.vision_matcher import MatchResult, Roi
@@ -27,6 +27,9 @@ class MidasTask(BaseTask):
     GEM_50_BUTTON_ROI: Roi = (580, 410, 190, 75)
     CLOSE_BUTTON_ROI: Roi = (735, 45, 80, 70)
     REWARD_TITLE_ROI: Roi = (330, 100, 300, 100)
+    BUSY_OVERLAY_ROI: Roi = (400, 180, 180, 180)
+    BUSY_OVERLAY_THRESHOLD = 0.86
+    BUSY_WAIT_MAX_SECONDS = 90.0
     ACTIVE_BUTTON_THRESHOLD = 0.92
     MAX_ALLOWED_TAPS = 12
     task_scene_anchors = (
@@ -164,9 +167,15 @@ class MidasTask(BaseTask):
         threshold: float = 0.82,
         timeout_seconds: float = 3.0,
     ) -> MatchResult:
-        match = self._match_task_asset(asset_name, roi=roi, threshold=threshold, timeout_seconds=timeout_seconds)
+        match, best = self._match_task_asset_with_best(
+            asset_name,
+            roi=roi,
+            threshold=threshold,
+            timeout_seconds=timeout_seconds,
+        )
         if match is None:
-            raise TaskFailedError(f"Midas expected screen element not found: {label}")
+            detail = self._format_best_match_detail(asset_name, threshold, roi, best)
+            raise TaskFailedError(f"Midas expected screen element not found: {label}; {detail}")
         return match
 
     def _match_task_asset(
@@ -177,12 +186,85 @@ class MidasTask(BaseTask):
         threshold: float = 0.82,
         timeout_seconds: float = 3.0,
     ) -> Optional[MatchResult]:
+        match, _best = self._match_task_asset_with_best(
+            asset_name,
+            roi=roi,
+            threshold=threshold,
+            timeout_seconds=timeout_seconds,
+        )
+        return match
+
+    def _match_task_asset_with_best(
+        self,
+        asset_name: str,
+        *,
+        roi: Optional[Roi] = None,
+        threshold: float = 0.82,
+        timeout_seconds: float = 3.0,
+    ) -> tuple[Optional[MatchResult], Optional[MatchResult]]:
         path = self.asset_path(asset_name)
         deadline = time.time() + timeout_seconds
+        best: Optional[MatchResult] = None
+        busy_waited = 0.0
+        busy_logged = False
         while time.time() <= deadline:
             screen = self.context.controller.screenshot()
+            if self._is_busy_overlay(screen):
+                if not busy_logged:
+                    self._log(f"Midas busy overlay detected while waiting for {asset_name}; waiting")
+                    busy_logged = True
+                wait_seconds = 1.5
+                time.sleep(wait_seconds)
+                if busy_waited < self.BUSY_WAIT_MAX_SECONDS:
+                    deadline += wait_seconds
+                    busy_waited += wait_seconds
+                continue
+            if busy_logged:
+                self._log(f"Midas busy overlay cleared after {busy_waited:.1f}s")
+                busy_logged = False
+
             match = self.context.matcher.match_template(screen, path, threshold=threshold, roi=roi)
             if match is not None:
-                return match
+                return match, best
+            probe = self.context.matcher.best_template_match(screen, path, roi=roi)
+            if probe is not None and (best is None or probe.confidence > best.confidence):
+                best = probe
             time.sleep(0.35)
-        return None
+        return None, best
+
+    def _is_busy_overlay(self, screen) -> bool:
+        path = SHARED_ASSETS_DIR / "busy_waiting_overlay.png"
+        if not path.exists():
+            return False
+        return self.context.matcher.match_template(
+            screen,
+            path,
+            threshold=self.BUSY_OVERLAY_THRESHOLD,
+            roi=self.BUSY_OVERLAY_ROI,
+            check_brightness=False,
+        ) is not None
+
+    def _log(self, message: str) -> None:
+        logger = getattr(self.context, "logger", None)
+        if logger is not None:
+            logger.log(message, force=True)
+
+    @staticmethod
+    def _format_best_match_detail(
+        asset_name: str,
+        threshold: float,
+        roi: Optional[Roi],
+        best: Optional[MatchResult],
+    ) -> str:
+        roi_text = "full screen" if roi is None else f"roi={roi}"
+        if best is None:
+            return f"template={asset_name} best_confidence=None threshold={threshold:.3f} {roi_text}"
+        brightness = (
+            " brightness_ratio=None"
+            if best.brightness_ratio is None
+            else f" brightness_ratio={best.brightness_ratio:.3f}"
+        )
+        return (
+            f"template={asset_name} best_confidence={best.confidence:.3f} "
+            f"threshold={threshold:.3f}{brightness} center={best.center} bbox={best.bbox} {roi_text}"
+        )

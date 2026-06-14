@@ -1,8 +1,10 @@
 import unittest
 from types import SimpleNamespace
 
+from src.exceptions import TaskFailedError
 from src.tasks.midas import MidasTask
 from src.task_runner import TaskState
+from src.vision_matcher import MatchResult
 
 
 class FakeMatch:
@@ -35,6 +37,34 @@ class FakeMidasTask(MidasTask):
         return FakeMatch() if asset_name in self.active_assets else None
 
 
+class FakeMatcher:
+    def match_template(self, *args, **kwargs):
+        return None
+
+    def best_template_match(self, screen, path, roi=None):
+        return MatchResult(
+            template_path=path,
+            confidence=0.42,
+            center=(111, 222),
+            bbox=(100, 210, 22, 24),
+            brightness_ratio=0.31,
+        )
+
+
+class FakeScreenshotController(FakeController):
+    def screenshot(self):
+        return object()
+
+
+class DiagnosticMidasTask(MidasTask):
+    def __init__(self):
+        self.context = SimpleNamespace(
+            controller=FakeScreenshotController(),
+            matcher=FakeMatcher(),
+            navigator=FakeNavigator(),
+        )
+
+
 class MidasSafetyTests(unittest.TestCase):
     def test_tap_if_active_does_not_tap_missing_button(self):
         task = FakeMidasTask(active_assets=())
@@ -61,6 +91,25 @@ class MidasSafetyTests(unittest.TestCase):
         self.assertEqual(result.state, TaskState.COMPLETED)
         self.assertEqual(result.message, "Midas taps: free")
         self.assertEqual(task.context.navigator.return_calls, 0)
+
+    def test_require_task_asset_reports_best_confidence_on_failure(self):
+        task = DiagnosticMidasTask()
+
+        with self.assertRaises(TaskFailedError) as caught:
+            task._require_task_asset(
+                "Midas dialog",
+                "midas_title.png",
+                roi=task.TITLE_ROI,
+                threshold=0.86,
+                timeout_seconds=0.01,
+            )
+
+        message = str(caught.exception)
+        self.assertIn("best_confidence=0.420", message)
+        self.assertIn("threshold=0.860", message)
+        self.assertIn("brightness_ratio=0.310", message)
+        self.assertIn("roi=(360, 45, 250, 70)", message)
+        self.assertIn("center=(111, 222)", message)
 
 
 if __name__ == "__main__":
