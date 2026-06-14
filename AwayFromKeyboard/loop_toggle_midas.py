@@ -39,28 +39,53 @@ def run_route(route_name: str, router_script: Path, recovery: UIRecovery):
         
     print("🔍 路由任務結束，交由 UIRecovery 強制驗證主城狀態...")
     if not recovery.recover_to_main():
-        print("❌ [錯誤] UIRecovery 驗證失敗，無法確認主城狀態！")
-        print("⚠️ [Fail-Fast] 狀態未知，立刻終止程式！")
-        sys.exit(1)
+        print("⚠️ [系統] 畫面卡死或無法自動回到主城。啟動浴火重生(強制重啟)機制...")
+        try:
+            # 1. 強制關閉遊戲
+            recovery.controller.shell("am force-stop com.ageofeternity.global")
+            time.sleep(3)
+            # 2. 重新啟動遊戲
+            recovery.controller.shell("monkey -p com.ageofeternity.global -c android.intent.category.LAUNCHER 1")
+            print("⏳ 遊戲已重啟，等待載入...")
+            time.sleep(10) # 給予初始載入時間
+            
+            # 3. 呼叫封裝好的登入重入機制
+            from src.game_entry import reenter_game
+            if reenter_game(recovery.controller, recovery.matcher):
+                print("✅ 強制重啟並登入成功，已安全重返主城，繼續掛機流程！")
+            else:
+                print("❌ [錯誤] 重啟後仍無法成功進入主城，徹底終止程式。")
+                sys.exit(1)
+        except Exception as e:
+            print(f"❌ [錯誤] 執行強制重啟時發生異常: {e}")
+            sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="AwayFromKeyboard 雙帳號定時切換掛機腳本 (點金手專用版)")
     parser.add_argument("--interval", type=str, default="08:00:00", help="休眠倒數時間 (hh:mm:ss)，預設 08:00:00")
-    parser.add_argument("--toggles", type=int, default=2, help="每次大循環要執行的帳號數量與切換次數，預設 2")
+    parser.add_argument("--toggles", type=int, default=1, help="執行幾輪 (Rounds)。預設 1 輪")
+    parser.add_argument("--all", action="store_true", help="切換全部 4 個帳號 (使用 next 模式)")
+    parser.add_argument("--delay", type=str, default=None, help="首次啟動前的延遲等待時間 (hh:mm:ss)")
     args = parser.parse_args()
 
     try:
         interval_seconds = parse_interval_to_seconds(args.interval)
+        delay_seconds = parse_interval_to_seconds(args.delay) if args.delay else 0
     except ValueError as e:
         print(f"❌ [錯誤] {e}")
         sys.exit(1)
+        
+    accounts_per_round = 4 if args.all else 2
+    switch_cmd = "next" if args.all else "toggle"
+    total_runs = accounts_per_round * args.toggles
         
     router_script = current_dir / "integration_task" / "run_router.py"
 
     print("==================================================")
     print(f"🔄 開始執行定時雙帳號掛機 (Loop Toggle Midas)")
     print(f"⏱️ 設定休眠區間: {args.interval} ({int(interval_seconds)} 秒)")
-    print(f"🔄 循環帳號數量: {args.toggles} 次")
+    print(f"🔄 執行輪數: {args.toggles} 輪，單輪帳號數: {accounts_per_round}")
+    print(f"🔄 總執行次數: {total_runs} 次")
     print("==================================================")
 
     try:
@@ -76,31 +101,42 @@ def main():
         sys.exit(1)
 
     try:
+        if args.delay:
+            wake_time = datetime.now() + timedelta(seconds=delay_seconds)
+            print(f"\n⏳ [延遲啟動] 接收到 --delay 指令，將先進行首次休眠: {args.delay} ({int(delay_seconds)} 秒)")
+            print(f"⏰ 預計首次喚醒時間 (Local Time): {wake_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            time.sleep(delay_seconds)
+            
         while True:
-            for i in range(args.toggles):
-                print(f"\n▶️ === 開始處理第 {i+1}/{args.toggles} 個帳號 ===")
+            print("\n🌅 系統喚醒，執行一次性特殊檢查...")
+            if recovery.handle_remote_login():
+                print("✅ 異地登入狀態已排除，準備載入遊戲大廳。")
+                recovery.recover_to_main(max_attempts=20) # 排除後需確保回到大廳
                 
-                # a. 防呆路由：異地登入 (暫時忽略)
-                # run_route("異地登入", router_script)
-                
-                # b. 主要任務：點金手
+            print(f"🔄 本次大循環將執行 {args.toggles} 輪，每輪 {accounts_per_round} 個帳號，總計 {total_runs} 次任務。")
+            
+            for i in range(total_runs):
+                if i == 0:
+                    print("\n▶️ === 本輪首發任務 (當前帳號) ===")
+                else:
+                    print(f"\n▶️ === 執行第 {i}/{total_runs-1} 次切換 ({switch_cmd}) ===")
+                    print("[ToggleLoop] 執行帳號切換...")
+                    print("\n" + "=" * 60)
+                    print("🛠️ [Debug] 若腳本卡住，可手動在終端機貼上以下指令重新測試帳號切換：")
+                    print(f">>> {sys.executable} -m switch_account.switch_account {switch_cmd}")
+                    print("=" * 60 + "\n")
+                    try:
+                        switch_account(switch_cmd)
+                    except Exception as e:
+                        print(f"⚠️ [警告] 切換帳號發生錯誤: {e}")
+                        
+                # 針對當前畫面上的帳號執行任務
                 run_route("點金手", router_script, recovery)
-                
-                # c. 切換帳號
-                print("\n[ToggleLoop] 執行帳號切換 (toggle)...")
-                print("\n" + "=" * 60)
-                print("🛠️ [Debug] 若腳本卡住，可手動在終端機貼上以下指令重新測試帳號切換：")
-                print(f">>> {sys.executable} -m switch_account.switch_account toggle")
-                print("=" * 60 + "\n")
-                try:
-                    switch_account("toggle")
-                except Exception as e:
-                    print(f"⚠️ [警告] 切換帳號時發生錯誤: {e}，仍會繼續流程。")
             
             # 執行完畢
             print("\n" + "=" * 50)
             next_time = datetime.now() + timedelta(seconds=interval_seconds)
-            print(f"✅ 本輪 {args.toggles} 次帳號任務執行完畢！")
+            print(f"✅ 本輪 {args.toggles} 輪 ({total_runs} 次) 帳號任務執行完畢！")
             print(f"💤 進入休眠模式，將休息 {args.interval} ({int(interval_seconds)} 秒)")
             print(f"⏰ 預計下次喚醒時間 (Local Time): {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
             print("=" * 50 + "\n")

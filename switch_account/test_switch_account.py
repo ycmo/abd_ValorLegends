@@ -102,7 +102,7 @@ class TestSwitchAccount(unittest.TestCase):
         except RuntimeError:
             pass
             
-        mock_print.assert_any_call("🔄 觸發 Toggle 模式：決定目標帳號為 'em3'")
+        mock_print.assert_any_call("🔄 觸發 toggle 模式：動態推導目標帳號為 'em3'")
         mock_print.assert_any_call("⚡ 觸發超級捷徑：目前為 Google 帳號，目標也是 Google 帳號，跳過完整登出流程！")
         mock_print.assert_any_call("👉 點擊左側「伺服器」分頁...")
         
@@ -138,7 +138,7 @@ class TestSwitchAccount(unittest.TestCase):
         except RuntimeError:
             pass
             
-        mock_print.assert_any_call("🔄 觸發 Toggle 模式：決定目標帳號為 'tiger'")
+        mock_print.assert_any_call("🔄 觸發 toggle 模式：動態推導目標帳號為 'tiger'")
 
     @patch("switch_account.DeviceController")
     @patch("switch_account.VisionMatcher")
@@ -159,7 +159,7 @@ class TestSwitchAccount(unittest.TestCase):
         result = switch_account.switch_account("toggle")
         
         self.assertFalse(result)
-        mock_print.assert_any_call("錯誤：無法辨識當前帳號，無法執行 Toggle 模式！")
+        mock_print.assert_any_call("錯誤：無法解析 toggle 模式下的目標帳號！(可能無法辨識當前畫面)")
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

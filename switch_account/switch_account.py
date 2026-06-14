@@ -28,6 +28,8 @@ def load_accounts():
 
 ACCOUNTS = load_accounts()
 
+TOGGLE_MAP = {"311": "em3", "em3": "311", "14": "tiger", "tiger": "14"}
+
 SERVER_BTN_TIMEOUT_SEC = 60
 MAX_GAME_ENTRY_ATTEMPTS = 30
 
@@ -300,18 +302,18 @@ def detect_current_account(controller: DeviceController, matcher: VisionMatcher)
         print("⚠️ 5 次嘗試後仍無法辨識當前帳號，預設使用常規流程。")
     return current_acc_name
 
-def resolve_toggle_target(current_acc_name: str) -> str:
-    if current_acc_name == "311":
-        return "em3"
-    elif current_acc_name == "em3":
-        return "311"
-    elif current_acc_name == "14":
-        return "tiger"
-    elif current_acc_name == "tiger":
-        return "14"
-    else:
-        print("錯誤：無法辨識當前帳號，無法執行 Toggle 模式！")
+def resolve_next_target(current_acc_name: str) -> str:
+    if not current_acc_name:
         return None
+    acc_list = list(ACCOUNTS.keys())
+    if current_acc_name not in acc_list:
+        return None
+    current_idx = acc_list.index(current_acc_name)
+    next_idx = (current_idx + 1) % len(acc_list)
+    return acc_list[next_idx]
+
+def resolve_toggle_target(current_acc_name: str) -> str:
+    return TOGGLE_MAP.get(current_acc_name)
 
 def login_with_google(controller: DeviceController, matcher: VisionMatcher):
     print("步驟 2/4: 選擇 Google 登入")
@@ -388,9 +390,23 @@ def wait_for_game_entry(controller: DeviceController, matcher: VisionMatcher) ->
         t_006 = TEMPLATES_DIR / "006_登入畫面使用者條款_0.png"
         res_006 = matcher.match_template(screen, t_006, threshold=0.8, debug_mode=True)
         if res_006:
-            print(f"👉 偵測到使用者條款 (確認在登入主畫面)，盲點進入遊戲座標 {COORDS['enter_game']} 並等待 10 秒...")
-            controller.tap(*COORDS["enter_game"])
-            time.sleep(10)
+            print(f"👉 偵測到使用者條款 (確認在登入主畫面)，盲點進入遊戲座標 {COORDS['enter_game']}...")
+
+            # 加入長時連打迴圈：確認點擊生效，給予充足時間直到條款畫面消失
+            max_taps = 6
+            for tap_idx in range(max_taps):
+                controller.tap(*COORDS["enter_game"])
+                # 放長等待時間至 10 秒，應付遊戲真實的載入延遲
+                time.sleep(10)
+
+                check_screen = controller.screenshot()
+                # 稍微放寬 threshold 至 0.75，避免動畫干擾導致誤判為消失
+                if not matcher.match_template(check_screen, t_006, threshold=0.75):
+                    print("✅ 畫面已成功跳轉 (使用者條款消失)！")
+                    break
+                print(f"⚠️ 依舊偵測到使用者條款，再次點擊... ({tap_idx+1}/{max_taps})")
+
+            # 結束微迴圈後，直接 continue 交由外層大迴圈繼續偵測掛機寶箱
             continue
             
         # 3. 兩者都沒找到 (轉場動畫、黑屏、載入中)，純等待
@@ -412,12 +428,14 @@ def wait_for_game_entry(controller: DeviceController, matcher: VisionMatcher) ->
     return True
 
 def switch_account(account_name: str, debug_mode: bool = False) -> bool:
-    if account_name != "toggle" and account_name not in ACCOUNTS:
-        print(f"錯誤：找不到帳號 '{account_name}'。支援的帳號有：{', '.join(list(ACCOUNTS.keys()) + ['toggle'])}")
-        return False
+    MACRO_RESOLVERS = {
+        "toggle": resolve_toggle_target,
+        "next": resolve_next_target,
+    }
 
-    if account_name != "toggle":
-        account_info = ACCOUNTS[account_name]
+    if account_name not in MACRO_RESOLVERS and account_name not in ACCOUNTS:
+        print(f"錯誤：找不到帳號 '{account_name}'。支援的帳號有：{', '.join(list(ACCOUNTS.keys()) + list(MACRO_RESOLVERS.keys()))}")
+        return False
     
     # 自動偵測已連線的 ADB 設備
     devices = DeviceController.list_devices()
@@ -437,15 +455,13 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
 
     current_acc_name = detect_current_account(controller, matcher)
         
-    if account_name == "toggle":
-        target = resolve_toggle_target(current_acc_name)
+    if account_name in MACRO_RESOLVERS:
+        target = MACRO_RESOLVERS[account_name](current_acc_name)
         if not target:
+            print(f"錯誤：無法解析 {account_name} 模式下的目標帳號！(可能無法辨識當前畫面)")
             return False
+        print(f"🔄 觸發 {account_name} 模式：動態推導目標帳號為 '{target}'")
         account_name = target
-        print(f"🔄 觸發 Toggle 模式：決定目標帳號為 '{account_name}'")
-        if account_name not in ACCOUNTS:
-            print(f"錯誤：Toggle 目標帳號 '{account_name}' 不存在於設定檔！")
-            return False
             
     # 這裡才重新載入真正要切換的帳號資訊
     account_info = ACCOUNTS[account_name]
@@ -490,7 +506,7 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="切換遊戲帳號的小工具")
-    parser.add_argument("account", choices=list(ACCOUNTS.keys()) + ["toggle"], help="要切換的帳號 (google, 14, tiger, toggle)")
+    parser.add_argument("account", choices=list(ACCOUNTS.keys()) + ["toggle", "next"], help="要切換的帳號 (對應設定檔名稱, toggle, 或 next)")
     parser.add_argument("--debug", action="store_true", help="開啟 Debug 模式")
     args = parser.parse_args()
 

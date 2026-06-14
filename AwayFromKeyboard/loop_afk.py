@@ -94,9 +94,26 @@ def main():
                         
                 print("🔍 子任務結束，交由 UIRecovery 強制驗證主城狀態...")
                 if not recovery.recover_to_main():
-                    print("❌ [錯誤] UIRecovery 回傳失敗！無法確認是否安全回到主城。")
-                    print("⚠️ [Fail-Fast] 狀態未知，立刻終止整支程式以保留現場。")
-                    sys.exit(1)
+                    print("⚠️ [系統] 畫面卡死或無法自動回到主城。啟動浴火重生(強制重啟)機制...")
+                    try:
+                        # 1. 強制關閉遊戲
+                        recovery.controller.shell("am force-stop com.ageofeternity.global")
+                        time.sleep(3)
+                        # 2. 重新啟動遊戲
+                        recovery.controller.shell("monkey -p com.ageofeternity.global -c android.intent.category.LAUNCHER 1")
+                        print("⏳ 遊戲已重啟，等待載入...")
+                        time.sleep(10) # 給予初始載入時間
+                        
+                        # 3. 呼叫封裝好的登入重入機制
+                        from src.game_entry import reenter_game
+                        if reenter_game(recovery.controller, recovery.matcher):
+                            print("✅ 強制重啟並登入成功，已安全重返主城，繼續掛機流程！")
+                        else:
+                            print("❌ [錯誤] 重啟後仍無法成功進入主城，徹底終止程式。")
+                            sys.exit(1)
+                    except Exception as e:
+                        print(f"❌ [錯誤] 執行強制重啟時發生異常: {e}")
+                        sys.exit(1)
                 
             # 2. 任務完成後，決定下一個要切換的帳號
             if idx < len(accounts_to_run) - 1:
