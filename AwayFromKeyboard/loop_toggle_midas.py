@@ -15,6 +15,10 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from switch_account.switch_account import switch_account
+from src.adb_controller import DeviceController
+from src.vision_matcher import VisionMatcher
+from src.scene_detector import SceneDetector
+from AwayFromKeyboard.ui_recovery import UIRecovery
 
 def parse_interval_to_seconds(interval_str: str) -> float:
     parts = interval_str.split(':')
@@ -23,7 +27,7 @@ def parse_interval_to_seconds(interval_str: str) -> float:
     h, m, s = [float(p) for p in parts]
     return h * 3600 + m * 60 + s
 
-def run_route(route_name: str, router_script: Path):
+def run_route(route_name: str, router_script: Path, recovery: UIRecovery):
     print(f"\n[ToggleLoop] 準備呼叫路由任務: {route_name}")
     cmd = [sys.executable, str(router_script), route_name]
     try:
@@ -32,6 +36,12 @@ def run_route(route_name: str, router_script: Path):
             print(f"⚠️ [警告] 路由 '{route_name}' 回傳了錯誤碼 (returncode={result.returncode})，將靜默略過並繼續流程。")
     except Exception as e:
         print(f"⚠️ [警告] 執行路由 '{route_name}' 時發生崩潰: {e}")
+        
+    print("🔍 路由任務結束，交由 UIRecovery 強制驗證主城狀態...")
+    if not recovery.recover_to_main():
+        print("❌ [錯誤] UIRecovery 驗證失敗，無法確認主城狀態！")
+        print("⚠️ [Fail-Fast] 狀態未知，立刻終止程式！")
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="AwayFromKeyboard 雙帳號定時切換掛機腳本 (點金手專用版)")
@@ -54,18 +64,34 @@ def main():
     print("==================================================")
 
     try:
+        controller = DeviceController()
+        if not controller.connect():
+             print("❌ 無法連線至 ADB 裝置")
+             sys.exit(1)
+        matcher = VisionMatcher()
+        detector = SceneDetector(matcher)
+        recovery = UIRecovery(controller, matcher, detector)
+    except Exception as e:
+        print(f"❌ 初始化 UIRecovery 失敗: {e}")
+        sys.exit(1)
+
+    try:
         while True:
             for i in range(args.toggles):
                 print(f"\n▶️ === 開始處理第 {i+1}/{args.toggles} 個帳號 ===")
                 
-                # a. 防呆路由：異地登入
-                run_route("異地登入", router_script)
+                # a. 防呆路由：異地登入 (暫時忽略)
+                # run_route("異地登入", router_script)
                 
                 # b. 主要任務：點金手
-                run_route("點金手", router_script)
+                run_route("點金手", router_script, recovery)
                 
                 # c. 切換帳號
                 print("\n[ToggleLoop] 執行帳號切換 (toggle)...")
+                print("\n" + "=" * 60)
+                print("🛠️ [Debug] 若腳本卡住，可手動在終端機貼上以下指令重新測試帳號切換：")
+                print(f">>> {sys.executable} -m switch_account.switch_account toggle")
+                print("=" * 60 + "\n")
                 try:
                     switch_account("toggle")
                 except Exception as e:

@@ -329,3 +329,5 @@ class RouteNavigator:
                         im_buf_arr.tofile(str(debug_img_path))
                 
                 raise ValueError(f"比對失敗！步驟群組 {prefix} 找不到目標 (最高信心度 {best_overall_val:.2f} < {best_overall_threshold})。\n已將偵錯畫面存至: {debug_img_path}")
+
+

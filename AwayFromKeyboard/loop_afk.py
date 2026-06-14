@@ -11,6 +11,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from switch_account.switch_account import switch_account, ACCOUNTS
+from src.adb_controller import DeviceController
+from src.vision_matcher import VisionMatcher
+from src.scene_detector import SceneDetector
+from AwayFromKeyboard.ui_recovery import UIRecovery
 
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
@@ -50,6 +54,18 @@ def main():
     python_exe = sys.executable
     run_router_script = Path(__file__).parent / "integration_task" / "run_router.py"
 
+    try:
+        controller = DeviceController()
+        if not controller.connect():
+             print("❌ 無法連線至 ADB 裝置")
+             sys.exit(1)
+        matcher = VisionMatcher()
+        detector = SceneDetector(matcher)
+        recovery = UIRecovery(controller, matcher, detector)
+    except Exception as e:
+        print(f"❌ 初始化 UIRecovery 失敗: {e}")
+        sys.exit(1)
+
     for idx, account in enumerate(accounts_to_run):
         print("\n" + "="*50)
         print(f"🚀 開始執行 ({idx+1}/{len(accounts_to_run)}): 帳號 【{account}】 任務")
@@ -75,6 +91,12 @@ def main():
                         sys.exit(1)
                     else:
                         print(f"✅ 帳號 【{account}】 的任務 【{task_name}】 順利完成！")
+                        
+                print("🔍 子任務結束，交由 UIRecovery 強制驗證主城狀態...")
+                if not recovery.recover_to_main():
+                    print("❌ [錯誤] UIRecovery 回傳失敗！無法確認是否安全回到主城。")
+                    print("⚠️ [Fail-Fast] 狀態未知，立刻終止整支程式以保留現場。")
+                    sys.exit(1)
                 
             # 2. 任務完成後，決定下一個要切換的帳號
             if idx < len(accounts_to_run) - 1:
@@ -83,14 +105,13 @@ def main():
                 next_account = accounts_to_run[0]
                 print("\n🏁 已到達最後一個帳號，準備切換回初始帳號，完成大循環復原。")
                 
-            print(f"\n⏳ 準備切換至帳號 【{next_account}】，緩衝休息 3 秒...")
-            time.sleep(3)
+            print(f"\n⏳ 準備切換至帳號 【{next_account}】...")
             
             # 3. 執行帳號切換
-            switch_cmd = [python_exe, str(PROJECT_ROOT / "switch_account" / "switch_account.py"), next_account]
+            switch_cmd = [python_exe, "-m", "switch_account.switch_account", next_account]
             print(f"🔄 開始切換至帳號 【{next_account}】...")
             print("-" * 50)
-            print("🛠️ [Debug] 若切換帳號卡住，可複製以下指令單獨測試：")
+            print("🛠️ [Debug] 若切換帳號卡住，可手動在終端機貼上以下指令重新測試帳號切換：")
             print(f">>> {' '.join(switch_cmd)}")
             print("-" * 50 + "\n")
             

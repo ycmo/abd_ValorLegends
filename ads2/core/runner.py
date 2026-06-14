@@ -17,6 +17,7 @@ if _PROJECT_ROOT not in sys.path:
 import src.vision_matcher as vm
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
+from src.paint_cropper import find_blue_boxes, crop_inside_blue_box
 
 class AppRecoveryNeeded(Exception):
     def __init__(self, reason, screen=None):
@@ -44,71 +45,8 @@ def cached_read_image(path, flags=cv2.IMREAD_UNCHANGED):
 vm.read_image = cached_read_image
 # ----------------------------------------------------------------
 
-def crop_red_box_single_image(img_path: Path):
-    """專屬於自癒系統的單檔裁切工具 - 輪廓定位 + 極限去紅邊版"""
-    data = np.fromfile(str(img_path), dtype=np.uint8)
-    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    if img is None: return None
-    
-    # 使用 HSV 來精準捕捉小畫家的紅色
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    mask1 = cv2.inRange(hsv, np.array([0, 150, 150]), np.array([10, 255, 255]))
-    mask2 = cv2.inRange(hsv, np.array([170, 150, 150]), np.array([180, 255, 255]))
-    mask = mask1 | mask2
-    
-    # 找出所有輪廓（只找外輪廓）
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours: return None
-    
-    # 找出面積最大的合理輪廓（過濾掉遊戲本身微小的紅點）
-    best_roi = None
-    max_area = 0
-    h, w = img.shape[:2]
-    
-    for cnt in contours:
-        x, y, bw, bh = cv2.boundingRect(cnt)
-        area = bw * bh
-        if area < 200 or area > (w * h * 0.9): continue
-        if area > max_area:
-            max_area = area
-            best_roi = (x, y, bw, bh)
-            
-    if not best_roi: return None
-    
-    x, y, bw, bh = best_roi
-    
-    # 裁切出外框區域
-    roi_img = img[y:y+bh, x:x+bw]
-    roi_mask = mask[y:y+bh, x:x+bw]
-    
-    y_min, y_max = 0, bh - 1
-    x_min, x_max = 0, bw - 1
-    
-    # 取中間 50% 區間來掃描，避開垂直邊框的干擾
-    mid_x1, mid_x2 = int(bw * 0.25), int(bw * 0.75)
-    mid_y1, mid_y2 = int(bh * 0.25), int(bh * 0.75)
-    
-    # 向內縮，直到該行/列沒有紅色（代表邊框被切完了）
-    while y_min < y_max and np.sum(roi_mask[y_min, mid_x1:mid_x2]) > 0:
-        y_min += 1
-    while y_max > y_min and np.sum(roi_mask[y_max, mid_x1:mid_x2]) > 0:
-        y_max -= 1
-        
-    while x_min < x_max and np.sum(roi_mask[mid_y1:mid_y2, x_min]) > 0:
-        x_min += 1
-    while x_max > x_min and np.sum(roi_mask[mid_y1:mid_y2, x_max]) > 0:
-        x_max -= 1
-        
-    # 安全保護，往內多縮 1 pixel 確保乾淨
-    y_min = min(y_min + 1, y_max)
-    y_max = max(y_max - 1, y_min)
-    x_min = min(x_min + 1, x_max)
-    x_max = max(x_max - 1, x_min)
-    
-    if x_max <= x_min or y_max <= y_min:
-        return None
-        
-    return roi_img[y_min:y_max+1, x_min:x_max+1]
+# ----------------------------------------------------------------
+
 
 class ReactiveRunner:
     def __init__(self, serial=None, ad_wait=15, debug=False):
@@ -210,16 +148,22 @@ class ReactiveRunner:
         print(f"📂 [留底] 原圖已保留至: {orig_path.name} (供後續討論使用)")
         print(f"🎨 [自癒系統] 準備開啟小畫家對 {edit_path.name} 進行編輯。")
         print("【操作指引】")
-        print("1. 請在小畫家中用「紅色空心矩形」標示你想讓程式點擊的按鈕。")
+        print("1. 請在小畫家中用「藍色空心矩形」標示你想讓程式點擊的按鈕。")
         print("2. 畫完後按 Ctrl+S 存檔，然後直接關閉小畫家。")
         print("--------------------------------------------------")
         
         subprocess.run(["mspaint", str(edit_path)])
         
-        print("⏳ [自癒系統] 偵測到小畫家已關閉，正在自動裁切紅框...")
+        print("⏳ [自癒系統] 偵測到小畫家已關閉，正在自動裁切藍框...")
         
-        cropped_img = crop_red_box_single_image(edit_path)
-        if cropped_img is not None:
+        cropped_img = None
+        edit_img = cv2.imdecode(np.fromfile(str(edit_path), dtype=np.uint8), cv2.IMREAD_COLOR)
+        if edit_img is not None:
+            boxes = find_blue_boxes(edit_img)
+            if boxes:
+                cropped_img = crop_inside_blue_box(edit_img, boxes[0])
+                
+        if cropped_img is not None and cropped_img.size > 0:
             crop_path = comm_dir / f"crop_{ts}.png"
             ok, buf = cv2.imencode('.png', cropped_img)
             if ok:
@@ -285,6 +229,11 @@ class ReactiveRunner:
                 if ok:
                     dest_path.write_bytes(buf.tobytes())
                     print(f"✅ [自癒系統] 完美！已將新特徵圖正式加入圖庫: {dest_path}")
+                    
+                    # 截完圖當下，立刻針對當前畫面比對一次，給予即時回饋
+                    test_res = self.matcher.match_template(screen, dest_path, threshold=0.1)
+                    test_conf = test_res.confidence if test_res else 0.0
+                    print(f"👀 [新特徵測試] 剛加入的 '{dest_path.parent.name}/{dest_path.name}' 信心度為: {test_conf:.2f}")
         else:
             print("❌ [失敗] 找不到符合的紅框，或裁切失敗。原圖已保留。")
                 
@@ -368,32 +317,11 @@ class ReactiveRunner:
             # 依照修改時間排序，最新切好的圖排最前面 (優先比對)
             paths = sorted(paths, key=lambda p: p.stat().st_mtime, reverse=True)
             
-            highest_res = None
-            is_first = True
-            
             for p in paths:
-                res = self.matcher.match_template(screen, p, threshold=0.1, roi=roi)
-                
-                # 如果是最新的特徵圖 (排序第一個)，且是在最近 10 分鐘內建立的，才印出分數幫助除錯
-                # 並且在「驗證廣告消失」的密集輪詢時不印，避免洗版
-                if is_first and category_name != "驗證廣告消失":
-                    conf = res.confidence if res else 0.0
-                    if conf < threshold:
-                        try:
-                            file_age = time.time() - p.stat().st_mtime
-                            if file_age < 600:
-                                print(f"👀 [新特徵測試] '{p.parent.name}/{p.name}' 信心度: {conf:.2f} (門檻 {threshold})")
-                        except Exception:
-                            pass
-                is_first = False
-                
+                res = self.matcher.match_template(screen, p, threshold=threshold, roi=roi)
                 if res:
-                    if highest_res is None or res.confidence > highest_res.confidence:
-                        highest_res = res
-                    if res.confidence >= threshold:
-                        return res # 只要達到門檻立刻回傳 (因為最新的排前面，所以優先觸發)
-                        
-            # 除非有達到門檻，否則不再印出「最接近」的無效資訊，保持畫面乾淨
+                    return res
+                    
             return None
         
         import threading

@@ -61,6 +61,8 @@ def main():
             navigator.execute_route(phase="exit")
             print(f"✅ [成功] 離場路由執行完畢！")
             
+
+            
             if script_failed:
                 print("❌ [錯誤] 由於外部腳本執行失敗，結束路由任務並拋出錯誤碼以觸發 Fail-Fast。")
                 sys.exit(1)

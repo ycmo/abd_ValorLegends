@@ -1,0 +1,11 @@
+arena (???): match=1.000, old=(205x22) @ (228,333), new=(225x42) @ (218,323)
+bounty (????): match=1.000, old=(190x22) @ (228,379), new=(210x42) @ (218,369)
+campaign (????): match=1.000, old=(190x22) @ (228,249), new=(210x42) @ (218,239)
+endless_trial (????): match=1.000, old=(190x22) @ (228,300), new=(210x42) @ (218,290)
+guild_dungeon (????): match=1.000, old=(245x22) @ (228,260), new=(265x42) @ (218,250)
+guild_wish (????): match=1.000, old=(190x22) @ (228,406), new=(210x42) @ (218,396)
+midas (???): match=1.000, old=(48x16) @ (282,376), new=(68x36) @ (272,366)
+secret_realm (????): match=1.000, old=(255x22) @ (228,315), new=(275x42) @ (218,305)
+summon (????): match=1.000, old=(240x22) @ (228,271), new=(260x42) @ (218,261)
+time_travel (????): match=1.000, old=(190x22) @ (228,358), new=(210x42) @ (218,348)
+magic_shop (????): skipped recrop; manual_screenshots/????/001_????.png is already a cropped 169x24 image, needs full 960x540 screenshot

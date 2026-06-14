@@ -1,27 +1,69 @@
-# 帳號切換工具 (change_account) Q&A
+# 帳號切換 (switch_account) 模組重構計畫 (Refactoring Plan)
 
-這份文件用於記錄切換帳號工具的問題與說明，如果遇到任何狀況可以寫在這裡，我會再為你調整程式。
+## 🎯 Phase 2: 拆解神級主程序 (中風險)
+**目標**：將 `switch_account()` 這個超過 200 行的「上帝函式 (God Function)」拆解成多個專責的輔助子函式，讓主流程變得像閱讀目錄一樣清晰。
 
-## Q1: 座標精準度問題
-目前我透過分析 `manual_screenshots/帳號切換` 裡的截圖紅框，轉換出對應的中心座標（固定座標點擊）。
-- 如果你的模擬器解析度有改變，或是畫面的按鈕位置有些微浮動，可能會點擊不到。
-- **解決方案**：如果發現點擊位置偏差，可以在 `switch_account.py` 中微調 `COORDS` 字典內的座標，或者在這邊告訴我，我們再考慮改用 `auto_crop` 的圖片比對功能來尋找按鈕。
+**實作指令 (Prompt for RD)**：
+請進入 `E:\antigravity\adb_vl\switch_account\switch_account.py`，在 `select_server` 函式下方、`switch_account` 上方，新增以下 5 個輔助函式，並將 `switch_account` 中對應的程式碼抽離出來：
 
-## Q2: Google 登入的第二次畫面
-你提到：「Google 有兩個畫面，第一個比較單純...第二個要滑到最下面點紅框 (你再考慮用座標還是需要用比對的)」。
-- 目前我的做法是：固定執行兩次「從下往上滑動 (Swipe)」確保畫面已經到達最底部，接著點擊右下角的「允許」按鈕（座標 `(617, 450)`）。
-- **問題**：如果在有些情況下，Google **不會**出現第二個畫面（例如之前已經授權過），這時工具多點擊一次可能會點到遊戲其他的按鈕。
-- **需要你協助確認**：是否每次切換回 Google 都一定會有這個「允許」的畫面？如果不是每次都有，我們可能就需要改成「圖片比對（確認有這個畫面才滑動並點擊）」。
+1. **`detect_current_account(controller: DeviceController, matcher: VisionMatcher) -> str`**：
+   - 負責執行那 5 次截圖輪詢找頭像的邏輯。
+   - 找到時回傳 `14`, `311`, `em3`, 或 `tiger`；若失敗則回傳 `None`。
 
-## Q3: 帳號密碼輸入的穩定性
-- `adb shell input text` 指令在輸入包含 `@` 等特殊符號的時候偶爾會因為輸入法的關係漏字。
-- 如果你發現帳號密碼貼上有少字，請讓我知道，我可以改成：先將文字複製到剪貼簿，然後用 ADB 模擬 `Ctrl+V` (或者是長按貼上) 的動作。
+2. **`resolve_toggle_target(current_acc_name: str) -> str`**：
+   - 負責處理 `311 <-> em3` 以及 `14 <-> tiger` 的對接邏輯。
+   - 若無法辨識則印出錯誤並回傳 `None`。
 
-A: 直接用複製貼上就好
+3. **`login_with_google(controller: DeviceController, matcher: VisionMatcher)`**：
+   - 負責封裝從點選「Google 登入」按鈕、選帳號、向下滑動找「繼續」並盲點，最後等候 10 秒的所有流程。
 
-## Q4: 等待時間 (sleep)
-- 為了確保畫面有充足的載入時間，我在點擊之間設定了 1~6 秒不等的等待時間（例如登出後等待 5 秒，點擊登入後等待 6 秒）。
-- 如果你覺得太慢，或是因為電腦跑太慢導致時間不夠而點錯，可以告訴我，或是自行修改 `time.sleep()` 的數值。
+4. **`login_with_email(controller: DeviceController, matcher: VisionMatcher, account_info: dict, account_name: str)`**：
+   - 負責封裝信箱密碼輸入、`paste_text` 以及最終點擊登入的所有流程。
 
-A: 可以先睡一秒，然後用我的截圖按鈕比對(座標附近)  信心度門檻設0.5就好  有出現就下一步
-之前在ADS和magic shop有裁切工具，你可以拿去用
+5. **`wait_for_game_entry(controller: DeviceController, matcher: VisionMatcher) -> bool`**：
+   - 負責那 10 次尋找「使用者條款」或「掛機寶箱」的輪詢迴圈。
+   - 若成功進入回傳 `True`，若 10 次超時則觸發除錯截圖並拋出 `RuntimeError`。
+
+**改寫後的主函式 `switch_account` 預期輪廓**：
+重構後的 `switch_account` 應該極度簡潔，骨架如下：
+```python
+def switch_account(account_name: str, debug_mode: bool = False) -> bool:
+    # 1. 連線設備與初始化 Matcher (維持不變)
+    
+    # 2. 偵測當前帳號
+    current_acc_name = detect_current_account(controller, matcher)
+    
+    # 3. 處理 Toggle
+    if account_name == "toggle":
+        account_name = resolve_toggle_target(current_acc_name)
+        if not account_name: return False
+        if account_name not in ACCOUNTS: return False
+        
+    account_info = ACCOUNTS[account_name]
+    
+    # 4. 判斷是否走超級捷徑
+    shortcut_triggered = (current_acc_name in ACCOUNTS and 
+                          ACCOUNTS[current_acc_name]["type"] == "google" and 
+                          account_info["type"] == "google")
+    
+    # 5. 執行前半段流程 (登出 or 捷徑點伺服器)
+    # ...
+    
+    # 6. 執行後半段流程 (登入)
+    if not shortcut_triggered:
+        if account_info["type"] == "google":
+            login_with_google(controller, matcher)
+        elif account_info["type"] == "email":
+            login_with_email(controller, matcher, account_info, account_name)
+            
+    # 7. 選擇伺服器
+    if account_info["type"] == "google":
+        select_server(controller, matcher, account_info.get("server", ""), skip_open=shortcut_triggered)
+        
+    # 8. 等待進入遊戲
+    return wait_for_game_entry(controller, matcher)
+```
+
+## ✅ 驗證標準
+完成拆分後，確保不遺漏任何變數（例如 `COORDS` 的存取）。
+請執行 `python -m py_compile switch_account\switch_account.py` 確認無語法錯誤，接著執行 Unit Test 確認重構沒有破壞邏輯。
