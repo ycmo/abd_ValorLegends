@@ -4,7 +4,7 @@ import time
 from typing import Optional
 
 from src.config import SHARED_ASSETS_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
-from src.exceptions import TaskFailedError
+from src.exceptions import BotError, TaskFailedError
 from src.task_runner import BaseTask, TaskSceneAnchor, TaskRunResult, TaskState
 from src.vision_matcher import MatchResult, Roi
 
@@ -38,27 +38,47 @@ class MidasTask(BaseTask):
     )
 
     def execute(self) -> str:
-        self._dismiss_reward_overlay_if_present()
-        self._require_midas_dialog()
         completed = []
-        for _ in range(self.MAX_ALLOWED_TAPS):
-            self._dismiss_reward_overlay_if_present()
-            tapped = False
-            for label, asset_name, roi in self._allowed_buttons():
-                if self._tap_if_active(label, asset_name, roi):
-                    completed.append(label)
-                    tapped = True
-                    self._dismiss_reward_overlay_if_present()
-                    break
-            if not tapped:
-                break
-        else:
-            raise TaskFailedError("Midas exceeded allowed tap limit while exhausting free/20/50 tiers")
+        result_message = ""
+        task_error: Optional[BotError] = None
+        close_error: Optional[BotError] = None
 
-        self._close_dialog()
-        if not completed:
-            return "no active Midas button found; dialog closed"
-        return "Midas taps: " + ", ".join(completed)
+        try:
+            self._dismiss_reward_overlay_if_present()
+            self._require_midas_dialog()
+            for _ in range(self.MAX_ALLOWED_TAPS):
+                self._dismiss_reward_overlay_if_present()
+                tapped = False
+                for label, asset_name, roi in self._allowed_buttons():
+                    if self._tap_if_active(label, asset_name, roi):
+                        completed.append(label)
+                        tapped = True
+                        self._dismiss_reward_overlay_if_present()
+                        break
+                if not tapped:
+                    break
+            else:
+                raise TaskFailedError("Midas exceeded allowed tap limit while exhausting free/20/50 tiers")
+
+            if not completed:
+                result_message = "no active Midas button found; dialog closed"
+            else:
+                result_message = "Midas taps: " + ", ".join(completed)
+        except BotError as exc:
+            task_error = exc
+
+        try:
+            self._close_dialog()
+        except BotError as exc:
+            close_error = exc
+
+        if task_error is not None:
+            if close_error is not None:
+                self._log(f"Midas cleanup failed after task error: {close_error}")
+            raise task_error
+        if close_error is not None:
+            raise close_error
+        return result_message
 
     def _execute_and_return(self, started: float) -> TaskRunResult:
         result = self.execute_from_current_scene()
@@ -117,24 +137,32 @@ class MidasTask(BaseTask):
 
     def _close_dialog(self) -> None:
         self._dismiss_reward_overlay_if_present()
-        self._require_midas_dialog()
-        self._tap_task_asset(
-            "close Midas dialog",
+        self._tap_close_until_gone()
+
+    def _tap_close_until_gone(self, *, max_taps: int = 4) -> None:
+        tapped = False
+        for _ in range(max_taps):
+            match = self._match_task_asset(
+                "midas_close_button.png",
+                roi=self.CLOSE_BUTTON_ROI,
+                threshold=0.86,
+                timeout_seconds=0.6,
+            )
+            if match is None:
+                return
+            tapped = True
+            self.context.controller.tap(*match.center)
+            time.sleep(TRANSITION_WAIT_SECONDS)
+
+        if self._match_task_asset(
             "midas_close_button.png",
             roi=self.CLOSE_BUTTON_ROI,
             threshold=0.86,
-            wait_after_seconds=TRANSITION_WAIT_SECONDS,
-        )
-        deadline = time.time() + 3.0
-        while time.time() <= deadline:
-            if not self._match_task_asset(
-                "midas_title.png",
-                roi=self.TITLE_ROI,
-                threshold=0.86,
-                timeout_seconds=0.4,
-            ):
-                return
-        raise TaskFailedError("Midas dialog did not close after tapping close")
+            timeout_seconds=0.6,
+        ):
+            raise TaskFailedError("Midas close button did not disappear after repeated close taps")
+        if tapped:
+            return
 
     def _require_midas_dialog(self) -> MatchResult:
         return self._require_task_asset(

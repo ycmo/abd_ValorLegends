@@ -65,6 +65,34 @@ class DiagnosticMidasTask(MidasTask):
         )
 
 
+class CleanupMidasTask(MidasTask):
+    def __init__(self, active_buttons=(), close_matches=1, fail_after_dialog=False):
+        self.active_buttons = set(active_buttons)
+        self.close_matches = close_matches
+        self.fail_after_dialog = fail_after_dialog
+        self.context = SimpleNamespace(controller=FakeController(), navigator=FakeNavigator())
+
+    def _dismiss_reward_overlay_if_present(self):
+        return None
+
+    def _require_midas_dialog(self):
+        if self.fail_after_dialog:
+            raise TaskFailedError("forced Midas failure")
+        return FakeMatch()
+
+    def _tap_if_active(self, label, asset_name, roi):
+        if asset_name not in self.active_buttons:
+            return False
+        self.context.controller.tap(*FakeMatch.center)
+        return True
+
+    def _match_task_asset(self, asset_name, **kwargs):
+        if asset_name != "midas_close_button.png" or self.close_matches <= 0:
+            return None
+        self.close_matches -= 1
+        return FakeMatch()
+
+
 class MidasSafetyTests(unittest.TestCase):
     def test_tap_if_active_does_not_tap_missing_button(self):
         task = FakeMidasTask(active_assets=())
@@ -110,6 +138,22 @@ class MidasSafetyTests(unittest.TestCase):
         self.assertIn("brightness_ratio=0.310", message)
         self.assertIn("roi=(360, 45, 250, 70)", message)
         self.assertIn("center=(111, 222)", message)
+
+    def test_execute_closes_midas_dialog_after_failure(self):
+        task = CleanupMidasTask(close_matches=1, fail_after_dialog=True)
+
+        with self.assertRaises(TaskFailedError) as caught:
+            task.execute()
+
+        self.assertEqual(str(caught.exception), "forced Midas failure")
+        self.assertEqual(task.context.controller.taps, [(123, 456)])
+
+    def test_close_dialog_taps_until_close_button_disappears(self):
+        task = CleanupMidasTask(close_matches=3)
+
+        task._close_dialog()
+
+        self.assertEqual(task.context.controller.taps, [(123, 456), (123, 456), (123, 456)])
 
 
 if __name__ == "__main__":
