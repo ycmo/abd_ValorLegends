@@ -5,7 +5,13 @@ import unittest
 import cv2
 import numpy as np
 
-from src.paint_cropper import crop_inside_blue_box, find_blue_boxes
+from src.paint_cropper import (
+    crop_inside_blue_box,
+    crop_inside_colored_box,
+    find_blue_boxes,
+    find_green_boxes,
+    find_red_boxes,
+)
 
 
 class PaintCropperTests(unittest.TestCase):
@@ -45,6 +51,32 @@ class PaintCropperTests(unittest.TestCase):
         self.assertLessEqual(abs(box.y - 23), 2)
         self.assertLessEqual(abs(box.width - 116), 4)
         self.assertLessEqual(abs(box.height - 46), 4)
+
+    def test_find_red_boxes_detects_click_region_outline(self):
+        image = np.full((100, 180, 3), 255, dtype=np.uint8)
+        image[34:72, 48:138] = (40, 80, 120)
+        cv2.rectangle(image, (44, 30), (142, 76), (0, 0, 255), 3)
+
+        boxes = find_red_boxes(image)
+
+        self.assertEqual(len(boxes), 1)
+        crop = crop_inside_colored_box(image, boxes[0], "red")
+        self.assertGreater(crop.shape[0], 30)
+        self.assertGreater(crop.shape[1], 70)
+        self.assertFalse(np.any(np.all(crop == (0, 0, 255), axis=2)))
+
+    def test_find_green_boxes_detects_recognition_anchor_outline(self):
+        image = np.full((100, 180, 3), 255, dtype=np.uint8)
+        image[34:72, 48:138] = (50, 90, 130)
+        cv2.rectangle(image, (44, 30), (142, 76), (0, 180, 0), 3)
+
+        boxes = find_green_boxes(image)
+
+        self.assertEqual(len(boxes), 1)
+        crop = crop_inside_colored_box(image, boxes[0], "green")
+        self.assertGreater(crop.shape[0], 30)
+        self.assertGreater(crop.shape[1], 70)
+        self.assertFalse(np.any(np.all(crop == (0, 180, 0), axis=2)))
 
 
 if __name__ == "__main__":

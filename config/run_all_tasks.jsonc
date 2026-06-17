@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    "arena",          // 競技場
+    // "bounty",      // 懸賞委託
+    // "campaign",    // 戰役關卡
+    // "endless_trial", // 無盡試煉
+    // "guild_dungeon", // 公會副本
+    "guild_wish",     // 公會祈願
+    "midas",          // 點金手
+    "secret_realm",   // 秘境副本
+    "summon",         // 高級召喚
+    "time_travel",    // 時間旅行
+    "magic_shop"      // 魔法商店
+  ]
+}

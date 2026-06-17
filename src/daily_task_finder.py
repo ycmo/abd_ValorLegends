@@ -38,11 +38,20 @@ class TaskSearchResult:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class GoFirstTaskRow:
+    task_key: Optional[str]
+    result: TaskSearchResult
+    status_kind: str
+    row_y: int
+
+
 class DailyTaskFinder:
     """Finds a task row in the daily-task list and distinguishes Go vs claimable."""
 
     DONE_LABEL_THRESHOLD = 0.58
     DONE_BUTTON_THRESHOLD = 0.78
+    GO_FIRST_LABEL_THRESHOLD = 0.86
 
     def __init__(self, controller: DeviceController, matcher: VisionMatcher, logger: Optional[DebugLogger] = None):
         self.controller = controller
@@ -110,6 +119,139 @@ class DailyTaskFinder:
             reason="task label found but Go button not found on the same row",
         )
 
+    def find_on_current_screen_go_first(self, spec: TaskSpec) -> TaskSearchResult:
+        label_path = spec.task_label_asset
+        if not label_path.exists():
+            raise MissingAssetError(f"Missing task label template: {label_path}")
+        go_path = self._go_button_path()
+        if not go_path.exists():
+            raise MissingAssetError(f"Missing shared go button template: {go_path}")
+
+        screen = self.controller.screenshot()
+        status_roi = self._status_buttons_roi(screen_width=screen.shape[1], screen_height=screen.shape[0])
+        status_matches = self._match_row_status_buttons(screen, status_roi)
+        if not status_matches:
+            return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="go-first: no row status button visible")
+
+        best_label: Optional[MatchResult] = None
+        best_label_roi: Optional[Roi] = None
+        for status_match, status_kind in status_matches:
+            label_roi = self._same_row_left_label_roi(
+                screen_width=screen.shape[1],
+                screen_height=screen.shape[0],
+                status_button=status_match,
+            )
+            label = self.matcher.match_any(
+                screen,
+                self._task_label_candidates(spec),
+                threshold=self.GO_FIRST_LABEL_THRESHOLD,
+                roi=label_roi,
+                check_brightness=False,
+            )
+            if label is None:
+                probe = self._best_label_probe(screen, spec, label_roi)
+                if probe is not None and (best_label is None or probe.confidence > best_label.confidence):
+                    best_label = probe
+                    best_label_roi = label_roi
+                continue
+
+            if status_kind == "go":
+                result = TaskSearchResult(
+                    TaskSearchStatus.READY,
+                    label_match=label,
+                    go_match=status_match,
+                    reason="go-first: Go button row matched task label on the left",
+                )
+            else:
+                result = TaskSearchResult(
+                    TaskSearchStatus.DONE_OR_CLAIMABLE,
+                    label_match=label,
+                    claim_match=status_match if status_kind == "claim" else None,
+                    done_match=status_match if status_kind == "completed" else None,
+                    reason=f"go-first: {status_kind} status row matched task label on the left",
+                )
+            self.logger.log(
+                f"daily task go-first matched task={spec.key} "
+                f"status={status_kind} status_confidence={status_match.confidence:.3f} "
+                f"label_template={label.template_path.name} "
+                f"label_confidence={label.confidence:.3f}"
+            )
+            self._save_go_first_debug(screen, spec, status_roi, label_roi, result)
+            return result
+
+        result = TaskSearchResult(
+            TaskSearchStatus.NOT_FOUND,
+            label_match=best_label,
+            reason="go-first: row status buttons visible but task label did not match left row ROI",
+        )
+        if best_label_roi is not None:
+            self._save_go_first_debug(screen, spec, status_roi, best_label_roi, result)
+        return result
+
+    def scan_current_screen_go_first(self, specs: dict[str, TaskSpec]) -> list[GoFirstTaskRow]:
+        screen = self.controller.screenshot()
+        status_roi = self._status_buttons_roi(screen_width=screen.shape[1], screen_height=screen.shape[0])
+        status_matches = self._match_row_status_buttons(screen, status_roi)
+        rows: list[GoFirstTaskRow] = []
+        if not status_matches:
+            return rows
+
+        for status_match, status_kind in status_matches:
+            label_roi = self._same_row_left_label_roi(
+                screen_width=screen.shape[1],
+                screen_height=screen.shape[0],
+                status_button=status_match,
+            )
+            task_key, label = self._best_task_label_match(screen, specs, label_roi)
+            if task_key is None or label is None:
+                if status_kind == "go":
+                    result = TaskSearchResult(
+                        TaskSearchStatus.READY,
+                        go_match=status_match,
+                        reason="go-first scan: Go button row did not match known task label",
+                    )
+                else:
+                    result = TaskSearchResult(
+                        TaskSearchStatus.DONE_OR_CLAIMABLE,
+                        claim_match=status_match if status_kind == "claim" else None,
+                        done_match=status_match if status_kind == "completed" else None,
+                        reason=f"go-first scan: {status_kind} status row did not match known task label",
+                    )
+                rows.append(
+                    GoFirstTaskRow(
+                        task_key=None,
+                        result=result,
+                        status_kind=status_kind,
+                        row_y=status_match.center[1],
+                    )
+                )
+                continue
+
+            if status_kind == "go":
+                result = TaskSearchResult(
+                    TaskSearchStatus.READY,
+                    label_match=label,
+                    go_match=status_match,
+                    reason="go-first scan: Go button row matched task label on the left",
+                )
+            else:
+                result = TaskSearchResult(
+                    TaskSearchStatus.DONE_OR_CLAIMABLE,
+                    label_match=label,
+                    claim_match=status_match if status_kind == "claim" else None,
+                    done_match=status_match if status_kind == "completed" else None,
+                    reason=f"go-first scan: {status_kind} status row matched task label on the left",
+                )
+            rows.append(
+                GoFirstTaskRow(
+                    task_key=task_key,
+                    result=result,
+                    status_kind=status_kind,
+                    row_y=status_match.center[1],
+                )
+            )
+        return rows
+
     def find_near_current_screen(self, spec: TaskSpec, max_nudge_swipes: int = 2) -> TaskSearchResult:
         """Find a row near the current viewport without resetting the daily list to the top."""
         result = self.find_on_current_screen(spec)
@@ -152,6 +294,30 @@ class DailyTaskFinder:
                     return last
                 return TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="task label not visible before list bottom")
         return weak_done_candidate or last
+
+    def scroll_to_task_go_first(
+        self,
+        spec: TaskSpec,
+        max_swipes: int = 6,
+        reset_to_top_swipes: int = 0,
+    ) -> TaskSearchResult:
+        self._scroll_to_top(reset_to_top_swipes)
+        last = TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="not searched yet")
+        for attempt in range(max_swipes + 1):
+            last = self.find_on_current_screen_go_first(spec)
+            if last.status != TaskSearchStatus.NOT_FOUND:
+                return last
+            if attempt >= max_swipes:
+                break
+            if last.reason == "go-first: no row status button visible" and attempt > 0:
+                return TaskSearchResult(
+                    TaskSearchStatus.NOT_FOUND,
+                    label_match=last.label_match,
+                    reason="go-first: passed contiguous daily task status section",
+                )
+            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=420, wait_seconds=TAP_COOLDOWN_SECONDS):
+                return last
+        return last
 
     def _scroll_to_top(self, swipes: int) -> None:
         for _ in range(swipes):
@@ -206,6 +372,22 @@ class DailyTaskFinder:
         row_y = max(0, min(label.center[1] - 35, screen_height - row_h))
         x = int(screen_width * 0.775)
         width = int(screen_width * 0.199)
+        return (x, row_y, width, row_h)
+
+    @staticmethod
+    def _status_buttons_roi(screen_width: int, screen_height: int) -> Roi:
+        x = int(screen_width * 0.775)
+        y = int(screen_height * 0.391)
+        width = int(screen_width * 0.199)
+        height = int(screen_height * 0.602)
+        return (x, y, width, height)
+
+    @staticmethod
+    def _same_row_left_label_roi(screen_width: int, screen_height: int, status_button: MatchResult) -> Roi:
+        row_h = 84
+        row_y = max(0, min(status_button.center[1] - 48, screen_height - row_h))
+        x = int(screen_width * 0.200)
+        width = int(screen_width * 0.360)
         return (x, row_y, width, row_h)
 
     @staticmethod
@@ -288,6 +470,46 @@ class DailyTaskFinder:
             lines.append(result.reason)
         save_debug(f"daily_task_{spec.key}_{result.status.value}", screen, lines=lines, boxes=boxes)
 
+    def _save_go_first_debug(
+        self,
+        screen,
+        spec: TaskSpec,
+        status_roi: Roi,
+        label_roi: Roi,
+        result: TaskSearchResult,
+    ) -> None:
+        save_debug = getattr(self.controller, "save_annotated_debug", None)
+        if save_debug is None:
+            return
+
+        boxes = [(*status_roi, "status_scan_roi"), (*label_roi, "left_label_roi")]
+        lines = [
+            f"daily go-first search: {spec.key} {spec.display_name}",
+            f"status={result.status.value}",
+        ]
+        if result.go_match is not None:
+            boxes.append((*result.go_match.bbox, "go"))
+            lines.append(
+                f"go {result.go_match.template_path.name} "
+                f"conf={result.go_match.confidence:.3f} center={result.go_match.center}"
+            )
+        status_match = result.claim_match or result.done_match
+        if status_match is not None:
+            boxes.append((*status_match.bbox, "done_status"))
+            lines.append(
+                f"done_status {status_match.template_path.name} "
+                f"conf={status_match.confidence:.3f} center={status_match.center}"
+            )
+        if result.label_match is not None:
+            boxes.append((*result.label_match.bbox, "label"))
+            lines.append(
+                f"label {result.label_match.template_path.name} "
+                f"conf={result.label_match.confidence:.3f} center={result.label_match.center}"
+            )
+        if result.reason:
+            lines.append(result.reason)
+        save_debug(f"daily_task_go_first_{spec.key}_{result.status.value}", screen, lines=lines, boxes=boxes)
+
     def _match_claim_button(self, screen, roi: Roi) -> Optional[MatchResult]:
         path = SHARED_ASSETS_DIR / "claim_button.png"
         if not path.exists():
@@ -302,6 +524,83 @@ class DailyTaskFinder:
 
     def _match_go_button(self, screen, roi: Roi) -> Optional[MatchResult]:
         return self.matcher.match_template(screen, self._go_button_path(), threshold=GO_BUTTON_THRESHOLD, roi=roi)
+
+    def _match_go_buttons(self, screen, roi: Roi) -> list[MatchResult]:
+        return self._match_button_matches(screen, self._go_button_path(), GO_BUTTON_THRESHOLD, roi)
+
+    def _match_row_status_buttons(self, screen, roi: Roi) -> list[tuple[MatchResult, str]]:
+        candidates = [
+            (self._go_button_path(), GO_BUTTON_THRESHOLD, "go"),
+            (SHARED_ASSETS_DIR / "claim_button.png", self.DONE_BUTTON_THRESHOLD, "claim"),
+            (SHARED_ASSETS_DIR / "completed_button.png", self.DONE_BUTTON_THRESHOLD, "completed"),
+        ]
+        matches: list[tuple[MatchResult, str]] = []
+        for path, threshold, kind in candidates:
+            if not path.exists():
+                continue
+            for match in self._match_button_matches(screen, path, threshold, roi):
+                matches.append((match, kind))
+        matches.sort(key=lambda item: (item[0].center[1], -item[0].confidence))
+        return self._dedupe_status_rows(matches)
+
+    def _match_button_matches(self, screen, path, threshold: float, roi: Roi) -> list[MatchResult]:
+        match_all = getattr(self.matcher, "match_template_all", None)
+        if match_all is not None:
+            return match_all(
+                screen,
+                path,
+                threshold=threshold,
+                roi=roi,
+                max_results=8,
+                min_center_distance=42,
+            )
+        match = self.matcher.match_template(screen, path, threshold=threshold, roi=roi)
+        return [] if match is None else [match]
+
+    @staticmethod
+    def _dedupe_status_rows(matches: list[tuple[MatchResult, str]]) -> list[tuple[MatchResult, str]]:
+        deduped: list[tuple[MatchResult, str]] = []
+        for match, kind in sorted(matches, key=lambda item: item[0].confidence, reverse=True):
+            if any(abs(match.center[1] - existing.center[1]) < 28 for existing, _kind in deduped):
+                continue
+            deduped.append((match, kind))
+        return sorted(deduped, key=lambda item: item[0].center[1])
+
+    def _best_label_probe(self, screen, spec: TaskSpec, roi: Roi) -> Optional[MatchResult]:
+        best_match = getattr(self.matcher, "best_template_match", None)
+        if best_match is None:
+            return None
+        best: Optional[MatchResult] = None
+        for path in self._task_label_candidates(spec):
+            probe = best_match(screen, path, roi=roi)
+            if probe is None:
+                continue
+            if best is None or probe.confidence > best.confidence:
+                best = probe
+        return best
+
+    def _best_task_label_match(
+        self,
+        screen,
+        specs: dict[str, TaskSpec],
+        roi: Roi,
+    ) -> tuple[Optional[str], Optional[MatchResult]]:
+        best_key: Optional[str] = None
+        best_match: Optional[MatchResult] = None
+        for task_key, spec in specs.items():
+            match = self.matcher.match_any(
+                screen,
+                self._task_label_candidates(spec),
+                threshold=self.GO_FIRST_LABEL_THRESHOLD,
+                roi=roi,
+                check_brightness=False,
+            )
+            if match is None:
+                continue
+            if best_match is None or match.confidence > best_match.confidence:
+                best_key = task_key
+                best_match = match
+        return best_key, best_match
 
     @staticmethod
     def _go_button_path():

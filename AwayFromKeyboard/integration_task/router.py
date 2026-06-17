@@ -183,7 +183,7 @@ class RouteNavigator:
             best_overall_roi = None
             best_overall_threshold = 0.7
             
-            attempts_phase1 = 1 if has_swipe else 20
+            attempts_phase1 = 3 if has_swipe else 20
             screen = None
             
             for attempt in range(attempts_phase1):
@@ -248,69 +248,82 @@ class RouteNavigator:
                 cy_orig = swipe_t["y"] + swipe_t["h"] // 2
                 sh, sw = screen.shape[:2]
                 
-                if swipe_t["is_swipe_v"]:
-                    start_y = min(sh - 10, cy_orig + 150)
-                    end_y = max(10, cy_orig - 150)
-                    self.controller.swipe(cx_orig, start_y, cx_orig, end_y, duration_ms=500)
-                else:
-                    start_x = min(sw - 10, cx_orig + 150)
-                    end_x = max(10, cx_orig - 150)
-                    self.controller.swipe(start_x, cy_orig, end_x, cy_orig, duration_ms=500)
-                    
-                time.sleep(1.5)
-                
-                for attempt in range(10):
-                    screen = get_screen_func()
-                    if screen is None:
-                        continue
-                    sh, sw = screen.shape[:2]
-                    
-                    for t_info in templates_info:
-                        x, y, w, h = t_info["x"], t_info["y"], t_info["w"], t_info["h"]
-                        if t_info["is_swipe_v"]:
-                            roi_x1 = max(0, x - 50)
-                            roi_x2 = min(sw, x + w + 50)
-                            roi_y1 = 0
-                            roi_y2 = sh
-                        elif t_info["is_swipe_h"]:
-                            roi_x1 = 0
-                            roi_x2 = sw
-                            roi_y1 = max(0, y - 150)
-                            roi_y2 = min(sh, y + h + 150)
+                for swipe_dir in [1, -1]:
+                    if swipe_dir == 1:
+                        print("  [Debug] 準備動態滑動 (方向：正向)...")
+                        swipe_count = 1
+                    else:
+                        print("  [Debug] 正向滑動尋找失敗，準備反向滑動救援...")
+                        swipe_count = 2
+                        
+                    for _ in range(swipe_count):
+                        if swipe_t["is_swipe_v"]:
+                            y_start = (3 * sh // 4) if swipe_dir == 1 else (sh // 4)
+                            y_end = (sh // 4) if swipe_dir == 1 else (3 * sh // 4)
+                            self.controller.swipe(cx_orig, y_start, cx_orig, y_end, duration_ms=400)
                         else:
-                            roi_x1 = max(0, x - 50)
-                            roi_x2 = min(sw, x + w + 50)
-                            roi_y1 = max(0, y - 150)
-                            roi_y2 = min(sh, y + h + 150)
-                            
-                        screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
-                        res = cv2.matchTemplate(screen_roi, t_info["template"], cv2.TM_CCOEFF_NORMED)
-                        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                            x_start = (3 * sw // 4) if swipe_dir == 1 else (sw // 4)
+                            x_end = (sw // 4) if swipe_dir == 1 else (3 * sw // 4)
+                            self.controller.swipe(x_start, cy_orig, x_end, cy_orig, duration_ms=400)
+                        time.sleep(0.5)
                         
-                        print(f"  [Debug] 滑動後尋找 {t_info['path'].name} (第 {attempt+1}/10 次) - 當前最高信心度: {max_val:.2f}")
+                    time.sleep(1.0)
+                    
+                    for attempt in range(5):
+                        screen = get_screen_func()
+                        if screen is None:
+                            continue
+                        sh, sw = screen.shape[:2]
                         
-                        if max_val > best_overall_val:
-                            best_overall_val = max_val
-                            best_overall_loc = max_loc
-                            best_overall_img = t_info["path"]
-                            best_overall_w = w
-                            best_overall_h = h
-                            best_overall_roi = (roi_x1, roi_x2, roi_y1, roi_y2)
-                            best_overall_threshold = t_info["threshold"]
+                        for t_info in templates_info:
+                            x, y, w, h = t_info["x"], t_info["y"], t_info["w"], t_info["h"]
+                            if t_info["is_swipe_v"]:
+                                roi_x1 = max(0, x - 50)
+                                roi_x2 = min(sw, x + w + 50)
+                                roi_y1 = 0
+                                roi_y2 = sh
+                            elif t_info["is_swipe_h"]:
+                                roi_x1 = 0
+                                roi_x2 = sw
+                                roi_y1 = max(0, y - 150)
+                                roi_y2 = min(sh, y + h + 150)
+                            else:
+                                roi_x1 = max(0, x - 50)
+                                roi_x2 = min(sw, x + w + 50)
+                                roi_y1 = max(0, y - 150)
+                                roi_y2 = min(sh, y + h + 150)
+                                
+                            screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
+                            res = cv2.matchTemplate(screen_roi, t_info["template"], cv2.TM_CCOEFF_NORMED)
+                            _, max_val, _, max_loc = cv2.minMaxLoc(res)
                             
-                        if max_val >= t_info["threshold"]:
-                            abs_cx = roi_x1 + max_loc[0] + w // 2
-                            abs_cy = roi_y1 + max_loc[1] + h // 2
-                            print(f"[Router] 滑動後執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
-                            self.controller.tap(abs_cx, abs_cy)
-                            time.sleep(2.0)
-                            success = True
+                            print(f"  [Debug] 滑動後尋找 {t_info['path'].name} (第 {attempt+1}/5 次) - 當前最高信心度: {max_val:.2f}")
+                            
+                            if max_val > best_overall_val:
+                                best_overall_val = max_val
+                                best_overall_loc = max_loc
+                                best_overall_img = t_info["path"]
+                                best_overall_w = w
+                                best_overall_h = h
+                                best_overall_roi = (roi_x1, roi_x2, roi_y1, roi_y2)
+                                best_overall_threshold = t_info["threshold"]
+                                
+                            if max_val >= t_info["threshold"]:
+                                abs_cx = roi_x1 + max_loc[0] + w // 2
+                                abs_cy = roi_y1 + max_loc[1] + h // 2
+                                print(f"[Router] 滑動後執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
+                                self.controller.tap(abs_cx, abs_cy)
+                                time.sleep(2.0)
+                                success = True
+                                break
+                                
+                        if success:
                             break
+                        else:
+                            time.sleep(0.3)
                             
                     if success:
                         break
-                    else:
-                        time.sleep(0.3)
                         
             if not success:
                 debug_dir = self.base_dir / "debug"

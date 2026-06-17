@@ -85,7 +85,29 @@ class ScriptedFinder(DailyTaskFinder):
         return self.results.pop(0)
 
     def _scroll_to_top(self, swipes: int) -> None:
-        self.reset_calls += 1
+        self.reset_calls += swipes
+
+    def _swipe_until_changed(self, *args, **kwargs) -> bool:
+        self.swipes += 1
+        if self.swipe_results:
+            return self.swipe_results.pop(0)
+        return True
+
+
+class ScriptedGoFirstFinder(DailyTaskFinder):
+    def __init__(self, results: list[TaskSearchResult], swipe_results: list[bool] | None = None):
+        self.results = list(results)
+        self.swipe_results = list(swipe_results or [])
+        self.swipes = 0
+        self.reset_calls = 0
+
+    def find_on_current_screen_go_first(self, spec):
+        if not self.results:
+            raise AssertionError("No scripted go-first search result left")
+        return self.results.pop(0)
+
+    def _scroll_to_top(self, swipes: int) -> None:
+        self.reset_calls += swipes
 
     def _swipe_until_changed(self, *args, **kwargs) -> bool:
         self.swipes += 1
@@ -286,6 +308,102 @@ class DailyTaskFinderTests(TestCase):
         self.assertEqual(result.status, TaskSearchStatus.READY)
         self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
 
+    def test_go_first_finds_task_label_on_left_of_go_button(self):
+        matcher = FakeMatcher(
+            label=None,
+            go=_go_at(385),
+            labels_by_name={"task_label_wide.png": _wide_label_at(385)},
+        )
+        finder = DailyTaskFinder(FakeController(), matcher)
+
+        result = finder.find_on_current_screen_go_first(TASK_SPECS["time_travel"])
+
+        self.assertEqual(result.status, TaskSearchStatus.READY)
+        self.assertEqual(result.go_match.template_path.name, "go_button.png")
+        self.assertEqual(result.label_match.template_path.name, "task_label_wide.png")
+        self.assertIn("go-first", result.reason)
+
+    def test_go_first_does_not_use_low_confidence_left_label(self):
+        low = MatchResult(
+            template_path=Path("task_label_wide.png"),
+            confidence=0.80,
+            center=(330, 385),
+            bbox=(218, 374, 216, 22),
+        )
+        matcher = FakeMatcher(
+            label=None,
+            go=_go_at(385),
+            labels_by_name={"task_label_wide.png": low},
+        )
+        finder = DailyTaskFinder(FakeController(), matcher)
+
+        result = finder.find_on_current_screen_go_first(TASK_SPECS["arena"])
+
+        self.assertEqual(result.status, TaskSearchStatus.NOT_FOUND)
+        self.assertIsNone(result.go_match)
+
+    def test_go_first_completed_status_row_is_done_or_claimable(self):
+        matcher = FakeMatcher(
+            label=None,
+            done=_done_at(385),
+            labels_by_name={"task_label_wide.png": _wide_label_at(385)},
+        )
+        finder = DailyTaskFinder(FakeController(), matcher)
+
+        result = finder.find_on_current_screen_go_first(TASK_SPECS["arena"])
+
+        self.assertEqual(result.status, TaskSearchStatus.DONE_OR_CLAIMABLE)
+        self.assertEqual(result.done_match.template_path.name, "completed_button.png")
+        self.assertIsNone(result.go_match)
+        self.assertIn("completed", result.reason)
+
+    def test_go_first_claim_status_row_is_done_or_claimable(self):
+        matcher = FakeMatcher(
+            label=None,
+            claim=_claim_at(385),
+            labels_by_name={"task_label_wide.png": _wide_label_at(385)},
+        )
+        finder = DailyTaskFinder(FakeController(), matcher)
+
+        result = finder.find_on_current_screen_go_first(TASK_SPECS["arena"])
+
+        self.assertEqual(result.status, TaskSearchStatus.DONE_OR_CLAIMABLE)
+        self.assertEqual(result.claim_match.template_path.name, "claim_button.png")
+        self.assertIsNone(result.go_match)
+        self.assertIn("claim", result.reason)
+
+    def test_go_first_scan_classifies_visible_rows_by_task(self):
+        class MultiMatcher(FakeMatcher):
+            def __init__(self):
+                super().__init__(label=None)
+
+            def match_template_all(self, screen, template_path, threshold=0.0, roi=None, **kwargs):
+                if template_path.name == "go_button.png":
+                    return [_go_at(340), _go_at(430)]
+                return []
+
+            def match_template(self, screen, template_path: Path, threshold=0.0, roi=None, check_brightness=True):
+                self.calls.append((template_path.name, threshold, roi))
+                if template_path.name == "task_label_wide.png" and roi is not None:
+                    _x, y, _w, _h = roi
+                    if y <= 320 and "midas" in str(template_path):
+                        return _wide_label_at(340)
+                    if y > 320 and "time_travel" in str(template_path):
+                        return _wide_label_at(430)
+                return None
+
+        finder = DailyTaskFinder(FakeController(), MultiMatcher())
+
+        rows = finder.scan_current_screen_go_first(
+            {
+                "midas": TASK_SPECS["midas"],
+                "time_travel": TASK_SPECS["time_travel"],
+            }
+        )
+
+        self.assertEqual([row.task_key for row in rows], ["midas", "time_travel"])
+        self.assertEqual([row.result.status for row in rows], [TaskSearchStatus.READY, TaskSearchStatus.READY])
+
     def test_scroll_to_task_prefers_ready_after_weak_done_candidate(self):
         weak_done = TaskSearchResult(
             TaskSearchStatus.DONE_OR_CLAIMABLE,
@@ -320,3 +438,30 @@ class DailyTaskFinderTests(TestCase):
         result = finder.scroll_to_task(TASK_SPECS["time_travel"])
 
         self.assertEqual(result, weak_done)
+
+    def test_go_first_scroll_stops_after_contiguous_status_section_ends(self):
+        finder = ScriptedGoFirstFinder(
+            [
+                TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="go-first: row status buttons visible"),
+                TaskSearchResult(TaskSearchStatus.NOT_FOUND, reason="go-first: no row status button visible"),
+            ]
+        )
+
+        result = finder.scroll_to_task_go_first(TASK_SPECS["magic_shop"])
+
+        self.assertEqual(result.status, TaskSearchStatus.NOT_FOUND)
+        self.assertIn("passed contiguous", result.reason)
+        self.assertEqual(finder.swipes, 1)
+
+    def test_go_first_scroll_does_not_reset_to_top_by_default(self):
+        ready = TaskSearchResult(
+            TaskSearchStatus.READY,
+            label_match=_label_at(340),
+            go_match=_go_at(340),
+        )
+        finder = ScriptedGoFirstFinder([ready])
+
+        result = finder.scroll_to_task_go_first(TASK_SPECS["magic_shop"])
+
+        self.assertEqual(result, ready)
+        self.assertEqual(finder.reset_calls, 0)

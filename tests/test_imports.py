@@ -1,5 +1,7 @@
 import unittest
 import importlib.util
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 class ImportTests(unittest.TestCase):
@@ -25,14 +27,61 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES))
 
     def test_task_specs_are_configured(self):
-        from src.config import TASK_ORDER, TASK_SPECS, TESTED_DAILY_TASK_ORDER
+        from src.config import (
+            RUN_ALL_GO_FIRST_TASK_ORDER,
+            RUN_ALL_TASK_ORDER,
+            TASK_ORDER,
+            TASK_SPECS,
+            TESTED_DAILY_TASK_ORDER,
+        )
 
         self.assertEqual(set(TASK_ORDER), set(TASK_SPECS))
+        self.assertLessEqual(set(RUN_ALL_TASK_ORDER), set(TASK_ORDER))
+        self.assertLessEqual(set(RUN_ALL_GO_FIRST_TASK_ORDER), set(TASK_ORDER))
+        self.assertNotIn("endless_trial", RUN_ALL_TASK_ORDER)
+        self.assertNotIn("bounty", RUN_ALL_GO_FIRST_TASK_ORDER)
+        self.assertNotIn("campaign", RUN_ALL_GO_FIRST_TASK_ORDER)
+        self.assertNotIn("endless_trial", RUN_ALL_GO_FIRST_TASK_ORDER)
+        self.assertNotIn("guild_dungeon", RUN_ALL_GO_FIRST_TASK_ORDER)
+        self.assertIn("magic_shop", RUN_ALL_GO_FIRST_TASK_ORDER)
         self.assertIn("midas", TASK_SPECS)
         self.assertIn("gem_50", TASK_SPECS["midas"].policy.allowed_actions)
         self.assertLessEqual(set(TESTED_DAILY_TASK_ORDER), set(TASK_SPECS))
         self.assertNotIn("bounty", TESTED_DAILY_TASK_ORDER)
         self.assertNotIn("guild_dungeon", TESTED_DAILY_TASK_ORDER)
+
+    def test_run_all_task_order_can_load_user_config(self):
+        from src.config import load_run_all_task_order
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run_all_tasks.jsonc"
+            path.write_text(
+                """
+{
+  "tasks": [
+    "midas",        // 點金手
+    // "campaign",  // 戰役關卡
+    "magic_shop"    // 魔法商店
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(load_run_all_task_order(path), ("midas", "magic_shop"))
+
+    def test_run_all_task_order_rejects_unknown_or_duplicate_tasks(self):
+        from src.config import load_run_all_task_order
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run_all_tasks.jsonc"
+            path.write_text('{"tasks": ["midas", "missing_task"]}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unknown task"):
+                load_run_all_task_order(path)
+
+            path.write_text('{"tasks": ["midas", "midas"]}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate task"):
+                load_run_all_task_order(path)
 
 
 if __name__ == "__main__":

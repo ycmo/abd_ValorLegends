@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,8 @@ RAW_CAPTURES_DIR = ASSETS_DIR / "raw_captures"
 CAPTURES_DIR = ROOT_DIR / "captures"
 ACTION_DEBUG_DIR = CAPTURES_DIR / "action_debug"
 MANUAL_SCREENSHOTS_DIR = ROOT_DIR / "manual_screenshots"
+USER_CONFIG_DIR = ROOT_DIR / "config"
+RUN_ALL_TASKS_CONFIG = USER_CONFIG_DIR / "run_all_tasks.jsonc"
 
 DEFAULT_SERIAL = os.environ.get("VL_ADB_SERIAL", "emulator-5554")
 ACTION_DEBUG_ENABLED = os.environ.get("VL_DEBUG_ACTIONS", "").lower() in ("1", "true", "yes", "on")
@@ -204,6 +207,72 @@ TASK_ORDER: Tuple[str, ...] = (
     "time_travel",
     "magic_shop",
 )
+
+RUN_ALL_TASK_ORDER: Tuple[str, ...] = tuple(
+    task_key for task_key in TASK_ORDER if task_key != "endless_trial"
+)
+
+RUN_ALL_GO_FIRST_TASK_ORDER: Tuple[str, ...] = (
+    "arena",
+    "guild_wish",
+    "midas",
+    "secret_realm",
+    "summon",
+    "time_travel",
+    "magic_shop",
+)
+
+
+def _strip_jsonc_line_comments(text: str) -> str:
+    lines = []
+    for line in text.splitlines():
+        in_string = False
+        escaped = False
+        keep_chars = []
+        index = 0
+        while index < len(line):
+            char = line[index]
+            next_char = line[index + 1] if index + 1 < len(line) else ""
+            if escaped:
+                keep_chars.append(char)
+                escaped = False
+            elif char == "\\" and in_string:
+                keep_chars.append(char)
+                escaped = True
+            elif char == '"':
+                keep_chars.append(char)
+                in_string = not in_string
+            elif char == "/" and next_char == "/" and not in_string:
+                break
+            else:
+                keep_chars.append(char)
+            index += 1
+        lines.append("".join(keep_chars))
+    return "\n".join(lines)
+
+
+def load_run_all_task_order(path: Path = RUN_ALL_TASKS_CONFIG) -> Tuple[str, ...]:
+    if not path.exists():
+        return RUN_ALL_GO_FIRST_TASK_ORDER
+
+    try:
+        data = json.loads(_strip_jsonc_line_comments(path.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON/JSONC in {path}: {exc}") from exc
+
+    tasks = data.get("tasks") if isinstance(data, dict) else None
+    if not isinstance(tasks, list) or not all(isinstance(task, str) for task in tasks):
+        raise ValueError(f"{path} must contain a JSON object with a string list field: tasks")
+
+    unknown = [task for task in tasks if task not in TASK_SPECS]
+    if unknown:
+        raise ValueError(f"{path} contains unknown task key(s): {', '.join(unknown)}")
+
+    duplicates = sorted({task for task in tasks if tasks.count(task) > 1})
+    if duplicates:
+        raise ValueError(f"{path} contains duplicate task key(s): {', '.join(duplicates)}")
+
+    return tuple(tasks)
 
 TESTED_DAILY_TASK_ORDER: Tuple[str, ...] = (
     "secret_realm",

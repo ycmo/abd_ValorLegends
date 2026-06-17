@@ -1,12 +1,12 @@
 @echo off
-echo ==========================================
-echo       Resetting ADB Connection
-echo ==========================================
-echo.
-echo [1/3] Killing ADB server...
-adb kill-server
+::echo ==========================================
+::echo       Resetting ADB Connection
+::echo ==========================================
+::echo.
+::echo [1/3] Killing ADB server...
+::adb kill-server
 
-timeout /t 2 /nobreak >nul
+::timeout /t 2 /nobreak >nul
 
 echo.
 echo [2/3] Starting ADB server and connecting...

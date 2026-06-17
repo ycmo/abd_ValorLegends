@@ -10,7 +10,16 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.adb_controller import AdbControllerError, DeviceController
-from src.config import CAPTURES_DIR, DEFAULT_SERIAL, EXPECTED_SCREEN_SIZE, TASK_ORDER, TASK_SPECS, TESTED_DAILY_TASK_ORDER
+from src.config import (
+    CAPTURES_DIR,
+    DEFAULT_SERIAL,
+    EXPECTED_SCREEN_SIZE,
+    RUN_ALL_TASKS_CONFIG,
+    TASK_ORDER,
+    TASK_SPECS,
+    TESTED_DAILY_TASK_ORDER,
+    load_run_all_task_order,
+)
 from src.daily_runner import DailyRunner, build_context
 from src.exceptions import BotError, ConfigurationError
 from src.paint_cropper import run_paint_crop_workflow
@@ -19,8 +28,36 @@ from src.tasks import TASK_CLASSES
 from src.vision_matcher import VisionMatcher
 
 
+def _task_help_text() -> str:
+    lines = ["Available task keys:"]
+    for key in TASK_ORDER:
+        spec = TASK_SPECS[key]
+        lines.append(f"  {key:<14} {spec.display_name}")
+    return "\n".join(lines)
+
+
+def _add_task_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "task",
+        choices=sorted(TASK_CLASSES),
+        metavar="task",
+        help="Task key. Run list-tasks for policy details.",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Valor Legends ADB automation")
+    parser = argparse.ArgumentParser(
+        description="Valor Legends ADB automation",
+        epilog=(
+            "Single-task commands:\n"
+            "  run-task task\n"
+            "  run-task-go-first task\n"
+            "  run-current-task task\n"
+            "  run-current-scene-task task\n\n"
+            f"{_task_help_text()}"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--serial", default=DEFAULT_SERIAL, help=f"ADB serial, default: {DEFAULT_SERIAL}")
     parser.add_argument(
         "--debug-actions",
@@ -47,31 +84,66 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list-tasks", help="List configured daily tasks")
 
     probe_task = sub.add_parser("probe-task", help="Find a task row on the daily-task screen without opening it")
-    probe_task.add_argument("task", choices=sorted(TASK_CLASSES))
+    _add_task_argument(probe_task)
 
     probe_current_task = sub.add_parser(
         "probe-current-task",
         help="Find a task row on the current daily-task screen without scrolling",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    probe_current_task.add_argument("task", choices=sorted(TASK_CLASSES))
+    _add_task_argument(probe_current_task)
 
-    run_task = sub.add_parser("run-task", help="Run one task by key")
-    run_task.add_argument("task", choices=sorted(TASK_CLASSES))
+    probe_task_go_first = sub.add_parser(
+        "probe-task-go-first",
+        help="Find a task row by scanning Go buttons first, without opening it",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_task_argument(probe_task_go_first)
+
+    probe_current_task_go_first = sub.add_parser(
+        "probe-current-task-go-first",
+        help="Find a task row on the current daily-task screen by scanning Go buttons first",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_task_argument(probe_current_task_go_first)
+
+    run_task = sub.add_parser(
+        "run-task",
+        help="Run one task by key",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_task_argument(run_task)
+
+    run_task_go_first = sub.add_parser(
+        "run-task-go-first",
+        help="Run one task by key using Go-first daily row search",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_task_argument(run_task_go_first)
 
     run_current_task = sub.add_parser(
         "run-current-task",
         help="Run one task near the current daily-task viewport without resetting the list first",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    run_current_task.add_argument("task", choices=sorted(TASK_CLASSES))
+    _add_task_argument(run_current_task)
 
     run_current_scene_task = sub.add_parser(
         "run-current-scene-task",
         help="Continue one task from its current feature screen/dialog",
+        epilog=_task_help_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    run_current_scene_task.add_argument("task", choices=sorted(TASK_CLASSES))
+    _add_task_argument(run_current_scene_task)
 
     sub.add_parser("run-tested-daily", help="Run only the live-tested daily-task closed loops")
-    sub.add_parser("run-all", help="Run all tasks in configured order")
+    sub.add_parser("run-all", help=f"Run configured tasks using Go-first search ({RUN_ALL_TASKS_CONFIG})")
     return parser
 
 
@@ -196,6 +268,52 @@ def cmd_probe_current_task(
     return 0
 
 
+def _print_task_search_result(task_key: str, result) -> None:
+    print(f"task={task_key}")
+    print(f"status={result.status.value}")
+    if result.label_match:
+        print(f"label_center={result.label_match.center}")
+        print(f"label_confidence={result.label_match.confidence:.4f}")
+        print(f"label_template={result.label_match.template_path.name}")
+    if result.go_match:
+        print(f"go_center={result.go_match.center}")
+        print(f"go_confidence={result.go_match.confidence:.4f}")
+    if result.reason:
+        print(f"reason={result.reason}")
+
+
+def cmd_probe_task_go_first(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    if not context.navigator.go_to_daily_tasks():
+        raise ConfigurationError("Cannot reach daily tasks")
+    result = context.finder.scroll_to_task_go_first(TASK_SPECS[task_key])
+    _print_task_search_result(task_key, result)
+    return 0
+
+
+def cmd_probe_current_task_go_first(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    result = context.finder.find_on_current_screen_go_first(TASK_SPECS[task_key])
+    _print_task_search_result(task_key, result)
+    return 0
+
+
 def cmd_run_task(
     serial: str,
     task_key: str,
@@ -207,6 +325,23 @@ def cmd_run_task(
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
     result = DailyRunner(context).run_task(task_key)
+    print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
+    if result.message:
+        print(result.message)
+    return 0 if result.state.value in ("completed", "skipped", "needs_assets") else 1
+
+
+def cmd_run_task_go_first(
+    serial: str,
+    task_key: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    result = DailyRunner(context).run_task_go_first(task_key)
     print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
     if result.message:
         print(result.message)
@@ -252,7 +387,7 @@ def cmd_run_all(serial: str, debug_actions: Optional[bool] = None, console_debug
     if not context.controller.connect():
         raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
     context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
-    results = DailyRunner(context).run_all()
+    results = DailyRunner(context).run_all(load_run_all_task_order())
     failed = False
     for result in results:
         print(f"{result.task_key}: {result.state.value} ({result.elapsed_seconds:.1f}s)")
@@ -300,8 +435,14 @@ def main(argv: list = None) -> int:
             return cmd_probe_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "probe-current-task":
             return cmd_probe_current_task(args.serial, args.task, args.debug_actions, args.debug)
+        if args.command == "probe-task-go-first":
+            return cmd_probe_task_go_first(args.serial, args.task, args.debug_actions, args.debug)
+        if args.command == "probe-current-task-go-first":
+            return cmd_probe_current_task_go_first(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-task":
             return cmd_run_task(args.serial, args.task, args.debug_actions, args.debug)
+        if args.command == "run-task-go-first":
+            return cmd_run_task_go_first(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-current-task":
             return cmd_run_current_task(args.serial, args.task, args.debug_actions, args.debug)
         if args.command == "run-current-scene-task":

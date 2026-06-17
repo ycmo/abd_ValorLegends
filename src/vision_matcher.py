@@ -128,6 +128,59 @@ class VisionMatcher:
             brightness_ratio=best_brightness_ratio,
         )
 
+    def match_template_all(
+        self,
+        screen: np.ndarray,
+        template_path: Path,
+        threshold: Optional[float] = None,
+        roi: Optional[Roi] = None,
+        check_brightness: bool = True,
+        max_results: int = 20,
+        min_center_distance: int = 24,
+    ) -> List[MatchResult]:
+        prepared = self._prepare_match(screen, template_path, roi)
+        if prepared is None:
+            return []
+        template, mask, haystack, offset, result = prepared
+        th, tw = template.shape[:2]
+        min_score = self.threshold if threshold is None else threshold
+
+        locs = np.where(result >= min_score)
+        points = list(zip(locs[1], locs[0]))
+        points.sort(key=lambda pt: result[pt[1], pt[0]], reverse=True)
+
+        matches: List[MatchResult] = []
+        min_distance_sq = min_center_distance * min_center_distance
+        for rx, ry in points:
+            conf = float(result[ry, rx])
+            matched_roi = haystack[ry:ry + th, rx:rx + tw]
+            brightness_ratio = self._brightness_ratio(template, matched_roi, mask)
+            if check_brightness and brightness_ratio is not None and brightness_ratio < 0.75:
+                continue
+
+            x = int(rx + offset[0])
+            y = int(ry + offset[1])
+            center = (x + tw // 2, y + th // 2)
+            if any(
+                (center[0] - existing.center[0]) ** 2 + (center[1] - existing.center[1]) ** 2
+                < min_distance_sq
+                for existing in matches
+            ):
+                continue
+
+            matches.append(
+                MatchResult(
+                    template_path=template_path,
+                    confidence=conf,
+                    center=center,
+                    bbox=(x, y, tw, th),
+                    brightness_ratio=brightness_ratio,
+                )
+            )
+            if len(matches) >= max_results:
+                break
+        return matches
+
     def best_template_match(
         self,
         screen: np.ndarray,

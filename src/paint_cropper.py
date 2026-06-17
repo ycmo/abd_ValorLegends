@@ -6,7 +6,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Iterable, List, Literal, Optional
 
 import cv2
 import numpy as np
@@ -26,9 +26,27 @@ class CropBox:
         return self.width * self.height
 
 
+BoxColor = Literal["blue", "red", "green"]
+
+
 def find_blue_boxes(image: np.ndarray) -> List[CropBox]:
     """Detect Paint-style blue outline rectangles in a screenshot."""
-    mask = _blue_outline_mask(image)
+    return find_colored_boxes(image, "blue")
+
+
+def find_red_boxes(image: np.ndarray) -> List[CropBox]:
+    """Detect Paint-style red outline rectangles used for tap/click regions."""
+    return find_colored_boxes(image, "red")
+
+
+def find_green_boxes(image: np.ndarray) -> List[CropBox]:
+    """Detect Paint-style green outline rectangles used for recognition anchors."""
+    return find_colored_boxes(image, "green")
+
+
+def find_colored_boxes(image: np.ndarray, color: BoxColor) -> List[CropBox]:
+    """Detect Paint-style outline rectangles for the project box-color convention."""
+    mask = _outline_mask(image, color)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -62,8 +80,12 @@ def find_blue_boxes(image: np.ndarray) -> List[CropBox]:
 
 
 def crop_inside_blue_box(image: np.ndarray, box: CropBox) -> np.ndarray:
+    return crop_inside_colored_box(image, box, "blue")
+
+
+def crop_inside_colored_box(image: np.ndarray, box: CropBox, color: BoxColor) -> np.ndarray:
     roi = image[box.y : box.y + box.height, box.x : box.x + box.width]
-    mask = _blue_outline_mask(roi)
+    mask = _outline_mask(roi, color)
 
     y_min, y_max = 0, box.height - 1
     x_min, x_max = 0, box.width - 1
@@ -88,6 +110,20 @@ def crop_inside_blue_box(image: np.ndarray, box: CropBox) -> np.ndarray:
 
 def _blue_outline_mask(image: np.ndarray) -> np.ndarray:
     """Mask the dark blue/primary blue strokes Paint uses for manual crop boxes."""
+    return _outline_mask(image, "blue")
+
+
+def _outline_mask(image: np.ndarray, color: BoxColor) -> np.ndarray:
+    if color == "blue":
+        return _blue_outline_mask_impl(image)
+    if color == "red":
+        return _red_outline_mask(image)
+    if color == "green":
+        return _green_outline_mask(image)
+    raise ValueError(f"Unsupported box color: {color}")
+
+
+def _blue_outline_mask_impl(image: np.ndarray) -> np.ndarray:
     blue, green, red = cv2.split(image)
     strongest_other = np.maximum(red, green).astype(np.int16)
     blue_i = blue.astype(np.int16)
@@ -96,6 +132,32 @@ def _blue_outline_mask(image: np.ndarray) -> np.ndarray:
         & (red <= 120)
         & (green <= 125)
         & ((blue_i - strongest_other) >= 55)
+    )
+    return mask.astype(np.uint8) * 255
+
+
+def _red_outline_mask(image: np.ndarray) -> np.ndarray:
+    blue, green, red = cv2.split(image)
+    strongest_other = np.maximum(blue, green).astype(np.int16)
+    red_i = red.astype(np.int16)
+    mask = (
+        (red >= 145)
+        & (blue <= 140)
+        & (green <= 140)
+        & ((red_i - strongest_other) >= 45)
+    )
+    return mask.astype(np.uint8) * 255
+
+
+def _green_outline_mask(image: np.ndarray) -> np.ndarray:
+    blue, green, red = cv2.split(image)
+    strongest_other = np.maximum(blue, red).astype(np.int16)
+    green_i = green.astype(np.int16)
+    mask = (
+        (green >= 130)
+        & (blue <= 150)
+        & (red <= 150)
+        & ((green_i - strongest_other) >= 35)
     )
     return mask.astype(np.uint8) * 255
 

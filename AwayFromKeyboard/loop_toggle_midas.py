@@ -14,7 +14,7 @@ project_root = current_dir.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from switch_account.switch_account import switch_account
+from switch_account.switch_account import switch_account, load_accounts
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from src.scene_detector import SceneDetector
@@ -75,7 +75,16 @@ def main():
         print(f"❌ [錯誤] {e}")
         sys.exit(1)
         
-    accounts_per_round = 4 if args.all else 2
+    if args.all:
+        try:
+            accounts_map = load_accounts()
+            accounts_per_round = len(accounts_map)
+        except Exception as e:
+            print(f"⚠️ [警告] 無法讀取 accounts.json ({e})，預設改為 4 個帳號。")
+            accounts_per_round = 4
+    else:
+        accounts_per_round = 2
+        
     switch_cmd = "next" if args.all else "toggle"
     total_runs = accounts_per_round * args.toggles
         
@@ -109,8 +118,8 @@ def main():
             
         while True:
             print("\n🌅 系統喚醒，執行一次性特殊檢查...")
-            if recovery.handle_remote_login():
-                print("✅ 異地登入狀態已排除，準備載入遊戲大廳。")
+            if recovery.handle_wakeup_exceptions():
+                print("✅ 喚醒異常狀態已排除，準備載入遊戲大廳。")
                 recovery.recover_to_main(max_attempts=20) # 排除後需確保回到大廳
                 
             print(f"🔄 本次大循環將執行 {args.toggles} 輪，每輪 {accounts_per_round} 個帳號，總計 {total_runs} 次任務。")
@@ -134,6 +143,13 @@ def main():
                 run_route("點金手", router_script, recovery)
             
             # 執行完畢
+            print(f"\n▶️ === 結尾復原切換 ({switch_cmd})：準備回到首發帳號 ===")
+            print("[ToggleLoop] 執行結尾帳號切換...")
+            try:
+                switch_account(switch_cmd)
+            except Exception as e:
+                print(f"⚠️ [警告] 結尾切換帳號發生錯誤: {e}")
+                
             print("\n" + "=" * 50)
             next_time = datetime.now() + timedelta(seconds=interval_seconds)
             print(f"✅ 本輪 {args.toggles} 輪 ({total_runs} 次) 帳號任務執行完畢！")

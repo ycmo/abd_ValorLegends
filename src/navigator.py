@@ -92,6 +92,21 @@ class Navigator:
         time.sleep(TRANSITION_WAIT_SECONDS)
         return OpenTaskResult(OpenTaskStatus.OPENED)
 
+    def open_task_from_daily_go_first(self, spec: TaskSpec) -> OpenTaskResult:
+        if not self.go_to_daily_tasks():
+            raise NavigationError("Cannot reach daily tasks before opening task")
+
+        result = self.finder.find_on_current_screen_go_first(spec)
+        if result.status == TaskSearchStatus.NOT_FOUND:
+            result = self.finder.scroll_to_task_go_first(spec)
+        if result.status != TaskSearchStatus.READY or result.go_match is None:
+            raise NavigationError(f"Cannot find runnable task row by go-first for {spec.display_name}: {result.reason}")
+
+        self._annotate_daily_task_tap(spec, result)
+        self.controller.tap(*result.go_match.center)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+        return OpenTaskResult(OpenTaskStatus.OPENED)
+
     def open_task_from_current_daily_screen(self, spec: TaskSpec) -> OpenTaskResult:
         screen = self.controller.screenshot()
         detected = self.detector.detect(screen)
@@ -109,6 +124,23 @@ class Navigator:
         if result.status != TaskSearchStatus.READY or result.go_match is None:
             raise NavigationError(
                 f"Cannot find runnable task row on current screen for {spec.display_name}: {result.reason}"
+            )
+
+        self._annotate_daily_task_tap(spec, result)
+        self.controller.tap(*result.go_match.center)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+        return OpenTaskResult(OpenTaskStatus.OPENED)
+
+    def open_task_from_current_daily_screen_go_first(self, spec: TaskSpec) -> OpenTaskResult:
+        screen = self.controller.screenshot()
+        detected = self.detector.detect(screen)
+        if detected.scene != Scene.DAILY_TASKS:
+            raise NavigationError("Current screen is not Daily Tasks")
+
+        result = self.finder.find_on_current_screen_go_first(spec)
+        if result.status != TaskSearchStatus.READY or result.go_match is None:
+            raise NavigationError(
+                f"Cannot find runnable task row on current screen by go-first for {spec.display_name}: {result.reason}"
             )
 
         self._annotate_daily_task_tap(spec, result)
