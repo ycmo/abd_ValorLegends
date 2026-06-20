@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from functools import lru_cache
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -105,6 +106,19 @@ def build_easyocr_reader(
     import easyocr
 
     return easyocr.Reader(list(languages or ["en"]), gpu=False, verbose=False, download_enabled=download_enabled)
+
+
+@lru_cache(maxsize=4)
+def _cached_easyocr_reader(languages: Tuple[str, ...], download_enabled: bool):
+    return build_easyocr_reader(languages, download_enabled=download_enabled)
+
+
+def get_cached_easyocr_reader(
+    languages: Sequence[str] = ("en",),
+    *,
+    download_enabled: bool = False,
+):
+    return _cached_easyocr_reader(tuple(languages), bool(download_enabled))
 
 
 def read_texts_easyocr(

@@ -107,7 +107,7 @@ class RouteNavigator:
         else:
             if DeviceController is None:
                 raise ImportError("找不到 DeviceController 模組且未提供 Mock Controller。")
-            self.controller = DeviceController()
+            self.controller = DeviceController(debug_actions=self.debug_actions)
             if not self.controller.connect():
                 raise RuntimeError("無法連線到任何可用的 ADB 裝置。")
             
@@ -176,6 +176,7 @@ class RouteNavigator:
                     "threshold": threshold,
                     "cx": cx, "cy": cy, "x": x, "y": y, "w": w, "h": h,
                     "template": template,
+                    "verify_disappear": "_verify" in img_path.stem.lower(),
                     "is_swipe_v": is_swipe_v,
                     "is_swipe_h": is_swipe_h
                 })
@@ -243,9 +244,26 @@ class RouteNavigator:
                         abs_cx = roi_x1 + max_loc[0] + w // 2
                         abs_cy = roi_y1 + max_loc[1] + h // 2
                         print(f"[Router] 執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
-                        self.controller.tap(abs_cx, abs_cy)
-                        time.sleep(2.0)
-                        success = True
+                        if t_info["verify_disappear"]:
+                            success = self._tap_and_verify_disappearance(
+                                get_screen_func,
+                                phase=phase,
+                                t_info=t_info,
+                                roi=(roi_x1, roi_x2, roi_y1, roi_y2),
+                                match_loc=max_loc,
+                                confidence=max_val,
+                            )
+                        else:
+                            self._tap_route_target(
+                                abs_cx,
+                                abs_cy,
+                                phase=phase,
+                                template_name=t_info["path"].name,
+                                confidence=max_val,
+                                bbox=(roi_x1 + max_loc[0], roi_y1 + max_loc[1], w, h),
+                            )
+                            time.sleep(2.0)
+                            success = True
                         break
                         
                 if success:
@@ -342,9 +360,26 @@ class RouteNavigator:
                                 abs_cx = roi_x1 + max_loc[0] + w // 2
                                 abs_cy = roi_y1 + max_loc[1] + h // 2
                                 print(f"[Router] 滑動後執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
-                                self.controller.tap(abs_cx, abs_cy)
-                                time.sleep(2.0)
-                                success = True
+                                if t_info["verify_disappear"]:
+                                    success = self._tap_and_verify_disappearance(
+                                        get_screen_func,
+                                        phase=phase,
+                                        t_info=t_info,
+                                        roi=(roi_x1, roi_x2, roi_y1, roi_y2),
+                                        match_loc=max_loc,
+                                        confidence=max_val,
+                                    )
+                                else:
+                                    self._tap_route_target(
+                                        abs_cx,
+                                        abs_cy,
+                                        phase=phase,
+                                        template_name=t_info["path"].name,
+                                        confidence=max_val,
+                                        bbox=(roi_x1 + max_loc[0], roi_y1 + max_loc[1], w, h),
+                                    )
+                                    time.sleep(2.0)
+                                    success = True
                                 break
                                 
                         if success:
@@ -369,6 +404,80 @@ class RouteNavigator:
                     best_overall_h,
                 )
                 raise ValueError(f"比對失敗！步驟群組 {prefix} 找不到目標 (最高信心度 {best_overall_val:.2f} < {best_overall_threshold})。\n已將偵錯畫面存至: {debug_img_path}")
+
+    def _tap_route_target(
+        self,
+        x: int,
+        y: int,
+        *,
+        phase: str,
+        template_name: str,
+        confidence: float,
+        bbox: tuple[int, int, int, int],
+    ) -> None:
+        annotate = getattr(self.controller, "annotate_next_tap_debug", None)
+        if annotate is not None:
+            annotate(
+                lines=[
+                    f"router route={self.route_name} phase={phase}",
+                    f"template={template_name} confidence={confidence:.3f}",
+                ],
+                boxes=[(*bbox, "route_match")],
+            )
+        self.controller.tap(x, y)
+
+    def _tap_and_verify_disappearance(
+        self,
+        get_screen_func,
+        *,
+        phase: str,
+        t_info: dict,
+        roi: tuple[int, int, int, int],
+        match_loc: tuple[int, int],
+        confidence: float,
+    ) -> bool:
+        roi_x1, roi_x2, roi_y1, roi_y2 = roi
+        w, h = t_info["w"], t_info["h"]
+        current_loc = match_loc
+        current_confidence = confidence
+
+        for click_attempt in range(1, 4):
+            abs_x = roi_x1 + current_loc[0]
+            abs_y = roi_y1 + current_loc[1]
+            self._tap_route_target(
+                abs_x + w // 2,
+                abs_y + h // 2,
+                phase=phase,
+                template_name=t_info["path"].name,
+                confidence=current_confidence,
+                bbox=(abs_x, abs_y, w, h),
+            )
+
+            for verify_attempt in range(1, 4):
+                time.sleep(0.5)
+                screen = get_screen_func()
+                if screen is None:
+                    continue
+                screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
+                result = cv2.matchTemplate(screen_roi, t_info["template"], cv2.TM_CCOEFF_NORMED)
+                _, current_confidence, _, current_loc = cv2.minMaxLoc(result)
+                print(
+                    f"  [Verify] {t_info['path'].name} click={click_attempt}/3 "
+                    f"check={verify_attempt}/3 confidence={current_confidence:.2f}"
+                )
+                if current_confidence < t_info["threshold"]:
+                    print(f"[Router] 驗證成功：{t_info['path'].name} 已消失")
+                    return True
+
+            print(
+                f"[Router] 驗證未通過：{t_info['path'].name} 仍存在 "
+                f"(confidence={current_confidence:.2f})"
+            )
+
+        raise ValueError(
+            f"點擊後驗證失敗：{t_info['path'].name} 經 3 次點擊後仍未消失 "
+            f"(confidence={current_confidence:.2f})"
+        )
 
     def _save_match_failure_debug(
         self,

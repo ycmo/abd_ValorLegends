@@ -217,7 +217,7 @@ class GuildDungeonTaskTests(unittest.TestCase):
 
         self.assertEqual(controller.taps, [GuildDungeonTask.START_BATTLE_POINT])
 
-    def test_return_closes_open_outpost_then_uses_guild_back_asset(self):
+    def test_return_closes_open_outpost_then_uses_shared_first_back_asset(self):
         controller = FakeController()
         navigator = FakeNavigator()
         task = GuildDungeonTask(
@@ -237,9 +237,9 @@ class GuildDungeonTaskTests(unittest.TestCase):
 
         self.assertEqual(controller.taps, [(830, 48)])
         self.assertEqual(navigator.calls[0]["max_back_taps"], 4)
-        self.assertEqual(navigator.calls[0]["back_asset"].name, "back_button.png")
+        self.assertEqual(navigator.calls[0]["back_asset"].name, "back_button2.png")
 
-    def test_return_uses_shared_second_back_asset_after_guild_back_stops(self):
+    def test_return_uses_guild_back_asset_after_shared_back_stops(self):
         navigator = FakeNavigator(results=[False, True])
         task = GuildDungeonTask(
             SimpleNamespace(
@@ -252,8 +252,8 @@ class GuildDungeonTaskTests(unittest.TestCase):
         self.assertTrue(task._return_to_daily_tasks())
 
         self.assertEqual(len(navigator.calls), 2)
-        self.assertEqual(navigator.calls[0]["back_asset"].name, "back_button.png")
-        self.assertEqual(navigator.calls[1]["back_asset"].name, "back_button2.png")
+        self.assertEqual(navigator.calls[0]["back_asset"].name, "back_button2.png")
+        self.assertEqual(navigator.calls[1]["back_asset"].name, "back_button.png")
 
     def test_daily_attempts_exhausted_detects_zero_counter(self):
         controller = FakeController()

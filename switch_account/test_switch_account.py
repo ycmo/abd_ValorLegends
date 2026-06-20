@@ -13,6 +13,32 @@ class DummyMatchResult:
         self.center = center
 
 class TestSwitchAccount(unittest.TestCase):
+    @patch("switch_account.detect_current_account", return_value="311")
+    @patch("switch_account.DeviceController")
+    @patch("switch_account.VisionMatcher")
+    @patch("switch_account.wait_and_tap")
+    @patch("builtins.print")
+    def test_same_target_account_returns_true_without_switching(
+        self,
+        mock_print,
+        mock_wait_and_tap,
+        MockVisionMatcher,
+        MockDeviceController,
+        mock_detect_current_account,
+    ):
+        switch_account.ACCOUNTS = {
+            "311": {"type": "google", "server": "311"},
+            "em3": {"type": "google", "server": "em3"},
+        }
+        MockDeviceController.list_devices.return_value = ["emulator-5554"]
+        MockDeviceController.return_value.connect.return_value = True
+
+        result = switch_account.switch_account("311")
+
+        self.assertTrue(result)
+        mock_print.assert_any_call("ℹ️ 目標帳號 '311' 已是目前登入帳號，無需切換。")
+        mock_wait_and_tap.assert_not_called()
+
     @patch("switch_account.DeviceController")
     @patch("switch_account.VisionMatcher")
     @patch("switch_account.time.sleep")

@@ -172,7 +172,7 @@ class DailyTaskFinderTests(TestCase):
     def test_go_first_left_label_roi_uses_row_center_as_bottom_edge(self):
         label_roi = DailyTaskFinder._same_row_left_label_roi(960, 540, _go_at(399))
 
-        self.assertEqual(label_roi, (220, 365, 300, 34))
+        self.assertEqual(label_roi, (210, 365, 310, 34))
 
     def test_bottom_edge_row_is_not_classified_done(self):
         finder = DailyTaskFinder(FakeController(), FakeMatcher(_label_at(502), go=None))

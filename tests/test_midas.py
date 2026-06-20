@@ -52,8 +52,23 @@ class FakeMatcher:
 
 
 class FakeScreenshotController(FakeController):
+    def __init__(self):
+        super().__init__()
+        self.screenshot_calls = 0
+
     def screenshot(self):
+        self.screenshot_calls += 1
         return object()
+
+
+class ButtonScanMatcher:
+    def __init__(self, active_name):
+        self.active_name = active_name
+        self.screens = []
+
+    def match_template(self, screen, path, **_kwargs):
+        self.screens.append(screen)
+        return FakeMatch() if path.name == self.active_name else None
 
 
 class DiagnosticMidasTask(MidasTask):
@@ -94,6 +109,35 @@ class CleanupMidasTask(MidasTask):
 
 
 class MidasSafetyTests(unittest.TestCase):
+    def test_parse_valid_cooldown(self):
+        self.assertEqual(MidasTask._parse_cooldown_seconds("01:28:22", 0.51), 5302)
+
+    def test_parse_cooldown_rejects_low_confidence_and_eight_hours(self):
+        self.assertIsNone(MidasTask._parse_cooldown_seconds("01:28:22", 0.50))
+        self.assertIsNone(MidasTask._parse_cooldown_seconds("08:00:00", 0.99))
+
+    def test_parse_cooldown_rejects_invalid_time(self):
+        self.assertIsNone(MidasTask._parse_cooldown_seconds("01:61:00", 0.99))
+        self.assertIsNone(MidasTask._parse_cooldown_seconds("1:02:03", 0.99))
+
+    def test_active_button_scan_reuses_one_screen_and_preserves_priority(self):
+        screen = object()
+        matcher = ButtonScanMatcher("gem_20_button.png")
+        task = MidasTask(
+            SimpleNamespace(
+                controller=FakeScreenshotController(),
+                matcher=matcher,
+                navigator=FakeNavigator(),
+            )
+        )
+
+        active = task._first_active_button_on_screen(screen)
+
+        self.assertIsNotNone(active)
+        self.assertEqual(active[0], "20-gem")
+        self.assertEqual(matcher.screens, [screen, screen])
+        self.assertEqual(task.context.controller.screenshot_calls, 0)
+
     def test_tap_if_active_does_not_tap_missing_button(self):
         task = FakeMidasTask(active_assets=())
 

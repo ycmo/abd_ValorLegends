@@ -1,12 +1,28 @@
 from __future__ import annotations
 
+import re
 import time
+from dataclasses import dataclass
 from typing import Optional
+
+import cv2
 
 from src.config import SHARED_ASSETS_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, TaskFailedError
 from src.task_runner import BaseTask, TaskSceneAnchor, TaskRunResult, TaskState
 from src.vision_matcher import MatchResult, Roi
+
+
+@dataclass(frozen=True)
+class MidasAutoResult:
+    clicked: bool
+    cooldown_seconds: Optional[int] = None
+    ocr_text: str = ""
+    ocr_confidence: float = 0.0
+
+    @property
+    def cooldown_valid(self) -> bool:
+        return self.cooldown_seconds is not None
 
 
 class MidasTask(BaseTask):
@@ -31,7 +47,12 @@ class MidasTask(BaseTask):
     BUSY_OVERLAY_THRESHOLD = 0.86
     BUSY_WAIT_MAX_SECONDS = 90.0
     ACTIVE_BUTTON_THRESHOLD = 0.92
+    REWARD_WAIT_SECONDS = 12.0
+    STATE_POLL_SECONDS = 1.0
     MAX_ALLOWED_TAPS = 12
+    COOLDOWN_OCR_ROI: Roi = (470, 116, 100, 38)
+    COOLDOWN_OCR_MIN_CONFIDENCE = 0.50
+    COOLDOWN_MAX_SECONDS = 8 * 60 * 60
     task_scene_anchors = (
         TaskSceneAnchor("midas_title.png", threshold=0.86, roi=TITLE_ROI),
         TaskSceneAnchor("reward_title.png", threshold=0.86, roi=REWARD_TITLE_ROI),
@@ -44,21 +65,7 @@ class MidasTask(BaseTask):
         close_error: Optional[BotError] = None
 
         try:
-            self._dismiss_reward_overlay_if_present()
-            self._require_midas_dialog()
-            for _ in range(self.MAX_ALLOWED_TAPS):
-                self._dismiss_reward_overlay_if_present()
-                tapped = False
-                for label, asset_name, roi in self._allowed_buttons():
-                    if self._tap_if_active(label, asset_name, roi):
-                        completed.append(label)
-                        tapped = True
-                        self._dismiss_reward_overlay_if_present()
-                        break
-                if not tapped:
-                    break
-            else:
-                raise TaskFailedError("Midas exceeded allowed tap limit while exhausting free/20/50 tiers")
+            completed = self._execute_allowed_buttons()
 
             if not completed:
                 result_message = "no active Midas button found; dialog closed"
@@ -80,6 +87,94 @@ class MidasTask(BaseTask):
             raise close_error
         return result_message
 
+    def execute_auto(self, *, require_cooldown_after_success: bool = False) -> MidasAutoResult:
+        completed = []
+        try:
+            completed = self._execute_allowed_buttons()
+            if completed and not require_cooldown_after_success:
+                return MidasAutoResult(clicked=True)
+
+            screen = self._wait_for_non_busy_screen()
+            cooldown_seconds, ocr_text, ocr_confidence = self._read_cooldown_ocr(screen)
+            return MidasAutoResult(
+                clicked=bool(completed),
+                cooldown_seconds=cooldown_seconds,
+                ocr_text=ocr_text,
+                ocr_confidence=ocr_confidence,
+            )
+        finally:
+            self._close_dialog()
+
+    def _execute_allowed_buttons(self) -> list[str]:
+        completed = []
+        self._dismiss_reward_overlay_if_present()
+        self._require_midas_dialog()
+        for _ in range(self.MAX_ALLOWED_TAPS):
+            screen = self._wait_for_non_busy_screen()
+            active = self._first_active_button_on_screen(screen)
+            if active is None:
+                return completed
+            label, match = active
+            self.context.controller.tap(*match.center)
+            completed.append(label)
+            self._wait_for_reward_after_tap()
+            self._dismiss_reward_overlay_if_present()
+        raise TaskFailedError("Midas exceeded allowed tap limit while exhausting free/20/50 tiers")
+
+    def _read_cooldown_ocr(self, screen) -> tuple[Optional[int], str, float]:
+        x, y, w, h = self.COOLDOWN_OCR_ROI
+        crop = screen[y : y + h, x : x + w]
+        if crop.size == 0:
+            return None, "", 0.0
+
+        enlarged = cv2.resize(crop, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        padded = cv2.copyMakeBorder(
+            enlarged,
+            12,
+            12,
+            12,
+            12,
+            cv2.BORDER_CONSTANT,
+            value=(20, 20, 35),
+        )
+        try:
+            results = self._get_cooldown_ocr_reader().readtext(
+                padded,
+                detail=1,
+                allowlist="0123456789:",
+            )
+        except Exception as exc:
+            self._log(f"Midas cooldown OCR error: {exc}")
+            return None, "", 0.0
+
+        pieces = []
+        for box, text, confidence in results:
+            xs = [float(point[0]) for point in box]
+            pieces.append((min(xs), str(text).strip(), float(confidence)))
+        pieces.sort(key=lambda item: item[0])
+        ocr_text = "".join(piece[1] for piece in pieces).replace(" ", "")
+        confidence = min((piece[2] for piece in pieces), default=0.0)
+        seconds = self._parse_cooldown_seconds(ocr_text, confidence)
+        return seconds, ocr_text, confidence
+
+    @classmethod
+    def _parse_cooldown_seconds(cls, text: str, confidence: float) -> Optional[int]:
+        if confidence <= cls.COOLDOWN_OCR_MIN_CONFIDENCE:
+            return None
+        match = re.fullmatch(r"(\d{2}):([0-5]\d):([0-5]\d)", text)
+        if match is None:
+            return None
+        hours, minutes, seconds = (int(value) for value in match.groups())
+        total = hours * 3600 + minutes * 60 + seconds
+        if total >= cls.COOLDOWN_MAX_SECONDS:
+            return None
+        return total
+
+    def _get_cooldown_ocr_reader(self):
+        from src.ocr_utils import get_cached_easyocr_reader
+
+        return get_cached_easyocr_reader(("en",), download_enabled=False)
+
     def _execute_and_return(self, started: float) -> TaskRunResult:
         result = self.execute_from_current_scene()
         # Midas is considered finished after tapping the dialog X. Keep this disabled for now
@@ -100,6 +195,61 @@ class MidasTask(BaseTask):
             ("20-gem", "gem_20_button.png", self.GEM_20_BUTTON_ROI),
             ("50-gem", "gem_50_button.png", self.GEM_50_BUTTON_ROI),
         )
+
+    def _first_active_button_on_screen(self, screen) -> Optional[tuple[str, MatchResult]]:
+        for label, asset_name, roi in self._allowed_buttons():
+            match = self.context.matcher.match_template(
+                screen,
+                self.asset_path(asset_name),
+                threshold=self.ACTIVE_BUTTON_THRESHOLD,
+                roi=roi,
+            )
+            if match is not None:
+                return label, match
+        return None
+
+    def _wait_for_non_busy_screen(self):
+        deadline = time.time() + self.BUSY_WAIT_MAX_SECONDS
+        busy_logged = False
+        while time.time() <= deadline:
+            screen = self.context.controller.screenshot()
+            if not self._is_busy_overlay(screen):
+                if busy_logged:
+                    self._log("Midas busy overlay cleared")
+                return screen
+            if not busy_logged:
+                self._log("Midas busy overlay detected before button scan; waiting")
+                busy_logged = True
+            time.sleep(1.0)
+        raise TaskFailedError("Midas busy overlay did not clear before button scan")
+
+    def _wait_for_reward_after_tap(self) -> None:
+        deadline = time.time() + self.REWARD_WAIT_SECONDS
+        busy_started: Optional[float] = None
+        while time.time() <= deadline:
+            screen = self.context.controller.screenshot()
+            if self._is_busy_overlay(screen):
+                if busy_started is None:
+                    busy_started = time.time()
+                    self._log("Midas busy overlay detected after tapping allowed button; waiting")
+                if time.time() - busy_started > self.BUSY_WAIT_MAX_SECONDS:
+                    raise TaskFailedError("Midas busy overlay did not clear after tapping allowed button")
+                deadline += self.STATE_POLL_SECONDS
+                time.sleep(self.STATE_POLL_SECONDS)
+                continue
+            if busy_started is not None:
+                self._log(f"Midas busy overlay cleared after {time.time() - busy_started:.1f}s")
+                busy_started = None
+            reward = self.context.matcher.match_template(
+                screen,
+                self.asset_path("reward_title.png"),
+                threshold=0.86,
+                roi=self.REWARD_TITLE_ROI,
+            )
+            if reward is not None:
+                return
+            time.sleep(self.STATE_POLL_SECONDS)
+        raise TaskFailedError("Midas reward overlay did not appear after tapping allowed button")
 
     def _tap_if_active(self, label: str, asset_name: str, roi: Roi) -> bool:
         match = self._match_task_asset(

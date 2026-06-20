@@ -462,6 +462,10 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
             return False
         print(f"🔄 觸發 {account_name} 模式：動態推導目標帳號為 '{target}'")
         account_name = target
+
+    if current_acc_name == account_name:
+        print(f"ℹ️ 目標帳號 '{account_name}' 已是目前登入帳號，無需切換。")
+        return True
             
     # 這裡才重新載入真正要切換的帳號資訊
     account_info = ACCOUNTS[account_name]

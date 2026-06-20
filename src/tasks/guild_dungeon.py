@@ -537,13 +537,13 @@ class GuildDungeonTask(BaseTask):
 
         returned = self.context.navigator.return_to_daily_tasks_from_known_route(
             max_back_taps=4,
-            back_asset=self.asset_path("back_button.png"),
+            back_asset=SHARED_ASSETS_DIR / "back_button2.png",
         )
         if returned:
             return True
         return self.context.navigator.return_to_daily_tasks_from_known_route(
             max_back_taps=4,
-            back_asset=SHARED_ASSETS_DIR / "back_button2.png",
+            back_asset=self.asset_path("back_button.png"),
         )
 
     def _swipe_map(self, scan_index: int) -> None:

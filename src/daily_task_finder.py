@@ -386,8 +386,8 @@ class DailyTaskFinder:
     def _same_row_left_label_roi(screen_width: int, screen_height: int, status_button: MatchResult) -> Roi:
         row_h = int(screen_height * 0.063)
         row_bottom = max(row_h, min(status_button.center[1], screen_height))
-        x = int(screen_width * 0.230)
-        width = int(screen_width * 0.313)
+        x = int(screen_width * 0.219)
+        width = int(screen_width * 0.323)
         return (x, row_bottom - row_h, width, row_h)
 
     @staticmethod

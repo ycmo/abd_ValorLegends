@@ -12,16 +12,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from router import BLOCKER_GIFT_PACK_CLOSE_POINT, RouteNavigator
 
 class FakeDeviceController:
-    def __init__(self, screen_image=None):
+    def __init__(self, screen_image=None, screen_images=None):
         self.taps = []
+        self.tap_annotations = []
         self.screen_image = screen_image
+        self.screen_images = list(screen_images or [])
         self.screenshot_count = 0
 
     def tap(self, x, y):
         self.taps.append((x, y))
+
+    def annotate_next_tap_debug(self, *, lines=(), boxes=()):
+        self.tap_annotations.append((list(lines), list(boxes)))
         
     def screenshot(self):
         self.screenshot_count += 1
+        if self.screen_images:
+            self.screen_image = self.screen_images.pop(0)
         return self.screen_image
 
 
@@ -83,6 +90,11 @@ class TestRouter(unittest.TestCase):
         # 驗證 tap 是否點擊在偏移後的絕對座標上
         self.assertEqual(len(controller.taps), 1)
         self.assertEqual(controller.taps[0], (60, 70))
+        self.assertEqual(len(controller.tap_annotations), 1)
+        lines, boxes = controller.tap_annotations[0]
+        self.assertIn("router route=test_route phase=enter", lines)
+        self.assertIn("template=01_first.png confidence=1.000", lines)
+        self.assertEqual(boxes, [(50, 60, 20, 20, "route_match")])
 
     def test_execute_route_fallback(self):
         # 建立假圖片檔案
@@ -121,6 +133,60 @@ class TestRouter(unittest.TestCase):
         # 驗證 debug 圖片已產生
         debug_img_path = self.temp_dir / "debug" / "fallback_01_first.png"
         self.assertTrue(debug_img_path.exists())
+
+    def test_verify_step_succeeds_only_after_button_disappears(self):
+        (self.route_dir / "01_first_verify.png").write_text("fake")
+
+        original_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img[40:60, 40:60] = 128
+        original_img[45:55, 45:55] = 255
+        mock_results = {
+            "01_first_verify.png": ((50, 50), (40, 40, 20, 20), original_img)
+        }
+
+        matched_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        matched_screen[60:80, 50:70] = 128
+        matched_screen[65:75, 55:65] = 255
+        disappeared_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        controller = FakeDeviceController(screen_images=[matched_screen, disappeared_screen])
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.time.sleep"):
+            navigator.execute_route()
+
+        self.assertEqual(controller.taps, [(60, 70)])
+        self.assertEqual(controller.screenshot_count, 2)
+
+    def test_verify_step_fails_after_three_clicks_when_button_remains(self):
+        (self.route_dir / "01_first_verify.png").write_text("fake")
+
+        original_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img[40:60, 40:60] = 128
+        original_img[45:55, 45:55] = 255
+        mock_results = {
+            "01_first_verify.png": ((50, 50), (40, 40, 20, 20), original_img)
+        }
+        matched_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        matched_screen[60:80, 50:70] = 128
+        matched_screen[65:75, 55:65] = 255
+        controller = FakeDeviceController(screen_image=matched_screen)
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.time.sleep"):
+            with self.assertRaisesRegex(ValueError, "經 3 次點擊後仍未消失"):
+                navigator.execute_route()
+
+        self.assertEqual(controller.taps, [(60, 70), (60, 70), (60, 70)])
 
     def test_route_directory_not_found(self):
         controller = FakeDeviceController()

@@ -14,11 +14,15 @@ project_root = current_dir.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from switch_account.switch_account import switch_account, load_accounts
-from src.adb_controller import DeviceController
-from src.vision_matcher import VisionMatcher
-from src.scene_detector import SceneDetector
+from switch_account.switch_account import detect_current_account, switch_account, load_accounts
+from src.daily_runner import build_context
+from src.tasks.midas import MidasAutoResult, MidasTask
 from AwayFromKeyboard.ui_recovery import UIRecovery
+from AwayFromKeyboard.integration_task.router import RouteNavigator
+
+AUTO_SHORT_COOLDOWN_SECONDS = 5 * 60
+AUTO_OCR_FAILURE_SLEEP_SECONDS = 2 * 60 * 60
+AUTO_WAKE_BUFFER_SECONDS = 5
 
 def parse_interval_to_seconds(interval_str: str) -> float:
     parts = interval_str.split(':')
@@ -60,12 +64,157 @@ def run_route(route_name: str, router_script: Path, recovery: UIRecovery):
             print(f"❌ [錯誤] 執行強制重啟時發生異常: {e}")
             sys.exit(1)
 
+
+def build_auto_account_order(current_account: str | None, accounts: dict, use_all: bool) -> list[str]:
+    configured = ["em3"]
+    if use_all:
+        configured.extend(account for account in accounts if account != "em3")
+    else:
+        configured.append("311")
+
+    missing = [account for account in configured if account not in accounts]
+    if missing:
+        raise ValueError(f"--auto 缺少必要帳號設定: {', '.join(missing)}")
+
+    order = []
+    for account in ([current_account] if current_account in accounts else []) + configured:
+        if account not in order:
+            order.append(account)
+    return order
+
+
+def _format_seconds(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _recover_or_restart(recovery: UIRecovery) -> None:
+    if recovery.recover_to_main():
+        return
+
+    print("⚠️ [系統] 畫面卡死或無法自動回到主城，啟動強制重啟機制...")
+    recovery.controller.shell(["am", "force-stop", "com.ageofeternity.global"])
+    time.sleep(3)
+    recovery.controller.shell(
+        ["monkey", "-p", "com.ageofeternity.global", "-c", "android.intent.category.LAUNCHER", "1"]
+    )
+    print("⏳ 遊戲已重啟，等待載入...")
+    time.sleep(10)
+    from src.game_entry import reenter_game
+
+    if not reenter_game(recovery.controller, recovery.matcher):
+        raise RuntimeError("重啟後仍無法成功進入主城")
+
+
+def run_midas_auto_once(context, recovery: UIRecovery, *, require_cooldown: bool) -> MidasAutoResult:
+    route = RouteNavigator(route_name="點金手", controller=context.controller)
+    route.execute_route(phase="enter")
+    try:
+        return MidasTask(context).execute_auto(require_cooldown_after_success=require_cooldown)
+    finally:
+        try:
+            route.execute_route(phase="exit")
+        finally:
+            _recover_or_restart(recovery)
+
+
+def _print_ocr_failure(result: MidasAutoResult) -> None:
+    print(
+        "⚠️ [Auto] 點金手冷卻 OCR 失敗："
+        f"text={result.ocr_text!r}, confidence={result.ocr_confidence:.3f}；"
+        "將休息 02:00:00 後重新開始。"
+    )
+
+
+def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
+    while True:
+        print(f"\n💰 [Auto] 執行帳號 【{account}】 點金手")
+        result = run_midas_auto_once(context, recovery, require_cooldown=False)
+        if result.clicked:
+            print(f"✅ [Auto] 帳號 【{account}】 點金成功，前往下一帳號。")
+            return True
+        if not result.cooldown_valid:
+            _print_ocr_failure(result)
+            return False
+
+        cooldown = result.cooldown_seconds or 0
+        print(f"⏱️ [Auto] 帳號 【{account}】 剩餘冷卻 {_format_seconds(cooldown)}")
+        if cooldown > AUTO_SHORT_COOLDOWN_SECONDS:
+            print("➡️ [Auto] 冷卻超過 5 分鐘，前往下一帳號。")
+            return True
+
+        wait_seconds = cooldown + AUTO_WAKE_BUFFER_SECONDS
+        wake_time = datetime.now() + timedelta(seconds=wait_seconds)
+        print(
+            f"💤 [Auto] 短冷卻，原帳號等待 {_format_seconds(wait_seconds)}；"
+            f"預計 {wake_time.strftime('%Y-%m-%d %H:%M:%S')} 重試。"
+        )
+        time.sleep(wait_seconds)
+        print("🌅 [Auto] 短冷卻結束，檢查異地登入與登入畫面...")
+        if recovery.handle_wakeup_exceptions():
+            print("✅ [Auto] 短冷卻喚醒異常狀態已排除。")
+        _recover_or_restart(recovery)
+
+
+def run_auto_round(context, recovery: UIRecovery, *, accounts: dict, use_all: bool) -> int:
+    print("\n🌅 [Auto] 新一輪啟動，先檢查異地登入與登入畫面...")
+    if recovery.handle_wakeup_exceptions():
+        print("✅ [Auto] 喚醒異常狀態已排除。")
+    _recover_or_restart(recovery)
+
+    current_account = detect_current_account(context.controller, context.matcher)
+    order = build_auto_account_order(current_account, accounts, use_all)
+    displayed_order = order if order[-1] == "em3" else order + ["em3"]
+    print(f"🔄 [Auto] 本輪帳號順序: {' -> '.join(displayed_order)}")
+
+    ocr_failed = False
+    active_account = current_account
+    for account in order:
+        if active_account != account:
+            print(f"🔄 [Auto] 切換至帳號 【{account}】")
+            if not switch_account(account):
+                raise RuntimeError(f"切換至帳號 {account} 失敗")
+            active_account = account
+        if not process_auto_account(context, recovery, account):
+            ocr_failed = True
+            break
+
+    if active_account != "em3":
+        print("🔄 [Auto] 返回起點帳號 【em3】")
+        if not switch_account("em3"):
+            raise RuntimeError("返回 em3 失敗")
+
+    if ocr_failed:
+        return AUTO_OCR_FAILURE_SLEEP_SECONDS
+
+    print("\n🔎 [Auto] 已回到 em3，讀取大休眠冷卻時間...")
+    final_result = run_midas_auto_once(context, recovery, require_cooldown=True)
+    if not final_result.cooldown_valid:
+        _print_ocr_failure(final_result)
+        return AUTO_OCR_FAILURE_SLEEP_SECONDS
+    return (final_result.cooldown_seconds or 0) + AUTO_WAKE_BUFFER_SECONDS
+
+
+def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool) -> None:
+    accounts = load_accounts()
+    while True:
+        sleep_seconds = run_auto_round(context, recovery, accounts=accounts, use_all=use_all)
+        next_time = datetime.now() + timedelta(seconds=sleep_seconds)
+        print(
+            f"💤 [Auto] 本輪結束，休眠 {_format_seconds(sleep_seconds)}；"
+            f"預計 {next_time.strftime('%Y-%m-%d %H:%M:%S')} 喚醒。"
+        )
+        time.sleep(sleep_seconds)
+
 def main():
     parser = argparse.ArgumentParser(description="AwayFromKeyboard 雙帳號定時切換掛機腳本 (點金手專用版)")
     parser.add_argument("--interval", type=str, default="08:00:00", help="休眠倒數時間 (hh:mm:ss)，預設 08:00:00")
     parser.add_argument("--toggles", type=int, default=1, help="執行幾輪 (Rounds)。預設 1 輪")
     parser.add_argument("--all", action="store_true", help="切換全部 4 個帳號 (使用 next 模式)")
     parser.add_argument("--delay", type=str, default=None, help="首次啟動前的延遲等待時間 (hh:mm:ss)")
+    parser.add_argument("--auto", action="store_true", help="依點金手冷卻時間自動輪轉帳號並休眠")
     args = parser.parse_args()
 
     try:
@@ -98,18 +247,24 @@ def main():
     print("==================================================")
 
     try:
-        controller = DeviceController()
-        if not controller.connect():
+        context = build_context(console_debug=True)
+        if not context.controller.connect():
              print("❌ 無法連線至 ADB 裝置")
              sys.exit(1)
-        matcher = VisionMatcher()
-        detector = SceneDetector(matcher)
-        recovery = UIRecovery(controller, matcher, detector)
+        recovery = UIRecovery(context.controller, context.matcher, context.detector)
     except Exception as e:
         print(f"❌ 初始化 UIRecovery 失敗: {e}")
         sys.exit(1)
 
     try:
+        if args.auto:
+            if args.delay:
+                print("ℹ️ [Auto] --auto 模式忽略 --delay。")
+            if args.interval != "08:00:00" or args.toggles != 1:
+                print("ℹ️ [Auto] --auto 模式忽略 --interval 與 --toggles。")
+            run_auto_loop(context, recovery, use_all=args.all)
+            return
+
         if args.delay:
             wake_time = datetime.now() + timedelta(seconds=delay_seconds)
             print(f"\n⏳ [延遲啟動] 接收到 --delay 指令，將先進行首次休眠: {args.delay} ({int(delay_seconds)} 秒)")

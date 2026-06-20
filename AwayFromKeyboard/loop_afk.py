@@ -49,6 +49,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="AwayFromKeyboard 掛機大循環")
     parser.add_argument("--skip-current", action="store_true", help="略過起始帳號的掛機任務，直接切換到下一個帳號")
+    parser.add_argument("--debug-actions", action="store_true", help="儲存 Router 與任務每次操作前後的偵錯截圖")
     delay_group = parser.add_mutually_exclusive_group()
     delay_group.add_argument("--delay", type=str, default=None, help="首次啟動前的延遲等待時間 (hh:mm:ss)")
     delay_group.add_argument("--delay-until-8", "--du8", action="store_true", help="延遲到下一個上午 08:00:00 再啟動")
@@ -114,6 +115,8 @@ def main():
                     # 1. 執行掛機任務
                     for task_name in configured_tasks:
                         task_cmd = [python_exe, str(run_router_script), task_name]
+                        if args.debug_actions:
+                            task_cmd.append("--debug-actions")
                         print("\n" + "-" * 50)
                         print("🛠️ [Debug] 若此 Router 任務卡住，可複製以下指令單獨測試：")
                         print(f">>> {' '.join(task_cmd)}")
