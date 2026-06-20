@@ -11,11 +11,18 @@ import numpy as np
 
 def parse_power_value(text: str) -> int:
     cleaned = text.lower().replace(",", "").replace(" ", "")
-    match = re.search(r"(\d+)(k)?", cleaned)
+    match = re.search(r"(\d+)([km])?", cleaned)
     if not match:
         return -1
     value = int(match.group(1))
-    return value if match.group(2) == "k" else value // 1000
+    suffix = match.group(2)
+    if suffix == "m":
+        return value * 1000
+    return value if suffix == "k" else value // 1000
+
+
+def power_has_scale_suffix(text: str) -> bool:
+    return re.search(r"[kKmM]", str(text)) is not None
 
 
 def get_arena_hash_map() -> Dict[str, str]:
@@ -209,6 +216,7 @@ def extract_arena_powers_easyocr(screen: np.ndarray, reader=None) -> List[dict]:
                     "col": col_idx + 1,
                     "power_text": text,
                     "power_k": parse_power_value(text),
+                    "has_scale_suffix": power_has_scale_suffix(text),
                     "confidence": confidence,
                 }
             )

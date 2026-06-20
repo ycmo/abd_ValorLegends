@@ -60,6 +60,18 @@ class TaskSpec:
 
 
 TASK_SPECS: Dict[str, TaskSpec] = {
+    "abyss": TaskSpec(
+        key="abyss",
+        display_name="深淵",
+        daily_text="",
+        manual_dir="深淵",
+        kind="independent",
+        policy=ResourcePolicy(
+            allowed_actions=("rent_highest_power_forest_hero", "train_once", "keep_result"),
+            stop_conditions=("rental_ocr_uncertain", "rented_hero_not_found", "artifact_plan_unknown"),
+            notes="Independent task. It is not opened from daily tasks and is not part of run-all.",
+        ),
+    ),
     "arena": TaskSpec(
         key="arena",
         display_name="競技場",
@@ -214,6 +226,7 @@ RUN_ALL_TASK_ORDER: Tuple[str, ...] = tuple(
 
 RUN_ALL_GO_FIRST_TASK_ORDER: Tuple[str, ...] = (
     "arena",
+    "guild_dungeon",
     "guild_wish",
     "midas",
     "secret_realm",

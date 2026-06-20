@@ -6,7 +6,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Literal, Optional
+from typing import Callable, Iterable, List, Literal, Optional, Sequence
 
 import cv2
 import numpy as np
@@ -71,7 +71,17 @@ def find_colored_boxes(image: np.ndarray, color: BoxColor) -> List[CropBox]:
         bottom = np.count_nonzero(roi_mask[-band:, :]) / float(band * w)
         left = np.count_nonzero(roi_mask[:, :band]) / float(band * h)
         right = np.count_nonzero(roi_mask[:, -band:]) / float(band * h)
-        if min(top, bottom, left, right) < 0.35:
+        complete_outline = min(top, bottom, left, right) >= 0.35
+        button_like_outline = (
+            w >= 40
+            and h >= 20
+            and top >= 0.25
+            and bottom >= 0.25
+            and min(left, right) >= 0.02
+            and max(left, right) >= 0.08
+        )
+        if not complete_outline and not button_like_outline:
+            print(f'Box skipped: w={w}, h={h}, fill={fill_ratio}, top={top}, bottom={bottom}, left={left}, right={right}')
             continue
 
         boxes.append(CropBox(x, y, w, h))
@@ -108,6 +118,47 @@ def crop_inside_colored_box(image: np.ndarray, box: CropBox, color: BoxColor) ->
     return roi[y_min : y_max + 1, x_min : x_max + 1]
 
 
+def write_blue_crop_review(
+    screenshot_paths: Sequence[Path],
+    output_dir: Path,
+    *,
+    source_folder: Optional[Path] = None,
+) -> List[Path]:
+    """Write serial-numbered blue-box crops, a manifest, and a contact sheet."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved: List[Path] = []
+    manifest_lines = []
+    if source_folder is not None:
+        manifest_lines.append(f"source_folder={source_folder}")
+        manifest_lines.append("")
+
+    serial = 1
+    for screen_index, screenshot_path in enumerate(screenshot_paths, start=1):
+        image = read_image(screenshot_path, cv2.IMREAD_COLOR)
+        boxes = find_blue_boxes(image)
+        for box_index, box in enumerate(boxes, start=1):
+            crop = crop_inside_blue_box(image, box)
+            if crop.size == 0:
+                continue
+
+            filename = (
+                f"{serial:03d}_screen{screen_index:02d}_blue{box_index:02d}_"
+                f"{box.x}_{box.y}_{box.width}x{box.height}.png"
+            )
+            dest_path = output_dir / filename
+            write_image(dest_path, crop)
+            saved.append(dest_path)
+            manifest_lines.append(
+                f"{serial:03d}: file={filename} source={screenshot_path.name} "
+                f"box=({box.x},{box.y},{box.width},{box.height}) crop={crop.shape[1]}x{crop.shape[0]}"
+            )
+            serial += 1
+
+    (output_dir / "manifest.txt").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+    _write_contact_sheet(saved, output_dir / "000_contact_sheet.png")
+    return saved
+
+
 def _blue_outline_mask(image: np.ndarray) -> np.ndarray:
     """Mask the dark blue/primary blue strokes Paint uses for manual crop boxes."""
     return _outline_mask(image, "blue")
@@ -125,13 +176,15 @@ def _outline_mask(image: np.ndarray, color: BoxColor) -> np.ndarray:
 
 def _blue_outline_mask_impl(image: np.ndarray) -> np.ndarray:
     blue, green, red = cv2.split(image)
-    strongest_other = np.maximum(red, green).astype(np.int16)
-    blue_i = blue.astype(np.int16)
+
+    # Windows Paint dark-blue outline: RGB #3F48CC, stored by OpenCV as BGR
+    # (204, 72, 63). The project convention is to draw boxes with this exact
+    # Paint color and no anti-aliasing, so keep the mask exact to avoid picking
+    # up blue in the game UI.
     mask = (
-        (blue >= 145)
-        & (red <= 120)
-        & (green <= 125)
-        & ((blue_i - strongest_other) >= 55)
+        (blue == 204)
+        & (green == 72)
+        & (red == 63)
     )
     return mask.astype(np.uint8) * 255
 
@@ -238,6 +291,44 @@ def _intersection_over_union(a: CropBox, b: CropBox) -> float:
     inter = (x2 - x1) * (y2 - y1)
     union = a.area + b.area - inter
     return inter / float(union)
+
+
+def _write_contact_sheet(paths: Sequence[Path], output_path: Path) -> None:
+    if not paths:
+        tiny = np.full((80, 240, 3), 245, dtype=np.uint8)
+        cv2.putText(tiny, "No blue boxes", (18, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (70, 70, 70), 1, cv2.LINE_AA)
+        write_image(output_path, tiny)
+        return
+
+    thumbs = []
+    labels = []
+    for path in paths:
+        image = read_image(path, cv2.IMREAD_COLOR)
+        h, w = image.shape[:2]
+        scale = min(1.0, 180.0 / max(w, h))
+        resized = cv2.resize(image, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
+        thumbs.append(resized)
+        labels.append(path.name[:34])
+
+    columns = min(3, len(thumbs))
+    cell_w = 220
+    cell_h = 220
+    rows = (len(thumbs) + columns - 1) // columns
+    sheet = np.full((rows * cell_h, columns * cell_w, 3), 245, dtype=np.uint8)
+
+    for index, thumb in enumerate(thumbs):
+        row = index // columns
+        col = index % columns
+        x0 = col * cell_w
+        y0 = row * cell_h
+        cv2.putText(sheet, labels[index], (x0 + 10, y0 + 24), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (45, 45, 45), 1, cv2.LINE_AA)
+        h, w = thumb.shape[:2]
+        x = x0 + (cell_w - w) // 2
+        y = y0 + 42 + (cell_h - 52 - h) // 2
+        sheet[y : y + h, x : x + w] = thumb
+        cv2.rectangle(sheet, (x0 + 4, y0 + 4), (x0 + cell_w - 5, y0 + cell_h - 5), (205, 205, 205), 1)
+
+    write_image(output_path, sheet)
 
 
 def _safe_filename(name: str) -> str:

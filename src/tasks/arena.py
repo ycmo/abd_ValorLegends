@@ -34,6 +34,7 @@ class ArenaTask(BaseTask):
     OCR_LOW_POWER_SAFE_MAX_K = 1000
     OCR_LOW_POWER_MIN_CONFIDENCE = 0.50
     OCR_OVERPOWERED_MIN_CONFIDENCE = 0.50
+    OCR_UNSCALED_POWER_SAFE_MAX_K = 1000
 
     ARENA_MAIN_ROI: Roi = (760, 0, 200, 105)
     OPPONENT_LIST_ROI: Roi = (760, 0, 160, 120)
@@ -165,6 +166,8 @@ class ArenaTask(BaseTask):
         confidence = item.get("confidence", 0.0)
         if power_k < 0:
             return False
+        if not item.get("has_scale_suffix", True) and power_k <= self.OCR_UNSCALED_POWER_SAFE_MAX_K:
+            return True
         if confidence >= self.OCR_MIN_CONFIDENCE:
             return True
         if power_k > self.MAX_POWER_K and confidence >= self.OCR_OVERPOWERED_MIN_CONFIDENCE:

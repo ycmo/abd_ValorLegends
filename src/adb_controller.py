@@ -25,17 +25,20 @@ class AdbControllerError(BotError):
     """Low-level ADB command failure."""
 
 
+PREFERRED_FALLBACK_SERIALS: Tuple[str, ...] = ("127.0.0.1:5555", "emulator-5554")
+
+
 class DeviceController:
     """Small ADB wrapper optimized for screenshot-driven UI automation."""
 
     def __init__(
         self,
-        serial: str = DEFAULT_SERIAL,
+        serial: Optional[str] = DEFAULT_SERIAL,
         debug_actions: Optional[bool] = None,
         debug_dir: Optional[Path] = None,
         logger: Optional[DebugLogger] = None,
     ):
-        self.serial = serial
+        self.serial = serial or DEFAULT_SERIAL
         self.debug_actions = ACTION_DEBUG_ENABLED if debug_actions is None else debug_actions
         self.logger = logger or DebugLogger(False)
         base_debug_dir = debug_dir or ACTION_DEBUG_DIR
@@ -88,13 +91,55 @@ class DeviceController:
                 timeout=10,
             )
             output = f"{result.stdout}\n{result.stderr}".lower()
-            return "connected" in output or "already connected" in output
+            if "connected" in output or "already connected" in output:
+                return True
+            return self._connect_available_fallback_device()
 
         try:
             self._run(["get-state"], timeout=10)
             return True
         except AdbControllerError:
+            return self._connect_available_fallback_device()
+
+    def _connect_available_fallback_device(self) -> bool:
+        for serial in PREFERRED_FALLBACK_SERIALS:
+            if ":" not in serial:
+                continue
+            self._try_adb_connect(serial)
+
+        try:
+            devices = self.list_devices()
+        except AdbControllerError:
             return False
+        if not devices:
+            return False
+
+        selected = self._select_fallback_serial(devices)
+        if selected is None:
+            return False
+        if selected != self.serial:
+            print(f"[ADB] serial {self.serial!r} unavailable; using {selected!r}")
+        self.serial = selected
+        return True
+
+    @staticmethod
+    def _try_adb_connect(serial: str) -> None:
+        subprocess.run(
+            ["adb", "connect", serial],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=10,
+        )
+
+    @staticmethod
+    def _select_fallback_serial(devices: Sequence[str]) -> Optional[str]:
+        for preferred in PREFERRED_FALLBACK_SERIALS:
+            if preferred in devices:
+                return preferred
+        return devices[0] if devices else None
 
     def get_screen_size(self) -> Tuple[int, int]:
         out = self.shell(["wm", "size"])
@@ -110,10 +155,7 @@ class DeviceController:
         return int(match.group(1)) if match else None
 
     def screenshot(self) -> np.ndarray:
-        img = self._capture_screen()
-        if self.debug_actions:
-            self._save_debug_image("screen", img)
-        return img
+        return self._capture_screen()
 
     def _capture_screen(self) -> np.ndarray:
         cmd = self.base_cmd + ["shell", "screencap", "-p"]
@@ -179,6 +221,7 @@ class DeviceController:
         *,
         lines: Sequence[str] = (),
         boxes: Sequence[Tuple[int, int, int, int, str]] = (),
+        panel_position: str = "left",
     ) -> Optional[Path]:
         if not self.debug_actions:
             return None
@@ -186,6 +229,7 @@ class DeviceController:
             image,
             debug_lines=lines,
             debug_boxes=boxes,
+            debug_panel_position=panel_position,
         )
         return self._save_debug_image(label, annotated)
 
@@ -232,11 +276,14 @@ class DeviceController:
             return self._run(args, timeout=timeout)
 
         tap_point = self._tap_point_from_action_name(action_name)
+        swipe_points = self._swipe_points_from_action_name(action_name)
         debug_lines = self._consume_next_tap_debug_lines()
         debug_boxes = self._consume_next_tap_debug_boxes()
+        debug_lines = self._action_debug_lines(action_name) + debug_lines
         self._save_action_debug_screenshot(
             f"before_{action_name}",
             tap_point=tap_point,
+            swipe_points=swipe_points,
             debug_lines=debug_lines,
             debug_boxes=debug_boxes,
         )
@@ -245,6 +292,7 @@ class DeviceController:
         self._save_action_debug_screenshot(
             f"after_{action_name}",
             tap_point=tap_point,
+            swipe_points=swipe_points,
             debug_lines=debug_lines,
             debug_boxes=debug_boxes,
         )
@@ -255,14 +303,16 @@ class DeviceController:
         label: str,
         *,
         tap_point: Optional[Tuple[int, int]] = None,
+        swipe_points: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None,
         debug_lines: Sequence[str] = (),
         debug_boxes: Sequence[Tuple[int, int, int, int, str]] = (),
     ) -> Path:
         image = self._capture_screen()
-        if tap_point is not None or debug_lines or debug_boxes:
+        if tap_point is not None or swipe_points is not None or debug_lines or debug_boxes:
             image = self._annotate_action_debug_image(
                 image,
                 tap_point=tap_point,
+                swipe_points=swipe_points,
                 debug_lines=debug_lines,
                 debug_boxes=debug_boxes,
             )
@@ -302,12 +352,34 @@ class DeviceController:
         return int(match.group(1)), int(match.group(2))
 
     @staticmethod
+    def _swipe_points_from_action_name(action_name: str) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        match = re.fullmatch(r"swipe_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)", action_name)
+        if match is None:
+            return None
+        x1, y1, x2, y2, _duration = (int(value) for value in match.groups())
+        return (x1, y1), (x2, y2)
+
+    @staticmethod
+    def _action_debug_lines(action_name: str) -> List[str]:
+        if action_name.startswith("keyevent_"):
+            keycode = action_name.removeprefix("keyevent_")
+            label = "BACK" if keycode == "4" else keycode
+            return [f"action=keyevent {label}"]
+        if action_name.startswith("swipe_"):
+            return [f"action={action_name}"]
+        if action_name.startswith("tap_"):
+            return [f"action={action_name}"]
+        return [f"action={action_name}"]
+
+    @staticmethod
     def _annotate_action_debug_image(
         image: np.ndarray,
         *,
         tap_point: Optional[Tuple[int, int]] = None,
+        swipe_points: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None,
         debug_lines: Sequence[str] = (),
         debug_boxes: Sequence[Tuple[int, int, int, int, str]] = (),
+        debug_panel_position: str = "left",
     ) -> np.ndarray:
         annotated = image.copy()
         palette = {
@@ -356,19 +428,47 @@ class DeviceController:
                 cv2.LINE_AA,
             )
 
+        if swipe_points is not None:
+            start, end = swipe_points
+            cv2.arrowedLine(annotated, start, end, palette["tap"], 3, cv2.LINE_AA, tipLength=0.18)
+            for label, point in (("swipe start", start), ("swipe end", end)):
+                x, y = point
+                cv2.circle(annotated, (x, y), 12, palette["tap"], 2)
+                cv2.putText(
+                    annotated,
+                    f"{label} {x},{y}",
+                    (min(x + 16, annotated.shape[1] - 180), max(22, y - 16)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.50,
+                    palette["tap"],
+                    2,
+                    cv2.LINE_AA,
+                )
+
         lines = list(debug_lines)
         if tap_point is not None and not any(line.startswith("tap ") for line in lines):
             lines.insert(0, f"tap {tap_point[0]},{tap_point[1]}")
+        if swipe_points is not None and not any(line.startswith("swipe ") for line in lines):
+            start, end = swipe_points
+            lines.insert(0, f"swipe {start[0]},{start[1]} -> {end[0]},{end[1]}")
         if lines:
             line_height = 20
             panel_height = 12 + line_height * len(lines)
-            cv2.rectangle(annotated, (8, 8), (620, 8 + panel_height), (0, 0, 0), -1)
-            cv2.rectangle(annotated, (8, 8), (620, 8 + panel_height), (255, 255, 255), 1)
+            panel_width = 612
+            if debug_panel_position == "right":
+                panel_x1 = max(8, annotated.shape[1] - panel_width - 8)
+                text_x = panel_x1 + 8
+            else:
+                panel_x1 = 8
+                text_x = 16
+            panel_x2 = min(annotated.shape[1] - 8, panel_x1 + panel_width)
+            cv2.rectangle(annotated, (panel_x1, 8), (panel_x2, 8 + panel_height), (0, 0, 0), -1)
+            cv2.rectangle(annotated, (panel_x1, 8), (panel_x2, 8 + panel_height), (255, 255, 255), 1)
             for index, line in enumerate(lines):
                 cv2.putText(
                     annotated,
                     line[:92],
-                    (16, 30 + index * line_height),
+                    (text_x, 30 + index * line_height),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.48,
                     (255, 255, 255),

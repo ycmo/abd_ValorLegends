@@ -1,0 +1,3 @@
+source_folder=E:\antigravity\adb_vl\manual_screenshots\深淵
+
+001: file=001_screen01_blue01_722_150_49x26.png source=002_租借前.png box=(722,150,49,26) crop=37x14

@@ -1,0 +1,17 @@
+{
+  "name": "call_of_the_gale",
+  "title_zh": "疾風呼喚：看廣告恢復 3 飛鏢",
+  "description": "疾風呼喚的飛鏢用完後，點擊上方的 + 會先跳出免費廣告按鈕；ADS2 點擊免費廣告、關閉廣告並領完獎後，如果畫面上方出現「恢復 3 飛鏢」狀態，就代表已經正常回到疾風呼喚戰鬥畫面，可以結束 ADS2 流程並交還給疾風腳本繼續射飛鏢。",
+  "usage": "從疾風呼喚畫面點擊飛鏢旁的 + 後使用：python.exe ads2/cli.py run --profile call_of_the_gale --debug",
+  "_comment": "JSON 不能寫註解，所以用這些說明欄位記錄用途。finish_templates 是 ADS2 額外正常結束條件；命中後會直接正常結束，不再等主畫面 scene_anchors。",
+  "ad_wait": 15,
+  "finish_templates": [
+    {
+      "name": "restore_3_darts_status",
+      "description": "疾風呼喚看完廣告後，上方飛鏢資源列會顯示已恢復 3 飛鏢。這個狀態只用來判斷廣告流程已完成，不是點擊目標。",
+      "template": "call_of_the_gale/restore_3_darts.png",
+      "roi": [520, 0, 150, 60],
+      "threshold": 0.85
+    }
+  ]
+}

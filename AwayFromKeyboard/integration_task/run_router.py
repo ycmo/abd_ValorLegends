@@ -12,21 +12,28 @@ if str(parent_dir) not in sys.path:
 from router import RouteNavigator
 import subprocess
 import task_config
+import os
+import argparse
 
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
 
 def main():
-    # 支援從命令列接收引數當作 route_name，預設為「點金手」
-    route_name = "點金手"
-    if len(sys.argv) > 1:
-        route_name = sys.argv[1]
+    parser = argparse.ArgumentParser(description="AFK route runner")
+    parser.add_argument("route_name", nargs="?", default="點金手", help="要執行的路由任務名稱")
+    parser.add_argument(
+        "--debug-actions",
+        action="store_true",
+        help="儲存非錯誤 optional miss 與子程序 action debug 截圖",
+    )
+    args = parser.parse_args()
+    route_name = args.route_name
         
     print(f"🚀 開始執行路由任務：{route_name}")
     print("-" * 40)
     
     try:
-        navigator = RouteNavigator(route_name=route_name)
+        navigator = RouteNavigator(route_name=route_name, debug_actions=args.debug_actions)
         print(f"[Router] 開始執行進場路由...")
         navigator.execute_route(phase="enter")
         print("-" * 40)
@@ -47,7 +54,14 @@ def main():
             # 加上 try-except 捕捉 subprocess 可能的系統級崩潰
             script_failed = False
             try:
-                result = subprocess.run(full_cmd, cwd=str(project_root))
+                child_env = os.environ.copy()
+                if args.debug_actions:
+                    child_env["VL_DEBUG_ACTIONS"] = "1"
+                selected_serial = getattr(navigator.controller, "serial", None)
+                if selected_serial:
+                    child_env["VL_ADB_SERIAL"] = selected_serial
+                    print(f"[Router] 子程序 ADB serial: {selected_serial}")
+                result = subprocess.run(full_cmd, cwd=str(project_root), env=child_env)
                 if result.returncode != 0:
                     print(f"⚠️ [警告] 外部指令執行結束，但回傳錯誤碼 (returncode={result.returncode})")
                     script_failed = True

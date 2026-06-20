@@ -43,6 +43,11 @@ Useful checks:
 - Current-scene detection is task-specific and conservative. It uses explicit anchors such as Time Travel title, Midas title/reward, Guild Wish title, Advanced Contract OCR/template, Arena main/opponent-list anchors, or Secret Realm Lost Forest tabs. If a task lacks reliable anchors/assets, the route must stop instead of guessing.
 - After `probe-task` finds a ready row, the next command should preserve that context; avoid re-scrolling away from a visible ready row. If in doubt, use `run-current-task`.
 - During debug/live searching, every swipe should be reviewable via before/after screenshots. Use `--debug-actions` whenever testing task discovery or execution.
+- `--debug-actions` output must stay reviewable. Automatically persisted images should be limited to input-action before/after screenshots (`tap`, `swipe`, `keyevent`) plus explicit recognition-failure/diagnostic screenshots saved with `save_annotated_debug()`. Do not save a bare image for every polling `screenshot()`.
+- Every recognition diagnostic screenshot must annotate the relevant ROI and include the template file name(s), threshold or best confidence, and the reason for the stop/failure. A screenshot with no recognition context is not useful action debug.
+- Debug log messages for recognition loops should name the current template and confidence, for example `template=training_button.png best_confidence=0.731` or `template=forest_tab.png confidence=not_found`.
+- Important no-action recognition decisions must also be reviewable. If a task decides to skip an action because a state is already satisfied, save or log the matched state template and confidence, e.g. `artifact_plan_2.png`.
+- For competing visual states in the same ROI, do not use first-match-wins logic. Match all competing templates, log their confidences, and require a meaningful margin before choosing a state. If the scores are ambiguous, save an annotated debug screenshot and stop.
 - For a future Daily Tasks OCR fallback, use full canonical task names stored in `TaskSpec.daily_text`, e.g. `成功通關2次公會副本挑戰`, instead of short task names like `公會副本`. OCR should only help find/classify a row; the actual tap still needs a verified same-row `前往`.
 
 Important safety rule:
@@ -56,7 +61,7 @@ Important safety rule:
 - On 2026-06-05, `adb shell input keyevent 0` took about 9.26 seconds and a summon-page tap exceeded the older 15-second timeout. `ADB_INPUT_TIMEOUT_SECONDS` is therefore longer than normal shell timeouts.
 - Page/state recognition can use OCR as a fallback when template anchors are not enough. For stylized Chinese UI text, use fixed ROIs and fuzzy keyword checks because exact OCR text is unreliable.
 - Reward overlays with `獲得道具` use the shared `BaseTask.dismiss_reward_overlay_by_blank_taps()` flow: tap a blank/outside area, then verify the expected underlying task screen. This is shared task behavior, not per-route special handling.
-- During debug-stage live runs, enable persisted screenshots with `--debug-actions` or `VL_DEBUG_ACTIONS=1`. The controller saves every recognition screenshot plus before/after screenshots for every `tap`, `swipe`, and `keyevent` under a per-run subdirectory in `captures/action_debug/`.
+- During debug-stage live runs, enable persisted screenshots with `--debug-actions` or `VL_DEBUG_ACTIONS=1`. The controller saves before/after screenshots for every `tap`, `swipe`, and `keyevent` under a per-run subdirectory in `captures/action_debug/`. Recognition screenshots should be saved only when they carry annotations explaining what was being matched.
 - For swipes, constrain the unused axis when possible: vertical scrolling should lock x, and horizontal scrolling should lock y.
 
 ## Template Findings

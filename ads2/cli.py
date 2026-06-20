@@ -17,6 +17,10 @@ def main():
     run_parser.add_argument("--serial", default="emulator-5554", help="設備 Serial 號碼")
     run_parser.add_argument("--ad-wait", type=int, default=15, help="點擊看廣告後暫停偵測的秒數 (預設: 15)")
     run_parser.add_argument("--debug", action="store_true", help="開啟除錯模式，異常時自動儲存截圖")
+    run_parser.add_argument(
+        "--profile",
+        help="讀取 ads2/profiles/<name>.json，加入任務專用的正常結束條件",
+    )
 
     args = parser.parse_args()
 
@@ -24,7 +28,8 @@ def main():
         serial = args.serial if hasattr(args, 'serial') else "emulator-5554"
         ad_wait = args.ad_wait if hasattr(args, 'ad_wait') else 15
         debug = args.debug if hasattr(args, 'debug') else False
-        runner = ReactiveRunner(serial=serial, ad_wait=ad_wait, debug=debug)
+        profile = args.profile if hasattr(args, 'profile') else None
+        runner = ReactiveRunner(serial=serial, ad_wait=ad_wait, debug=debug, profile=profile)
         runner.run()
 
 if __name__ == "__main__":

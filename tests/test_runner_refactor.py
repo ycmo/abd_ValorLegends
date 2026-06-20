@@ -3,11 +3,14 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 import sys
 import os
+import cv2
 
 # Add root to sys path
 sys.path.insert(0, os.path.abspath("."))
 
 from ads2.core.runner import ReactiveRunner
+from ads2.core.profile import load_ads_profile
+from src.vision_matcher import MatchResult, read_image
 
 class TestRunnerRefactor(unittest.TestCase):
     def test_scan_category_early_exit(self):
@@ -66,6 +69,86 @@ class TestRunnerRefactor(unittest.TestCase):
         # 驗證是否將 threshold 傳遞下去 (而不是寫死的 0.1)
         self.assertEqual(kwargs.get("threshold"), 0.75)  # scene_anchors 預設門檻為 0.75
         self.assertEqual(args[1], p_new) # 驗證確實先測最新的圖
+
+    def test_call_of_the_gale_profile_matches_restore_3_darts(self):
+        profile = load_ads_profile(
+            "call_of_the_gale",
+            project_root=Path(".").resolve(),
+            ads2_dir=Path("ads2").resolve(),
+        )
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.name, "call_of_the_gale")
+        self.assertIn("疾風呼喚", profile.description)
+        self.assertEqual(len(profile.finish_templates), 1)
+
+        screen = read_image(
+            Path("manual_screenshots") / "疾風呼喚" / "001_看完廣告.png",
+            cv2.IMREAD_COLOR,
+        )
+        runner = ReactiveRunner(serial="dummy", debug=False, profile="call_of_the_gale")
+        matched = runner.match_profile_finish(screen)
+
+        self.assertIsNotNone(matched)
+        condition, result = matched
+        self.assertEqual(condition.name, "restore_3_darts_status")
+        self.assertGreaterEqual(result.confidence, 0.99)
+
+    def test_runner_profile_finish_uses_configured_roi_and_threshold(self):
+        runner = ReactiveRunner(serial="dummy", debug=False, profile="call_of_the_gale")
+        runner.matcher = MagicMock()
+        fake_result = MatchResult(Path("restore_3_darts.png"), 0.95, (593, 25), (545, 10, 97, 30))
+        runner.matcher.match_template.return_value = fake_result
+
+        screen = MagicMock()
+        matched = runner.match_profile_finish(screen)
+
+        self.assertIsNotNone(matched)
+        condition, result = matched
+        self.assertEqual(condition.roi, (520, 0, 150, 60))
+        self.assertEqual(result, fake_result)
+        _args, kwargs = runner.matcher.match_template.call_args
+        self.assertEqual(kwargs["threshold"], 0.85)
+        self.assertEqual(kwargs["roi"], (520, 0, 150, 60))
+
+    def test_gale_ad_revive_button_matches_reference_roi(self):
+        from call_of_the_gale.scripts.single_shoot import (
+            AD_REVIVE_BTN_PATH,
+            AD_REVIVE_ROI,
+            AD_REVIVE_THRESHOLD,
+        )
+
+        screen = read_image(
+            Path("manual_screenshots") / "疾風呼喚" / "000_送出前看廣告.png",
+            cv2.IMREAD_COLOR,
+        )
+        runner = ReactiveRunner(serial="dummy", debug=False)
+        match = runner.matcher.match_template(
+            screen,
+            AD_REVIVE_BTN_PATH,
+            threshold=AD_REVIVE_THRESHOLD,
+            roi=AD_REVIVE_ROI,
+        )
+
+        self.assertIsNotNone(match)
+        self.assertGreaterEqual(match.confidence, 0.99)
+        self.assertEqual(match.center, (647, 26))
+
+    def test_wait_for_ad_revive_retries_until_match(self):
+        from call_of_the_gale.scripts.single_shoot import wait_for_ad_revive_button
+
+        device = MagicMock()
+        device.screenshot.side_effect = ["screen1", "screen2"]
+        matcher = MagicMock()
+        expected = MatchResult(Path("ad_revive_button.png"), 0.91, (647, 26), (626, 11, 42, 31))
+
+        with patch(
+            "call_of_the_gale.scripts.single_shoot.find_ad_revive_button_once",
+            side_effect=[None, expected],
+        ), patch("call_of_the_gale.scripts.single_shoot.time.sleep", return_value=None):
+            result = wait_for_ad_revive_button(device, matcher, timeout=2.0, interval=0.5)
+
+        self.assertEqual(result, expected)
+        self.assertEqual(device.screenshot.call_count, 2)
 
 if __name__ == '__main__':
     unittest.main()

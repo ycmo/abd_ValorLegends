@@ -21,10 +21,12 @@ class ImportTests(unittest.TestCase):
 
     @unittest.skipIf(importlib.util.find_spec("cv2") is None, "opencv-python is not installed")
     def test_task_registry(self):
-        from src.config import TASK_ORDER
+        from src.config import TASK_ORDER, TASK_SPECS
         from src.tasks import TASK_CLASSES
 
-        self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES))
+        independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
+        self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES) - independent)
+        self.assertEqual(independent, {"abyss"})
 
     def test_task_specs_are_configured(self):
         from src.config import (
@@ -35,14 +37,16 @@ class ImportTests(unittest.TestCase):
             TESTED_DAILY_TASK_ORDER,
         )
 
-        self.assertEqual(set(TASK_ORDER), set(TASK_SPECS))
+        independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
+        self.assertEqual(set(TASK_ORDER), set(TASK_SPECS) - independent)
+        self.assertEqual(independent, {"abyss"})
         self.assertLessEqual(set(RUN_ALL_TASK_ORDER), set(TASK_ORDER))
         self.assertLessEqual(set(RUN_ALL_GO_FIRST_TASK_ORDER), set(TASK_ORDER))
         self.assertNotIn("endless_trial", RUN_ALL_TASK_ORDER)
         self.assertNotIn("bounty", RUN_ALL_GO_FIRST_TASK_ORDER)
         self.assertNotIn("campaign", RUN_ALL_GO_FIRST_TASK_ORDER)
         self.assertNotIn("endless_trial", RUN_ALL_GO_FIRST_TASK_ORDER)
-        self.assertNotIn("guild_dungeon", RUN_ALL_GO_FIRST_TASK_ORDER)
+        self.assertIn("guild_dungeon", RUN_ALL_GO_FIRST_TASK_ORDER)
         self.assertIn("magic_shop", RUN_ALL_GO_FIRST_TASK_ORDER)
         self.assertIn("midas", TASK_SPECS)
         self.assertIn("gem_50", TASK_SPECS["midas"].policy.allowed_actions)

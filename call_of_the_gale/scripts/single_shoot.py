@@ -21,6 +21,7 @@ try:
     from src.adb_controller import DeviceController
     from src.vision_matcher import VisionMatcher
     from src.ocr_utils import build_easyocr_reader
+    from ads2.core.runner import ReactiveRunner as AdsReactiveRunner
 except ImportError as e:
     print(f"錯誤: 模組載入失敗: {e}")
     sys.exit(1)
@@ -37,6 +38,8 @@ ENERGY_ROI = (595, 15, 35, 20)
 SCROLL_ROI = (860, 10, 45, 35)
 ONIGIRI_ROI = (680, 10, 90, 30)
 UPGRADE_COST_ROI = (740, 350, 120, 40)
+AD_REVIVE_ROI = (603, 5, 89, 43)
+AD_REVIVE_THRESHOLD = 0.90
 DEPART_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "depart_button.png"
 EMPTY_SLOT_PATH = Path(_THIS_DIR).parent / "assets" / "empty_slot.png"
 SKIP_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "skip_button.png"
@@ -44,6 +47,7 @@ CHALLENGE_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "challenge_button.png"
 EXIT_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "exit_button.png"
 RETURN_06_PATH = Path(_THIS_DIR).parent / "assets" / "return_06_button.png"
 RETURN_07_PATH = Path(_THIS_DIR).parent / "assets" / "return_07_button.png"
+AD_REVIVE_BTN_PATH = Path(_THIS_DIR).parent / "assets" / "ad_revive_button.png"
 
 def save_debug_image(image, prefix):
     debug_dir = Path(_THIS_DIR).parent / "debug_output"
@@ -203,6 +207,102 @@ def wait_for_shuriken(device, max_wait=30.0):
     print("[Warning] 等待飛鏢就緒超時 (超過30秒)！")
     return False
 
+def find_ad_revive_button_once(screen, matcher):
+    if not AD_REVIVE_BTN_PATH.exists():
+        return None
+    match = matcher.match_template(
+        screen,
+        AD_REVIVE_BTN_PATH,
+        threshold=AD_REVIVE_THRESHOLD,
+        roi=AD_REVIVE_ROI,
+    )
+    if match:
+        return match
+
+    best = matcher.best_template_match(screen, AD_REVIVE_BTN_PATH, roi=AD_REVIVE_ROI)
+    if best:
+        print(
+            "[Debug] 看廣告續命未達門檻 "
+            f"best_conf={best.confidence:.3f} threshold={AD_REVIVE_THRESHOLD:.2f} "
+            f"center={best.center} bbox={best.bbox} roi={AD_REVIVE_ROI}"
+        )
+    else:
+        print(f"[Debug] 看廣告續命未達門檻，且無法計算最佳信心值 roi={AD_REVIVE_ROI}")
+    return None
+
+def wait_for_ad_revive_button(device, matcher, timeout=3.0, interval=0.5):
+    print("[Info] 等待「看廣告續命」按鈕出現。")
+    start_time = time.time()
+    attempt = 0
+    while time.time() - start_time < timeout:
+        attempt += 1
+        screen = device.screenshot()
+        match = find_ad_revive_button_once(screen, matcher)
+        if match:
+            if attempt > 1:
+                print(f"[Info] 第 {attempt} 次檢查找到「看廣告續命」。")
+            return match
+        time.sleep(interval)
+    print(f"[Info] {timeout:.1f} 秒內找不到「看廣告續命」按鈕，改走原本升級流程。")
+    return None
+
+def find_ads2_free_ad_button(screen, ads_runner):
+    free_ad_paths = sorted(
+        ads_runner.free_ad_icons_dir.rglob("*.png"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for path in free_ad_paths:
+        result = ads_runner.matcher.match_template(screen, path, threshold=0.75)
+        if result:
+            return result
+    return None
+
+def wait_for_ads2_free_ad_button(device, ads_runner, timeout=8.0):
+    print("[Info] 等待免費廣告按鈕出現，再交給 ADS2。")
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        screen = device.screenshot()
+        match = find_ads2_free_ad_button(screen, ads_runner)
+        if match:
+            print(
+                "[Info] 已確認免費廣告按鈕出現 "
+                f"({match.template_path.name}, 信心值 {match.confidence:.3f})。"
+            )
+            return True
+        time.sleep(0.5)
+    print("[Warning] 點擊 + 後沒有看到免費廣告按鈕，先不啟動 ADS2。")
+    return False
+
+def try_ad_revive(device, matcher, debug=False):
+    match = wait_for_ad_revive_button(device, matcher)
+    if not match:
+        return False
+
+    print(f"[Action] 找到「看廣告續命」按鈕，信心值 {match.confidence:.3f}，先點擊上方 +。")
+    if hasattr(device, "annotate_next_tap_debug"):
+        device.annotate_next_tap_debug(
+            lines=["call_of_the_gale ad revive +", f"conf={match.confidence:.3f}"],
+            boxes=[(*match.bbox, "ad revive +")],
+        )
+    device.tap(*match.center)
+    time.sleep(1.0)
+
+    ads_runner = AdsReactiveRunner(
+        serial=device.serial,
+        ad_wait=15,
+        debug=debug,
+        profile="call_of_the_gale",
+    )
+    if not wait_for_ads2_free_ad_button(device, ads_runner):
+        return False
+
+    print("[Info] 交給 ADS2 profile: call_of_the_gale，等待免費廣告與恢復 3 飛鏢狀態。")
+    ads_runner.run()
+    print("[Info] ADS2 已偵測到恢復 3 飛鏢，回到疾風射擊流程。")
+    time.sleep(1.0)
+    return True
+
 def main():
     parser = argparse.ArgumentParser(description="疾風的呼喚：連續發射到 0 並出發")
     parser.add_argument("--serial", default="emulator-5554")
@@ -282,6 +382,8 @@ def run_single_round(device, matcher, reader=None, debug=False):
         elif count == 0:
             print("[Info] 飛鏢已用盡 (0)，等待 8 秒讓最後一發飛鏢落地...")
             time.sleep(8.0)
+            if try_ad_revive(device, matcher, debug=debug):
+                continue
             break
 
     # 3. 升級與檢查飯糰迴圈

@@ -13,7 +13,7 @@ from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSki
 from src.daily_task_finder import DailyTaskFinder
 from src.navigator import Navigator, OpenTaskStatus
 from src.scene_detector import SceneDetector
-from src.vision_matcher import VisionMatcher
+from src.vision_matcher import MatchResult, Roi, VisionMatcher
 from src.debug_log import DebugLogger
 
 
@@ -199,6 +199,119 @@ class BaseTask:
         self.context.controller.tap(*match.center)
         time.sleep(step.wait_after_seconds)
         return True
+
+    def wait_while_busy(
+        self,
+        *,
+        label: str = "busy overlay",
+        max_seconds: float = 20.0,
+        poll_seconds: float = 1.0,
+        roi: Roi = (400, 180, 180, 180),
+        threshold: float = 0.86,
+    ) -> None:
+        waited = 0.0
+        logged = False
+        while waited < max_seconds:
+            screen = self.context.controller.screenshot()
+            if not self._is_busy_overlay(screen, roi=roi, threshold=threshold):
+                if logged:
+                    self._log(f"{label} cleared after {waited:.1f}s")
+                return
+            if not logged:
+                self._log(f"{label} detected; waiting")
+                logged = True
+            time.sleep(poll_seconds)
+            waited += poll_seconds
+        raise TaskFailedError(f"{label} did not clear within {max_seconds:.0f}s")
+
+    def tap_match_until_gone(
+        self,
+        match: MatchResult,
+        *,
+        label: str,
+        threshold: float,
+        max_taps: int = 4,
+        wait_seconds: float = TAP_COOLDOWN_SECONDS,
+        roi_padding: int = 20,
+        confidence_drop: float = 0.10,
+    ) -> None:
+        bx, by, bw, bh = match.bbox
+        roi = (
+            max(0, bx - roi_padding),
+            max(0, by - roi_padding),
+            bw + roi_padding * 2,
+            bh + roi_padding * 2,
+        )
+        points = self._tap_retry_points(match)
+        for index in range(max_taps):
+            point = points[min(index, len(points) - 1)]
+            self.context.controller.annotate_next_tap_debug(
+                lines=[
+                    f"{label} tap {index + 1}/{max_taps}",
+                    f"{match.template_path.name} confidence={match.confidence:.3f}",
+                ],
+                boxes=[(*match.bbox, "go")],
+            )
+            self.context.controller.tap(*point)
+            time.sleep(wait_seconds)
+            self.wait_while_busy(label=f"{label} busy", max_seconds=20.0)
+            screen = self.context.controller.screenshot()
+            result = self.context.matcher.match_template(
+                screen,
+                match.template_path,
+                threshold=threshold,
+                roi=roi,
+                check_brightness=False,
+            )
+            if result is None or result.confidence < match.confidence - confidence_drop:
+                confidence_text = "not_found" if result is None else f"{result.confidence:.3f}"
+                self._log(
+                    f"{label} confirmed gone after tap {index + 1}; "
+                    f"template={match.template_path.name} confidence={confidence_text}"
+                )
+                return
+            self._log(
+                f"{label} still visible after tap {index + 1}; "
+                f"template={match.template_path.name} confidence={result.confidence:.3f}"
+            )
+        raise TaskFailedError(f"{label} did not disappear after {max_taps} taps: {match.template_path.name}")
+
+    def _is_busy_overlay(
+        self,
+        screen,
+        *,
+        roi: Roi = (400, 180, 180, 180),
+        threshold: float = 0.86,
+    ) -> bool:
+        path = SHARED_ASSETS_DIR / "busy_waiting_overlay.png"
+        if not path.exists():
+            return False
+        return self.context.matcher.match_template(
+            screen,
+            path,
+            threshold=threshold,
+            roi=roi,
+            check_brightness=False,
+        ) is not None
+
+    def _log(self, message: str) -> None:
+        logger = getattr(self.context, "logger", None)
+        if logger is not None:
+            logger.log(message, force=True)
+
+    @staticmethod
+    def _tap_retry_points(match: MatchResult) -> Sequence[Tuple[int, int]]:
+        x, y = match.center
+        bx, by, bw, bh = match.bbox
+        inset_x = max(2, min(12, bw // 4))
+        inset_y = max(2, min(12, bh // 4))
+        return (
+            (x, y),
+            (bx + inset_x, by + inset_y),
+            (bx + bw - inset_x, by + bh - inset_y),
+            (bx + inset_x, by + bh - inset_y),
+            (bx + bw - inset_x, by + inset_y),
+        )
 
     def run_steps(self, steps: Iterable[ActionStep]) -> str:
         completed = []

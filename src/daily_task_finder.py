@@ -384,11 +384,11 @@ class DailyTaskFinder:
 
     @staticmethod
     def _same_row_left_label_roi(screen_width: int, screen_height: int, status_button: MatchResult) -> Roi:
-        row_h = 84
-        row_y = max(0, min(status_button.center[1] - 48, screen_height - row_h))
-        x = int(screen_width * 0.200)
-        width = int(screen_width * 0.360)
-        return (x, row_y, width, row_h)
+        row_h = int(screen_height * 0.063)
+        row_bottom = max(row_h, min(status_button.center[1], screen_height))
+        x = int(screen_width * 0.230)
+        width = int(screen_width * 0.313)
+        return (x, row_bottom - row_h, width, row_h)
 
     @staticmethod
     def _row_too_close_to_bottom(screen_height: int, label: MatchResult) -> bool:

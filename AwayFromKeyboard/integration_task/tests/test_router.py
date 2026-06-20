@@ -5,20 +5,23 @@ import shutil
 import sys
 import numpy as np
 import cv2
+from unittest.mock import patch
 
 # Ensure router.py can be imported
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from router import RouteNavigator
+from router import BLOCKER_GIFT_PACK_CLOSE_POINT, RouteNavigator
 
 class FakeDeviceController:
     def __init__(self, screen_image=None):
         self.taps = []
         self.screen_image = screen_image
+        self.screenshot_count = 0
 
     def tap(self, x, y):
         self.taps.append((x, y))
         
     def screenshot(self):
+        self.screenshot_count += 1
         return self.screen_image
 
 
@@ -74,7 +77,8 @@ class TestRouter(unittest.TestCase):
             base_dir=self.temp_dir
         )
 
-        navigator.execute_route()
+        with patch("router.time.sleep"):
+            navigator.execute_route()
 
         # 驗證 tap 是否點擊在偏移後的絕對座標上
         self.assertEqual(len(controller.taps), 1)
@@ -162,6 +166,90 @@ class TestRouter(unittest.TestCase):
         with self.assertRaises(ValueError):
             navigator.execute_route()
         self.assertEqual(len(controller.taps), 0)
+
+    def test_handle_blocking_popup_taps_close_point(self):
+        blocker_dir = self.temp_dir / "integration_task" / "templates" / "blockers"
+        blocker_dir.mkdir(parents=True)
+
+        template = np.zeros((45, 92, 3), dtype=np.uint8)
+        template[:, :] = (20, 30, 40)
+        template[8:36, 14:78] = (230, 230, 255)
+        template[16:28, 30:62] = (40, 80, 230)
+        cv2.imwrite(str(blocker_dir / "gift_pack_label.png"), template)
+
+        screen = np.zeros((540, 960, 3), dtype=np.uint8)
+        screen[194:239, 490:582] = template
+
+        controller = FakeDeviceController(screen_image=screen)
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.time.sleep"):
+            handled = navigator._handle_blocking_popup(screen)
+
+        self.assertTrue(handled)
+        self.assertEqual(controller.taps, [BLOCKER_GIFT_PACK_CLOSE_POINT])
+
+    def test_optional_miss_does_not_save_debug_by_default(self):
+        (self.route_dir / "01_optional.png").write_text("fake")
+
+        original_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img[40:60, 40:60] = 128
+        original_img[45:55, 45:55] = 255
+        mock_results = {
+            "01_optional.png": ((50, 50), (40, 40, 20, 20), original_img)
+        }
+
+        np.random.seed(42)
+        screen_image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        controller = FakeDeviceController(screen_image=screen_image)
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+            debug_actions=False,
+        )
+
+        with patch("router.time.sleep"):
+            navigator.execute_route()
+
+        debug_img_path = self.temp_dir / "debug" / "fallback_01_optional.png"
+        self.assertFalse(debug_img_path.exists())
+        self.assertEqual(controller.taps, [])
+        self.assertEqual(controller.screenshot_count, 6)
+
+    def test_optional_miss_saves_debug_when_debug_actions_enabled(self):
+        (self.route_dir / "01_optional.png").write_text("fake")
+
+        original_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img[40:60, 40:60] = 128
+        original_img[45:55, 45:55] = 255
+        mock_results = {
+            "01_optional.png": ((50, 50), (40, 40, 20, 20), original_img)
+        }
+
+        np.random.seed(42)
+        screen_image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        controller = FakeDeviceController(screen_image=screen_image)
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+            debug_actions=True,
+        )
+
+        navigator.execute_route()
+
+        debug_img_path = self.temp_dir / "debug" / "fallback_01_optional.png"
+        self.assertTrue(debug_img_path.exists())
+        self.assertEqual(controller.taps, [])
+        self.assertEqual(controller.screenshot_count, 6)
 
 if __name__ == "__main__":
     unittest.main()

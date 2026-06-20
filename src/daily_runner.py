@@ -12,6 +12,7 @@ from src.config import (
 )
 from src.daily_task_finder import DailyTaskFinder, TaskSearchStatus
 from src.debug_log import DebugLogger
+from src.exceptions import MissingAssetError, TaskSkippedError
 from src.navigator import Navigator
 from src.scene_detector import SceneDetector
 from src.task_runner import TaskContext, TaskRunResult, TaskState
@@ -132,16 +133,25 @@ class DailyRunner:
                 f"{log_prefix} scan handled={','.join(sorted(handled_tasks))}",
                 force=True,
             )
-            rows = self.context.finder.scan_current_screen_go_first(task_specs)
+            try:
+                rows = self.context.finder.scan_current_screen_go_first(task_specs)
+            except Exception as exc:
+                result = self._failed_result_from_exception(log_prefix, exc)
+                results.append(result)
+                self._handle_failed_run_all_result(log_prefix, result.task_key, result, failure_sleep_seconds)
+                break
             if not rows:
-                if not self.context.finder._swipe_until_changed(
-                    360,
-                    430,
-                    360,
-                    230,
-                    duration_ms=420,
-                    wait_seconds=1.0,
-                ):
+                swipe_result = self._swipe_daily_list_or_failed(log_prefix)
+                if isinstance(swipe_result, TaskRunResult):
+                    results.append(swipe_result)
+                    self._handle_failed_run_all_result(
+                        log_prefix,
+                        swipe_result.task_key,
+                        swipe_result,
+                        failure_sleep_seconds,
+                    )
+                    break
+                if not swipe_result:
                     break
                 continue
 
@@ -197,6 +207,20 @@ class DailyRunner:
                     self.context.controller.tap(*runnable_row.result.go_match.center)
                     time.sleep(TRANSITION_WAIT_SECONDS)
                     result = task._execute_and_return(started)
+                except TaskSkippedError as exc:
+                    result = TaskRunResult(
+                        task_key=task_key,
+                        state=TaskState.SKIPPED,
+                        message=str(exc),
+                        elapsed_seconds=time.time() - started,
+                    )
+                except MissingAssetError as exc:
+                    result = TaskRunResult(
+                        task_key=task_key,
+                        state=TaskState.NEEDS_ASSETS,
+                        message=str(exc),
+                        elapsed_seconds=time.time() - started,
+                    )
                 except Exception as exc:
                     result = TaskRunResult(
                         task_key=task_key,
@@ -211,7 +235,8 @@ class DailyRunner:
                     f"elapsed={result.elapsed_seconds:.1f}s message={result.message}",
                     force=True,
                 )
-                self._handle_failed_run_all_result(log_prefix, task_key, result, failure_sleep_seconds)
+                if self._handle_failed_run_all_result(log_prefix, task_key, result, failure_sleep_seconds):
+                    break
                 continue
 
             if any(row.status_kind == "completed" for row in rows):
@@ -221,16 +246,39 @@ class DailyRunner:
                 )
                 break
 
-            if not self.context.finder._swipe_until_changed(
+            swipe_result = self._swipe_daily_list_or_failed(log_prefix)
+            if isinstance(swipe_result, TaskRunResult):
+                results.append(swipe_result)
+                self._handle_failed_run_all_result(
+                    log_prefix,
+                    swipe_result.task_key,
+                    swipe_result,
+                    failure_sleep_seconds,
+                )
+                break
+            if not swipe_result:
+                break
+        return results
+
+    def _swipe_daily_list_or_failed(self, log_prefix: str):
+        try:
+            return self.context.finder._swipe_until_changed(
                 360,
                 430,
                 360,
                 230,
                 duration_ms=420,
                 wait_seconds=1.0,
-            ):
-                break
-        return results
+            )
+        except Exception as exc:
+            return self._failed_result_from_exception(log_prefix, exc)
+
+    def _failed_result_from_exception(self, log_prefix: str, exc: Exception) -> TaskRunResult:
+        return TaskRunResult(
+            task_key=log_prefix,
+            state=TaskState.FAILED,
+            message=f"{type(exc).__name__}: {exc}",
+        )
 
     def _run_all_with(
         self,
@@ -269,15 +317,17 @@ class DailyRunner:
         task_key: str,
         result: TaskRunResult,
         failure_sleep_seconds: float,
-    ) -> None:
+    ) -> bool:
         if result.state != TaskState.FAILED:
-            return
+            return False
         if is_adb_stall_message(result.message):
             print(
                 f"[{log_prefix}] task={task_key} failed: {result.message}; "
-                f"ADB may be stalled, sleeping {failure_sleep_seconds:.0f}s before next task",
+                f"ADB may be stalled, sleeping {failure_sleep_seconds:.0f}s and stopping run-all",
                 flush=True,
             )
             time.sleep(failure_sleep_seconds)
+            return True
         else:
             print(f"[{log_prefix}] task={task_key} failed: {result.message}", flush=True)
+            return False

@@ -4,6 +4,7 @@ from typing import Dict, Type
 
 from src.config import TASK_ORDER
 from src.task_runner import BaseTask
+from src.tasks.abyss import AbyssTask
 from src.tasks.arena import ArenaTask
 from src.tasks.bounty import BountyTask
 from src.tasks.campaign import CampaignTask
@@ -18,6 +19,7 @@ from src.tasks.time_travel import TimeTravelTask
 
 
 TASK_CLASSES: Dict[str, Type[BaseTask]] = {
+    "abyss": AbyssTask,
     "arena": ArenaTask,
     "bounty": BountyTask,
     "campaign": CampaignTask,

@@ -24,6 +24,7 @@ class SummonTask(BaseTask):
     PAGE_LABEL_ROI: Roi = (70, 330, 160, 70)
     FREE_BUTTON_ROI: Roi = (30, 380, 230, 90)
     CONFIRM_BUTTON_ROI: Roi = (500, 420, 230, 80)
+    FIVE_STAR_RESULT_ROI: Roi = (0, 0, 300, 120)
     LEAVE_BUTTON_ROI: Roi = (0, 0, 110, 90)
     PAGE_LOAD_TIMEOUT_SECONDS = 45.0
     RESULT_TIMEOUT_SECONDS = 20.0
@@ -65,12 +66,13 @@ class SummonTask(BaseTask):
             threshold=self.FREE_BUTTON_THRESHOLD,
             wait_after_seconds=6.0,
         )
+        self._wait_for_confirm_dismissing_five_star()
         self._tap_task_asset(
             "confirm summon result",
             "confirm_button.png",
             roi=self.CONFIRM_BUTTON_ROI,
             threshold=0.88,
-            timeout_seconds=self.RESULT_TIMEOUT_SECONDS,
+            timeout_seconds=2.0,
             wait_after_seconds=TRANSITION_WAIT_SECONDS,
         )
         self._dismiss_post_confirm_reward_if_present()
@@ -96,7 +98,59 @@ class SummonTask(BaseTask):
             self._return_to_daily_tasks()
             return "summon result confirmed and returned"
 
+        if self._match_task_asset(
+            "five_star_result.png",
+            roi=self.FIVE_STAR_RESULT_ROI,
+            threshold=0.86,
+            timeout_seconds=1.0,
+        ):
+            self._wait_for_confirm_dismissing_five_star()
+            self._tap_task_asset(
+                "confirm summon result",
+                "confirm_button.png",
+                roi=self.CONFIRM_BUTTON_ROI,
+                threshold=0.88,
+                timeout_seconds=2.0,
+                wait_after_seconds=TRANSITION_WAIT_SECONDS,
+            )
+            self._dismiss_post_confirm_reward_if_present()
+            self._return_to_daily_tasks()
+            return "summon five-star result dismissed and returned"
+
         return self.execute()
+
+    def _wait_for_confirm_dismissing_five_star(self) -> None:
+        deadline = time.time() + self.RESULT_TIMEOUT_SECONDS
+        while time.time() <= deadline:
+            confirm = self._match_task_asset(
+                "confirm_button.png",
+                roi=self.CONFIRM_BUTTON_ROI,
+                threshold=0.88,
+                timeout_seconds=0.2,
+            )
+            if confirm is not None:
+                return
+
+            five_star = self._match_task_asset(
+                "five_star_result.png",
+                roi=self.FIVE_STAR_RESULT_ROI,
+                threshold=0.86,
+                timeout_seconds=0.2,
+            )
+            if five_star is not None:
+                if hasattr(self.context.controller, "annotate_next_tap_debug"):
+                    self.context.controller.annotate_next_tap_debug(
+                        lines=[
+                            "summon five-star result",
+                            f"conf={five_star.confidence:.3f}",
+                        ],
+                        boxes=[(*five_star.bbox, "five-star")],
+                    )
+                self.context.controller.tap(*five_star.center)
+                time.sleep(1.0)
+                continue
+
+            time.sleep(0.35)
 
     def _dismiss_post_confirm_reward_if_present(self) -> None:
         self.context.controller.tap(80, 500)

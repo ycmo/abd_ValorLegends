@@ -33,6 +33,13 @@ def _task_help_text() -> str:
     for key in TASK_ORDER:
         spec = TASK_SPECS[key]
         lines.append(f"  {key:<14} {spec.display_name}")
+    independent_keys = [key for key in sorted(TASK_CLASSES) if key not in TASK_ORDER]
+    if independent_keys:
+        lines.append("")
+        lines.append("Independent task keys:")
+        for key in independent_keys:
+            spec = TASK_SPECS[key]
+            lines.append(f"  {key:<14} {spec.display_name}")
     return "\n".join(lines)
 
 
@@ -144,6 +151,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("run-tested-daily", help="Run only the live-tested daily-task closed loops")
     sub.add_parser("run-all", help=f"Run configured tasks using Go-first search ({RUN_ALL_TASKS_CONFIG})")
+    sub.add_parser(
+        "probe-guild-dungeon-target",
+        help="From the current guild dungeon map, select the preferred outpost/challenge target",
+    )
+    sub.add_parser(
+        "probe-abyss-rental-scan",
+        help="From the current Abyss rental screen, scan forest-rental rows and print OCR/debug output",
+    )
     return parser
 
 
@@ -165,7 +180,7 @@ def cmd_check_device(serial: str) -> int:
     wm_size = controller.get_screen_size()
     density = controller.get_screen_density()
     screenshot_size = controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
-    print(f"serial={serial}")
+    print(f"serial={controller.serial}")
     print(f"wm_size={wm_size[0]}x{wm_size[1]}")
     print(f"density={density}")
     print(f"screenshot_size={screenshot_size[0]}x{screenshot_size[1]}")
@@ -398,6 +413,69 @@ def cmd_run_all(serial: str, debug_actions: Optional[bool] = None, console_debug
     return 1 if failed else 0
 
 
+def cmd_probe_guild_dungeon_target(
+    serial: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    task = TASK_CLASSES["guild_dungeon"](context)
+    message = task.probe_target_from_current_map(tap_challenge=True)
+    print(message)
+    for record in getattr(task, "last_probe_records", ()):
+        print(_format_guild_dungeon_probe_record(record))
+    summary_path = getattr(task, "last_probe_summary_path", None)
+    if summary_path is not None:
+        print(f"summary={summary_path}")
+    return 0
+
+
+def _format_guild_dungeon_probe_record(record) -> str:
+    selected = record.selected_center if record.selected_center is not None else "none"
+    return (
+        f"scan={record.scan_index:02d} node={record.node_kind} "
+        f"node_center={record.node_center} node_conf={record.node_confidence:.4f} "
+        f"remaining={record.remaining_count} challenge={record.challenge_count} bonus={record.bonus_count} "
+        f"selected={selected} selected_conf={record.selected_confidence:.4f}"
+    )
+
+
+def cmd_probe_abyss_rental_scan(
+    serial: str,
+    debug_actions: Optional[bool] = None,
+    console_debug: bool = False,
+) -> int:
+    context = build_context(serial, debug=debug_actions, console_debug=console_debug)
+    if not context.controller.connect():
+        raise ConfigurationError(f"Cannot connect to ADB device: {serial}")
+    context.controller.ensure_screen_size(EXPECTED_SCREEN_SIZE)
+    rows = TASK_CLASSES["abyss"](context).probe_rental_scan(tap_forest=True)
+    for row in rows:
+        print(_format_abyss_rental_row(row))
+    return 0
+
+
+def _format_abyss_rental_row(row) -> str:
+    power = row.power_text or "?"
+    crop_path = Path(row.crop_path)
+    file_name = crop_path.name
+    parent_name = crop_path.parent.name
+    display_path = str(Path(parent_name) / file_name) if parent_name else file_name
+    return (
+        f"scan={row.scan_index:02d} row={row.row_index} "
+        f"power=<{power}> ocr_conf={row.confidence:.4f} rent_conf={row.rent_confidence:.4f} "
+        f"rent_bright={_format_optional_float(row.rent_brightness_ratio)} "
+        f"file={display_path}"
+    )
+
+
+def _format_optional_float(value) -> str:
+    return "-" if value is None else f"{value:.4f}"
+
+
 def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None, console_debug: bool = False) -> int:
     context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
@@ -451,6 +529,10 @@ def main(argv: list = None) -> int:
             return cmd_run_tested_daily(args.serial, args.debug_actions, args.debug)
         if args.command == "run-all":
             return cmd_run_all(args.serial, args.debug_actions, args.debug)
+        if args.command == "probe-guild-dungeon-target":
+            return cmd_probe_guild_dungeon_target(args.serial, args.debug_actions, args.debug)
+        if args.command == "probe-abyss-rental-scan":
+            return cmd_probe_abyss_rental_scan(args.serial, args.debug_actions, args.debug)
         parser.error(f"Unknown command: {args.command}")
         return 2
     except (AdbControllerError, BotError) as exc:

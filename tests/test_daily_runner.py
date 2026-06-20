@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from src.daily_runner import DailyRunner
 from src.daily_task_finder import GoFirstTaskRow, TaskSearchResult, TaskSearchStatus
+from src.exceptions import TaskSkippedError
 from src.task_runner import TaskRunResult, TaskState
 from src.vision_matcher import MatchResult
 
@@ -37,17 +38,19 @@ class DailyRunnerRunAllTests(unittest.TestCase):
             failure_sleep_seconds=0.1,
         )
 
-    def test_failed_adb_stall_result_logs_sleeps_and_continues(self):
+    def test_failed_adb_stall_result_logs_sleeps_and_stops(self):
         runner = DailyRunner(context=FakeContext())
         result = TaskRunResult("summon", TaskState.FAILED, "ADB screenshot timed out", 1.2)
 
         out = io.StringIO()
         with patch("src.daily_runner.time.sleep") as sleep, redirect_stdout(out):
-            runner._handle_failed_run_all_result("run-all", "summon", result, 0.1)
+            should_stop = runner._handle_failed_run_all_result("run-all", "summon", result, 0.1)
 
+        self.assertTrue(should_stop)
         sleep.assert_called_once_with(0.1)
         self.assertIn("task=summon failed: ADB screenshot timed out", out.getvalue())
         self.assertIn("ADB may be stalled", out.getvalue())
+        self.assertIn("stopping run-all", out.getvalue())
 
     def test_failed_normal_result_logs_without_sleep(self):
         runner = DailyRunner(context=FakeContext())
@@ -55,8 +58,9 @@ class DailyRunnerRunAllTests(unittest.TestCase):
 
         out = io.StringIO()
         with patch("src.daily_runner.time.sleep") as sleep, redirect_stdout(out):
-            runner._handle_failed_run_all_result("run-all", "arena", result, 0.1)
+            should_stop = runner._handle_failed_run_all_result("run-all", "arena", result, 0.1)
 
+        self.assertFalse(should_stop)
         sleep.assert_not_called()
         self.assertIn("task=arena failed: Cannot find runnable task row for 競技場", out.getvalue())
         self.assertNotIn("sleeping", out.getvalue())
@@ -149,6 +153,74 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         self.assertEqual(results, [])
         self.assertEqual(context.controller.taps, [])
         self.assertEqual(context.finder.swipes, [])
+
+    def test_run_all_go_first_returns_failed_result_when_scan_swipe_times_out(self):
+        class Finder:
+            def scan_current_screen_go_first(self, _specs):
+                return []
+
+            def _swipe_until_changed(self, *args, **kwargs):
+                raise RuntimeError("ADB command timed out after 45s: adb shell input swipe")
+
+        class Navigator:
+            def go_to_daily_tasks(self):
+                return True
+
+        context = FakeContext()
+        context.finder = Finder()
+        context.navigator = Navigator()
+        runner = DailyRunner(context=context)
+
+        with patch("src.daily_runner.time.sleep"), redirect_stdout(io.StringIO()):
+            results = runner.run_all_go_first(["midas"], log_prefix="run-all", failure_sleep_seconds=0.1)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].task_key, "run-all")
+        self.assertEqual(results[0].state, TaskState.FAILED)
+        self.assertIn("ADB command timed out", results[0].message)
+
+    def test_run_all_go_first_treats_task_skipped_error_as_skipped(self):
+        class Finder:
+            def __init__(self):
+                self.scans = 0
+
+            def scan_current_screen_go_first(self, _specs):
+                self.scans += 1
+                if self.scans == 1:
+                    return [
+                        GoFirstTaskRow("arena", TaskSearchResult(TaskSearchStatus.READY, go_match=_match()), "go", 340),
+                    ]
+                return [
+                    GoFirstTaskRow(None, TaskSearchResult(TaskSearchStatus.DONE_OR_CLAIMABLE, done_match=_match()), "completed", 420),
+                ]
+
+            def _swipe_until_changed(self, *args, **kwargs):
+                return False
+
+        class Navigator:
+            def go_to_daily_tasks(self):
+                return True
+
+        class Controller:
+            def tap(self, x, y):
+                pass
+
+        context = FakeContext()
+        context.finder = Finder()
+        context.navigator = Navigator()
+        context.controller = Controller()
+        runner = DailyRunner(context=context)
+
+        with (
+            patch("src.tasks.arena.ArenaTask.missing_assets", return_value=()),
+            patch("src.tasks.arena.ArenaTask._execute_and_return", side_effect=TaskSkippedError("Arena OCR is uncertain")),
+            patch("src.daily_runner.time.sleep"),
+        ):
+            results = runner.run_all_go_first(["arena"], log_prefix="run-all", failure_sleep_seconds=0.1)
+
+        self.assertEqual(results[0].task_key, "arena")
+        self.assertEqual(results[0].state, TaskState.SKIPPED)
+        self.assertIn("Arena OCR is uncertain", results[0].message)
 
 
 def _match() -> MatchResult:

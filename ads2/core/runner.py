@@ -18,6 +18,7 @@ import src.vision_matcher as vm
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from src.paint_cropper import find_blue_boxes, crop_inside_blue_box
+from ads2.core.profile import AdsProfile, load_ads_profile
 
 class AppRecoveryNeeded(Exception):
     def __init__(self, reason, screen=None):
@@ -49,12 +50,12 @@ vm.read_image = cached_read_image
 
 
 class ReactiveRunner:
-    def __init__(self, serial=None, ad_wait=15, debug=False):
+    def __init__(self, serial=None, ad_wait=15, debug=False, profile=None):
         self.device = DeviceController(serial=serial)
         self.matcher = VisionMatcher()
-        self.ad_wait = ad_wait
         self.debug_mode = debug
         self.force_esc_trigger = False
+        self.profile: AdsProfile | None = None
         
         # 路徑設定
         self.base_dir = Path(__file__).parent.parent
@@ -66,6 +67,8 @@ class ReactiveRunner:
         self.scene_anchors_dir = self.templates_dir / "scene_anchors"
         self.manual_dir = self.assets_dir / "2_manual_captures"
         self.debug_errors_dir = self.assets_dir / "debug_errors"
+        self.profile = load_ads_profile(profile, project_root=Path(_PROJECT_ROOT), ads2_dir=self.base_dir)
+        self.ad_wait = self.profile.ad_wait if self.profile and self.profile.ad_wait is not None else ad_wait
         
         # 確保資料夾存在
         for d in [self.close_icons_dir, self.got_icons_dir, self.free_ad_icons_dir, self.scene_anchors_dir, self.manual_dir, self.debug_errors_dir]:
@@ -300,6 +303,20 @@ class ReactiveRunner:
             
         self.sleep_or_esc(3, check_app=False)
 
+    def match_profile_finish(self, screen):
+        if not self.profile:
+            return None
+        for condition in self.profile.finish_templates:
+            result = self.matcher.match_template(
+                screen,
+                condition.template_path,
+                threshold=condition.threshold,
+                roi=condition.roi,
+            )
+            if result:
+                return condition, result
+        return None
+
     def run(self):
         if not self.setup():
             return
@@ -309,6 +326,10 @@ class ReactiveRunner:
         print("==================================================")
         print("-> 每秒持續偵測畫面。")
         print("-> 隨時長按 [ESC] 鍵可呼叫小畫家進行自癒除錯。")
+        if self.profile:
+            print(f"-> 使用 profile: {self.profile.name}")
+            if self.profile.description:
+                print(f"-> {self.profile.description}")
         print("--------------------------------------------------")
         
         # 自訂掃描器：優先比對新圖，並在失敗時印出最高信心值
@@ -367,7 +388,8 @@ class ReactiveRunner:
                 # 1. 免費廣告 (free_ad_icons) - 在主畫面上點擊廣告
                 # 2. 關閉按鈕 (close_icons) - 如果有未關閉的彈窗，先關掉
                 # 3. 獲得道具 (got_icons) - 因為看完廣告一定會跳這個
-                # 4. 主畫面錨點 (scene_anchors) - 用來判定是否已經全部看完
+                # 4. Profile 結束條件 - 用來判定是否已回到特定任務畫面
+                # 5. 主畫面錨點 (scene_anchors) - 用來判定是否已經全部看完
                 # --------------------------------------------------------
                 
                 # 1. 尋找免費廣告 (free_ad_icons)
@@ -499,10 +521,22 @@ class ReactiveRunner:
                     screen = self._safe_screenshot()
                     if screen is None: continue
 
-                # 4. 尋找主畫面錨點 (scene_anchors)
+                # 4. 尋找 profile 自訂正常結束條件
+                profile_finish = self.match_profile_finish(screen)
+                if profile_finish:
+                    condition, finish_match = profile_finish
+                    print(
+                        f"\n✅ [Profile 結束] {condition.name} "
+                        f"(信心值: {finish_match.confidence:.2f})"
+                    )
+                    if condition.description:
+                        print(f"   {condition.description}")
+                    break
+
+                # 5. 尋找主畫面錨點 (scene_anchors)
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [4/4] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
+                    print(f"\r[{now_str}] 🔍 [5/5] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
                     
                 scene_paths = list(self.scene_anchors_dir.rglob("*.png"))
                 scene_match = scan_category(scene_paths, 0.75, "主畫面")

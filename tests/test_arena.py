@@ -129,6 +129,44 @@ class ArenaOcrTests(TestCase):
 
         self.assertEqual(result[5]["power_text"], "8130k")
 
+    def test_arena_accepts_low_confidence_unscaled_power_without_k_or_m_suffix(self):
+        task = ArenaTask(context=SimpleNamespace())
+        opponents = [
+            {"row": row, "col": col, "power_text": "3000k", "power_k": 3000, "confidence": 0.99, "has_scale_suffix": True}
+            for row in range(1, 5)
+            for col in range(1, 3)
+        ]
+        opponents[7] = {
+            "row": 4,
+            "col": 2,
+            "power_text": "47,7784",
+            "power_k": 477,
+            "confidence": 0.473,
+            "has_scale_suffix": False,
+        }
+
+        with patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents):
+            result = task._read_opponents(np.zeros((540, 960, 3), dtype=np.uint8))
+
+        self.assertEqual(result[7]["power_text"], "47,7784")
+
+    def test_arena_still_rejects_low_confidence_scaled_mid_power(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task._return_from_opponent_list_to_daily_tasks = lambda: None
+        opponents = [
+            {"row": row, "col": col, "power_text": "3000k", "power_k": 3000, "confidence": 0.99, "has_scale_suffix": True}
+            for row in range(1, 5)
+            for col in range(1, 3)
+        ]
+        opponents[0] = {"row": 1, "col": 1, "power_text": "3000k", "power_k": 3000, "confidence": 0.40, "has_scale_suffix": True}
+
+        with (
+            patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents),
+            patch("src.tasks.arena.write_image", side_effect=lambda path, image: path),
+        ):
+            with self.assertRaises(TaskSkippedError):
+                task._read_opponents(np.zeros((540, 960, 3), dtype=np.uint8))
+
     def test_arena_uncertain_ocr_saves_path_prints_and_skips(self):
         task = ArenaTask(context=SimpleNamespace())
         task._get_ocr_reader = lambda: object()

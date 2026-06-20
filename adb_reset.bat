@@ -4,7 +4,7 @@
 ::echo ==========================================
 ::echo.
 ::echo [1/3] Killing ADB server...
-::adb kill-server
+adb kill-server
 
 ::timeout /t 2 /nobreak >nul
 

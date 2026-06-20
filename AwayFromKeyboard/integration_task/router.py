@@ -9,11 +9,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+BLOCKER_GIFT_PACK_ROI = (340, 150, 320, 130)  # x, y, w, h
+BLOCKER_GIFT_PACK_THRESHOLD = 0.82
+BLOCKER_GIFT_PACK_CLOSE_POINT = (660, 22)
+
 # 若獨立測試時尚未有 DeviceController，使用延遲載入或在測試中 Mock
 try:
     from src.adb_controller import DeviceController
+    from src.config import ACTION_DEBUG_ENABLED
 except ImportError:
     DeviceController = None
+    ACTION_DEBUG_ENABLED = False
 
 class RedBoxFinder:
     def find_largest_red_box_info(self, img_path: Path) -> tuple[tuple[int, int], tuple[int, int, int, int], np.ndarray]:
@@ -92,8 +98,9 @@ class RedBoxFinder:
         return best_center, best_rect, img
 
 class RouteNavigator:
-    def __init__(self, route_name: str, controller=None, finder=None, base_dir=None):
+    def __init__(self, route_name: str, controller=None, finder=None, base_dir=None, debug_actions=None):
         self.route_name = route_name
+        self.debug_actions = ACTION_DEBUG_ENABLED if debug_actions is None else bool(debug_actions)
         
         if controller is not None:
             self.controller = controller
@@ -101,6 +108,8 @@ class RouteNavigator:
             if DeviceController is None:
                 raise ImportError("找不到 DeviceController 模組且未提供 Mock Controller。")
             self.controller = DeviceController()
+            if not self.controller.connect():
+                raise RuntimeError("無法連線到任何可用的 ADB 裝置。")
             
         self.finder = finder if finder is not None else RedBoxFinder()
         
@@ -111,6 +120,7 @@ class RouteNavigator:
             self.base_dir = Path(base_dir)
             
         self.route_dir = self.base_dir / "route_screenshots" / self.route_name
+        self.blocker_dir = self.base_dir / "integration_task" / "templates" / "blockers"
 
     def execute_route(self, phase="enter"):
         if not self.route_dir.exists() or not self.route_dir.is_dir():
@@ -147,6 +157,7 @@ class RouteNavigator:
         for prefix, group in grouped_files.items():
             templates_info = []
             has_swipe = False
+            is_optional = False
             for img_path in group:
                 threshold = 0.5 if "_lowconf" in img_path.name.lower() else 0.7
                 (cx, cy), (x, y, w, h), original_img = self.finder.find_largest_red_box_info(img_path)
@@ -157,6 +168,8 @@ class RouteNavigator:
                 is_swipe_h = "_swipeh" in name_lower
                 if is_swipe_v or is_swipe_h:
                     has_swipe = True
+                if "_optional" in name_lower:
+                    is_optional = True
                     
                 templates_info.append({
                     "path": img_path,
@@ -183,7 +196,7 @@ class RouteNavigator:
             best_overall_roi = None
             best_overall_threshold = 0.7
             
-            attempts_phase1 = 3 if has_swipe else 20
+            attempts_phase1 = 6 if is_optional else (3 if has_swipe else 20)
             screen = None
             
             for attempt in range(attempts_phase1):
@@ -238,9 +251,26 @@ class RouteNavigator:
                 if success:
                     break
                 else:
+                    if self._handle_blocking_popup(screen):
+                        continue
                     if not has_swipe:
                         time.sleep(0.3)
                         
+            if not success and is_optional:
+                failed_name = best_overall_img.name if best_overall_img else prefix
+                if self.debug_actions:
+                    debug_img_path = self._save_match_failure_debug(
+                        screen,
+                        failed_name,
+                        best_overall_roi,
+                        best_overall_loc,
+                        best_overall_w,
+                        best_overall_h,
+                    )
+                    print(f"[Router] optional miss debug saved: {debug_img_path}")
+                print(f"[Router] 步驟群組 {prefix} 帶有 _optional 標籤，找不到目標，自動跳過該步驟...")
+                continue
+
             if not success and has_swipe and screen is not None:
                 print(f"  [Debug] 群組 {prefix} 階段一尋找失敗 (最高信心度 {best_overall_val:.2f})，準備動態滑動...")
                 swipe_t = next(t for t in templates_info if t["is_swipe_v"] or t["is_swipe_h"])
@@ -320,27 +350,94 @@ class RouteNavigator:
                         if success:
                             break
                         else:
+                            if self._handle_blocking_popup(screen):
+                                continue
                             time.sleep(0.3)
                             
                     if success:
                         break
                         
             if not success:
-                debug_dir = self.base_dir / "debug"
-                debug_dir.mkdir(parents=True, exist_ok=True)
                 failed_name = best_overall_img.name if best_overall_img else prefix
-                debug_img_path = debug_dir / f"fallback_{failed_name}"
-                
-                if screen is not None and best_overall_roi is not None and best_overall_loc is not None:
-                    roi_x1, roi_x2, roi_y1, roi_y2 = best_overall_roi
-                    cv2.rectangle(screen, (roi_x1, roi_y1), (roi_x2, roi_y2), (255, 0, 0), 2)
-                    abs_max_x = roi_x1 + best_overall_loc[0]
-                    abs_max_y = roi_y1 + best_overall_loc[1]
-                    cv2.rectangle(screen, (abs_max_x, abs_max_y), (abs_max_x + best_overall_w, abs_max_y + best_overall_h), (0, 255, 255), 2)
-                    is_success, im_buf_arr = cv2.imencode(".png", screen)
-                    if is_success:
-                        im_buf_arr.tofile(str(debug_img_path))
-                
+
+                debug_img_path = self._save_match_failure_debug(
+                    screen,
+                    failed_name,
+                    best_overall_roi,
+                    best_overall_loc,
+                    best_overall_w,
+                    best_overall_h,
+                )
                 raise ValueError(f"比對失敗！步驟群組 {prefix} 找不到目標 (最高信心度 {best_overall_val:.2f} < {best_overall_threshold})。\n已將偵錯畫面存至: {debug_img_path}")
 
+    def _save_match_failure_debug(
+        self,
+        screen,
+        failed_name,
+        best_overall_roi,
+        best_overall_loc,
+        best_overall_w,
+        best_overall_h,
+    ) -> Path:
+        debug_dir = self.base_dir / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        debug_img_path = debug_dir / f"fallback_{failed_name}"
 
+        if screen is not None and best_overall_roi is not None and best_overall_loc is not None:
+            debug_image = screen.copy()
+            roi_x1, roi_x2, roi_y1, roi_y2 = best_overall_roi
+            cv2.rectangle(debug_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (255, 0, 0), 2)
+            abs_max_x = roi_x1 + best_overall_loc[0]
+            abs_max_y = roi_y1 + best_overall_loc[1]
+            cv2.rectangle(
+                debug_image,
+                (abs_max_x, abs_max_y),
+                (abs_max_x + best_overall_w, abs_max_y + best_overall_h),
+                (0, 255, 255),
+                2,
+            )
+            is_success, im_buf_arr = cv2.imencode(".png", debug_image)
+            if is_success:
+                im_buf_arr.tofile(str(debug_img_path))
+        return debug_img_path
+
+    def _handle_blocking_popup(self, screen: np.ndarray) -> bool:
+        """Close known temporary popups that block route target recognition."""
+        if screen is None:
+            return False
+
+        gift_template = self.blocker_dir / "gift_pack_label.png"
+        if not gift_template.exists():
+            return False
+
+        template = cv2.imdecode(np.fromfile(str(gift_template), dtype=np.uint8), cv2.IMREAD_COLOR)
+        if template is None:
+            return False
+
+        x, y, w, h = BLOCKER_GIFT_PACK_ROI
+        sh, sw = screen.shape[:2]
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(sw, x + w)
+        y2 = min(sh, y + h)
+        if x2 <= x1 or y2 <= y1:
+            return False
+
+        roi = screen[y1:y2, x1:x2]
+        th, tw = template.shape[:2]
+        if th > roi.shape[0] or tw > roi.shape[1]:
+            return False
+
+        result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        if max_val < BLOCKER_GIFT_PACK_THRESHOLD:
+            return False
+
+        match_center = (x1 + max_loc[0] + tw // 2, y1 + max_loc[1] + th // 2)
+        print(
+            f"[Router] 偵測到臨時禮包廣告 "
+            f"(gift_pack_label confidence={max_val:.2f}, center={match_center})，點擊跳過..."
+        )
+        self.controller.tap(*BLOCKER_GIFT_PACK_CLOSE_POINT)
+        time.sleep(2.0)
+        return True
