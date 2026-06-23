@@ -38,6 +38,30 @@ class FakeGuildWishOverlayTask(GuildWishTask):
     def _close_dialog(self):
         self.closed = True
 
+    def _is_daily_tasks_visible(self):
+        return False
+
+
+class FakeGuildWishDailyReturnTask(GuildWishTask):
+    def __init__(self):
+        self.context = SimpleNamespace(controller=FakeController())
+        self.daily_checks = [False, False, True, True]
+        self.closed = False
+
+    def _is_guild_wish_dialog_ready(self, timeout_seconds=1.0):
+        return False
+
+    def _is_guild_wish_dialog_visible(self, timeout_seconds=0.8):
+        return False
+
+    def _is_daily_tasks_visible(self):
+        if self.daily_checks:
+            return self.daily_checks.pop(0)
+        return True
+
+    def _close_dialog(self):
+        self.closed = True
+
 
 class GuildWishTemplateTests(TestCase):
     def test_guild_wish_templates_match_manual_dialog(self):
@@ -68,3 +92,12 @@ class GuildWishTemplateTests(TestCase):
         self.assertEqual(message, "free guild wish completed after reward overlay")
         self.assertEqual(task.context.controller.taps, [(80, 500)])
         self.assertTrue(task.closed)
+
+    def test_reward_chain_can_close_directly_to_daily_tasks(self):
+        task = FakeGuildWishDailyReturnTask()
+
+        message = task.execute_from_current_scene()
+
+        self.assertEqual(message, "free guild wish completed after reward overlay")
+        self.assertEqual(task.context.controller.taps, [(80, 500), (80, 500)])
+        self.assertFalse(task.closed)

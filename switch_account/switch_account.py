@@ -31,7 +31,10 @@ ACCOUNTS = load_accounts()
 TOGGLE_MAP = {"311": "em3", "em3": "311", "14": "tiger", "tiger": "14"}
 
 SERVER_BTN_TIMEOUT_SEC = 60
+SERVER_TARGET_MAX_ATTEMPTS = 30
+SERVER_TARGET_POLL_SEC = 1.0
 MAX_GAME_ENTRY_ATTEMPTS = 30
+GOOGLE_ALLOW_REVEAL_SWIPE = (480, 470, 480, 70)
 
 # Extracted coordinates from screenshots
 COORDS = {
@@ -236,8 +239,6 @@ def select_server(controller: DeviceController, matcher: VisionMatcher, server_n
     else:
         print("⚡ 因超級捷徑已展開伺服器列表，跳過點擊「007_帳號切換」步驟")
     
-    screen = controller.screenshot()
-    
     # 尋找所有該伺服器的模板圖片
     template_paths = list(TEMPLATES_DIR.glob(f"008_伺服器_{server_name}.png"))
     if not template_paths:
@@ -245,7 +246,19 @@ def select_server(controller: DeviceController, matcher: VisionMatcher, server_n
         return
 
     roi_box = (329, 36, 627, 162)
-    best_res = matcher.match_any(screen, template_paths, threshold=0.75, roi=roi_box)
+    best_res = None
+    screen = None
+    for attempt in range(1, SERVER_TARGET_MAX_ATTEMPTS + 1):
+        screen = controller.screenshot()
+        best_res = matcher.match_any(screen, template_paths, threshold=0.75, roi=roi_box)
+        if best_res:
+            break
+        print(
+            f"⏳ 伺服器列表尚未載入 {server_name}，等待 {SERVER_TARGET_POLL_SEC:.0f} 秒後重試 "
+            f"({attempt}/{SERVER_TARGET_MAX_ATTEMPTS})"
+        )
+        if attempt < SERVER_TARGET_MAX_ATTEMPTS:
+            time.sleep(SERVER_TARGET_POLL_SEC)
     
     if best_res:
         print(f"✅ 成功找到伺服器 {server_name} (信心度: {best_res.confidence:.4f})，點擊座標 ({best_res.center[0]}, {best_res.center[1]})！")
@@ -315,6 +328,11 @@ def resolve_next_target(current_acc_name: str) -> str:
 def resolve_toggle_target(current_acc_name: str) -> str:
     return TOGGLE_MAP.get(current_acc_name)
 
+def reveal_google_allow_button(controller: DeviceController):
+    print("👉 繼續按鈕已出現，再往下揭露一段讓按鈕完整可點擊...")
+    controller.swipe(*GOOGLE_ALLOW_REVEAL_SWIPE, duration_ms=900)
+    time.sleep(1.5)
+
 def login_with_google(controller: DeviceController, matcher: VisionMatcher):
     print("步驟 2/4: 選擇 Google 登入")
     wait_for_appearance(controller, matcher, "004_Google或信箱_0.png", timeout=10)
@@ -330,7 +348,8 @@ def login_with_google(controller: DeviceController, matcher: VisionMatcher):
     for swipe_idx in range(4):
         if wait_for_appearance(controller, matcher, "005_google登入2_0.png", fallback_coord=COORDS["google_allow_btn"], timeout=3):
             found_allow = True
-            print("✅ 找到繼續按鈕，準備點擊！")
+            print("✅ 找到繼續按鈕，準備揭露後點擊！")
+            reveal_google_allow_button(controller)
             wait_and_tap(controller, matcher, "005_google登入2_0.png", fallback_coord=COORDS["google_allow_btn"], timeout=10)
             break
             

@@ -19,6 +19,7 @@ challenge_button.png
 outpost_close_button.png
 continue_button.png
 back_button.png
+guild_lobby_back_button.png
 remaining_attempts_zero_anchor.png
 ```
 

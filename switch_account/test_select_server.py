@@ -51,5 +51,22 @@ class TestSelectServer(unittest.TestCase):
         mock_controller.tap.assert_any_call(400, 100)
         mock_controller.tap.assert_any_call(500, 300)
 
+    @patch("switch_account.wait_and_tap")
+    @patch("switch_account.TEMPLATES_DIR")
+    @patch("time.sleep")
+    def test_select_server_waits_for_delayed_list(self, mock_sleep, mock_templates_dir, mock_wait_and_tap):
+        mock_templates_dir.glob.return_value = [Path("008_伺服器_em3.png")]
+        mock_controller = MagicMock()
+        mock_matcher = MagicMock()
+        delayed_match = DummyMatchResult("008_伺服器_em3.png", 0.91, (420, 105))
+        mock_matcher.match_any.side_effect = [None, None, delayed_match]
+        mock_matcher.match_template.return_value = None
+
+        switch_account.select_server(mock_controller, mock_matcher, "em3", skip_open=True)
+
+        self.assertEqual(mock_matcher.match_any.call_count, 3)
+        mock_controller.tap.assert_called_once_with(420, 105)
+        self.assertGreaterEqual(mock_sleep.call_count, 2)
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

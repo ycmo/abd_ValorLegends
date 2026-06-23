@@ -1,4 +1,8 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import numpy as np
 
 from src.exceptions import TaskFailedError
 from src.tasks.time_travel import TimeTravelTask
@@ -53,6 +57,48 @@ class FakeTimeTravelTask(TimeTravelTask):
 
 
 class TimeTravelSafetyTests(unittest.TestCase):
+    def _cost_detection_task(self, matched_asset=None):
+        calls = []
+
+        def match_template(_screen, path, **_kwargs):
+            calls.append(path.name)
+            return object() if path.name == matched_asset else None
+
+        context = SimpleNamespace(
+            controller=SimpleNamespace(screenshot=lambda: np.zeros((540, 960, 3), dtype=np.uint8)),
+            matcher=SimpleNamespace(match_template=match_template),
+        )
+        task = TimeTravelTask(context)
+        task._read_action_cost_ocr = Mock(return_value=50)
+        return task, calls
+
+    def test_cost_detection_uses_100_template_without_loading_ocr(self):
+        task, calls = self._cost_detection_task("gem_100_button.png")
+
+        cost = task._detect_action_cost(np.zeros((540, 960, 3), dtype=np.uint8))
+
+        self.assertEqual(cost, 100)
+        self.assertEqual(calls, ["gem_100_button.png"])
+        task._read_action_cost_ocr.assert_not_called()
+
+    def test_cost_detection_uses_50_template_without_loading_ocr(self):
+        task, calls = self._cost_detection_task("gem_50_button.png")
+
+        cost = task._detect_action_cost(np.zeros((540, 960, 3), dtype=np.uint8))
+
+        self.assertEqual(cost, 50)
+        self.assertEqual(calls, ["gem_100_button.png", "gem_50_button.png"])
+        task._read_action_cost_ocr.assert_not_called()
+
+    def test_cost_detection_falls_back_to_ocr_when_templates_are_uncertain(self):
+        task, calls = self._cost_detection_task()
+
+        cost = task._detect_action_cost(np.zeros((540, 960, 3), dtype=np.uint8))
+
+        self.assertEqual(cost, 50)
+        self.assertEqual(calls, ["gem_100_button.png", "gem_50_button.png"])
+        task._read_action_cost_ocr.assert_called_once()
+
     def test_stops_before_100_gem_tier(self):
         task = FakeTimeTravelTask([100])
 

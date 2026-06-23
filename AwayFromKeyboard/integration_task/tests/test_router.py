@@ -287,7 +287,7 @@ class TestRouter(unittest.TestCase):
         debug_img_path = self.temp_dir / "debug" / "fallback_01_optional.png"
         self.assertFalse(debug_img_path.exists())
         self.assertEqual(controller.taps, [])
-        self.assertEqual(controller.screenshot_count, 6)
+        self.assertEqual(controller.screenshot_count, 12)
 
     def test_optional_miss_saves_debug_when_debug_actions_enabled(self):
         (self.route_dir / "01_optional.png").write_text("fake")
@@ -315,7 +315,7 @@ class TestRouter(unittest.TestCase):
         debug_img_path = self.temp_dir / "debug" / "fallback_01_optional.png"
         self.assertTrue(debug_img_path.exists())
         self.assertEqual(controller.taps, [])
-        self.assertEqual(controller.screenshot_count, 6)
+        self.assertEqual(controller.screenshot_count, 12)
 
 if __name__ == "__main__":
     unittest.main()

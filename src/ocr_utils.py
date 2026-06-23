@@ -1,13 +1,48 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
-from functools import lru_cache
+import threading
+import time
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+
+
+PROFILE_LOADS_ENABLED = os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on")
+_PROCESS_TIMER_STARTED = time.perf_counter()
+_EASYOCR_READER_CACHE = {}
+_EASYOCR_READER_CACHE_LOCK = threading.RLock()
+
+
+def _profile_load(message: str) -> None:
+    if PROFILE_LOADS_ENABLED:
+        uptime = time.perf_counter() - _PROCESS_TIMER_STARTED
+        print(f"[perf pid={os.getpid()} uptime={uptime:.3f}s] {message}", flush=True)
+
+
+class _ProfiledEasyOCRReader:
+    def __init__(self, reader, languages: Tuple[str, ...]):
+        self._reader = reader
+        self._languages = languages
+
+    def __getattr__(self, name):
+        return getattr(self._reader, name)
+
+    def readtext(self, *args, **kwargs):
+        if not PROFILE_LOADS_ENABLED:
+            return self._reader.readtext(*args, **kwargs)
+        started = time.perf_counter()
+        try:
+            return self._reader.readtext(*args, **kwargs)
+        finally:
+            elapsed = time.perf_counter() - started
+            _profile_load(
+                f"easyocr readtext languages={','.join(self._languages)} elapsed={elapsed:.3f}s"
+            )
 
 
 def parse_power_value(text: str) -> int:
@@ -103,14 +138,26 @@ def build_easyocr_reader(
     *,
     download_enabled: bool = True,
 ):
+    normalized_languages = tuple(languages or ("en",))
+    import_started = time.perf_counter()
     import easyocr
+    _profile_load(
+        f"easyocr import languages={','.join(normalized_languages)} "
+        f"elapsed={time.perf_counter() - import_started:.3f}s"
+    )
 
-    return easyocr.Reader(list(languages or ["en"]), gpu=False, verbose=False, download_enabled=download_enabled)
-
-
-@lru_cache(maxsize=4)
-def _cached_easyocr_reader(languages: Tuple[str, ...], download_enabled: bool):
-    return build_easyocr_reader(languages, download_enabled=download_enabled)
+    reader_started = time.perf_counter()
+    reader = easyocr.Reader(
+        list(normalized_languages),
+        gpu=False,
+        verbose=False,
+        download_enabled=download_enabled,
+    )
+    _profile_load(
+        f"easyocr reader initialized languages={','.join(normalized_languages)} "
+        f"elapsed={time.perf_counter() - reader_started:.3f}s"
+    )
+    return reader
 
 
 def get_cached_easyocr_reader(
@@ -118,7 +165,24 @@ def get_cached_easyocr_reader(
     *,
     download_enabled: bool = False,
 ):
-    return _cached_easyocr_reader(tuple(languages), bool(download_enabled))
+    normalized_languages = tuple(languages)
+    key = (normalized_languages, bool(download_enabled))
+    with _EASYOCR_READER_CACHE_LOCK:
+        cached = _EASYOCR_READER_CACHE.get(key)
+        if cached is not None:
+            _profile_load(f"easyocr cache hit languages={','.join(normalized_languages)}")
+            return cached
+
+        _profile_load(f"easyocr cache miss languages={','.join(normalized_languages)}")
+        reader = build_easyocr_reader(normalized_languages, download_enabled=download_enabled)
+        profiled = _ProfiledEasyOCRReader(reader, normalized_languages)
+        _EASYOCR_READER_CACHE[key] = profiled
+        return profiled
+
+
+def clear_easyocr_reader_cache() -> None:
+    with _EASYOCR_READER_CACHE_LOCK:
+        _EASYOCR_READER_CACHE.clear()
 
 
 def read_texts_easyocr(
@@ -138,7 +202,10 @@ def read_texts_easyocr(
     """
 
     if reader is None:
-        reader = build_easyocr_reader(languages or ["ch_tra", "en"], download_enabled=download_enabled)
+        reader = get_cached_easyocr_reader(
+            languages or ("ch_tra", "en"),
+            download_enabled=download_enabled,
+        )
 
     image = screen
     offset_x = 0
@@ -206,7 +273,7 @@ def extract_arena_powers_easyocr(screen: np.ndarray, reader=None) -> List[dict]:
     """
 
     if reader is None:
-        reader = build_easyocr_reader()
+        reader = get_cached_easyocr_reader(("en",), download_enabled=False)
 
     results = []
     for row_idx, (y0, y1) in enumerate(ARENA_POWER_ROW_Y_RANGES):

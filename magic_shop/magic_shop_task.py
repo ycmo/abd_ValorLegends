@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.config import SHARED_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.task_runner import BaseTask
 from src.exceptions import TaskFailedError
-from src.ocr_utils import build_easyocr_reader, read_texts_easyocr, parse_power_value
+from src.ocr_utils import get_cached_easyocr_reader, read_texts_easyocr, parse_power_value
 
 class MagicShopTask(BaseTask):
     spec = TASK_SPECS["magic_shop"]
@@ -27,6 +27,8 @@ class MagicShopTask(BaseTask):
     )
     BACK_ARROW_ROI = (0, 0, 100, 80)
     SHOP_ITEM_ROI = (250, 100, 710, 440)
+    SHOP_SCAN_VIEWS = 3
+    SHOP_SWIPE = (480, 450, 480, 150, 500)
 
     def asset_path(self, name: str, source: str = "task") -> Path:
         if source == "shared":
@@ -77,7 +79,7 @@ class MagicShopTask(BaseTask):
     def _get_ocr_reader(self):
         if self._ocr_reader is None:
             print("  ⏳ 正在初始化 OCR 引擎載入模型 (初次啟動需要幾秒鐘，請稍候)...")
-            self._ocr_reader = build_easyocr_reader()
+            self._ocr_reader = get_cached_easyocr_reader(("en",), download_enabled=False)
             print("  ✅ OCR 引擎初始化完成！")
         return self._ocr_reader
 
@@ -312,17 +314,7 @@ class MagicShopTask(BaseTask):
             print(f"商店第 {refreshes + 1} 頁掃描開始...")
             print(f"=========================================")
 
-            # 總共約 6 排商品，一頁顯示 2~3 排
-            # 應使用者要求：極限加大滑動幅度為 420 像素 (從 520 滑到 100)，並且只要檢查 2 個畫面就好！
-            for swipe_idx in range(2):
-                bought = self.buy_items_on_screen()
-                total_bought += bought
-
-                if swipe_idx < 1: # 最後一次檢查完不用再滑
-                    print("  👇 [滑動] 向下極限捲動查看更多商品...")
-                    # 從 520 滑到 0 (極限滑動 520 像素)
-                    self.context.controller.swipe(480, 520, 480, 0, duration_ms=500)
-                    time.sleep(1.0)
+            total_bought += self._scan_shop_views()
 
             # 判斷是否刷新
             print("  ⏳ [辨識中] 正在讀取目前剩餘金幣...")
@@ -413,6 +405,21 @@ class MagicShopTask(BaseTask):
         print(f"\n🎉 魔法商店自動購買結束！")
         self._return_to_daily_tasks()
         return f"Bought {total_bought} items, refreshed {refreshes} times."
+
+    def _scan_shop_views(self) -> int:
+        """Scan stable top/middle/bottom shop views with overlap."""
+        bought_count = 0
+        for view_index in range(self.SHOP_SCAN_VIEWS):
+            print(f"  [商品區段] 掃描第 {view_index + 1}/{self.SHOP_SCAN_VIEWS} 個位置...")
+            bought_count += self.buy_items_on_screen()
+            if view_index + 1 >= self.SHOP_SCAN_VIEWS:
+                continue
+
+            x1, y1, x2, y2, duration = self.SHOP_SWIPE
+            print("  [滑動] 向下捲動一個重疊區段...")
+            self.context.controller.swipe(x1, y1, x2, y2, duration_ms=duration)
+            time.sleep(1.0)
+        return bought_count
 
     def _return_to_daily_tasks(self) -> None:
         if self.context.navigator.go_to_daily_tasks(max_steps=1):

@@ -197,7 +197,7 @@ class RouteNavigator:
             best_overall_roi = None
             best_overall_threshold = 0.7
             
-            attempts_phase1 = 6 if is_optional else (3 if has_swipe else 20)
+            attempts_phase1 = 12 if is_optional else (3 if has_swipe else 20)
             screen = None
             
             for attempt in range(attempts_phase1):
@@ -550,3 +550,16 @@ class RouteNavigator:
         self.controller.tap(*BLOCKER_GIFT_PACK_CLOSE_POINT)
         time.sleep(2.0)
         return True
+
+    def handle_blocking_popup(self, screen: np.ndarray | None = None) -> bool:
+        """Public recovery hook for callers whose post-route screen is blocked."""
+        if screen is None:
+            get_screen = getattr(
+                self.controller,
+                "get_screen",
+                getattr(self.controller, "screenshot", None),
+            )
+            if get_screen is None:
+                return False
+            screen = get_screen()
+        return self._handle_blocking_popup(screen)

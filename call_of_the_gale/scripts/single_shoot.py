@@ -20,7 +20,7 @@ if _SRC_DIR not in sys.path:
 try:
     from src.adb_controller import DeviceController
     from src.vision_matcher import VisionMatcher
-    from src.ocr_utils import build_easyocr_reader
+    from src.ocr_utils import get_cached_easyocr_reader
     from ads2.core.runner import ReactiveRunner as AdsReactiveRunner
 except ImportError as e:
     print(f"錯誤: 模組載入失敗: {e}")
@@ -340,7 +340,7 @@ def run_single_round(device, matcher, reader=None, debug=False):
         print("[Info] 利用發射後的動畫等待時間，在背景初始化 OCR 模型...")
         reader_container = []
         def load_ocr():
-            reader_container.append(build_easyocr_reader())
+            reader_container.append(get_cached_easyocr_reader(("en",), download_enabled=False))
         ocr_thread = threading.Thread(target=load_ocr)
         ocr_thread.start()
         time.sleep(1.0)

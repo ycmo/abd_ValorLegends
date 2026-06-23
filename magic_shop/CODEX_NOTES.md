@@ -35,3 +35,4 @@ python -m src.manual_screenshots --task 魔法商店 --index 1 --scene 要購買
 - Return-to-Daily uses `magic_shop/assets/back_arrow.png`, cropped from `captures/magic_shop_probe.png`.
 - Offline checks passed on 2026-06-08: compileall, `src.main list-tasks`, missing-asset check, Magic Shop scene match on `captures/magic_shop_probe.png`, and 44 unittest tests.
 - Live run is still pending because ADB reported no connected devices after integration.
+- 2026-06-21: each refresh page now scans three overlapping vertical views. Required recurring purchases are `960k`, `480k`, and `1800k x3`; `5000k` remains optional because it does not appear on every refresh.

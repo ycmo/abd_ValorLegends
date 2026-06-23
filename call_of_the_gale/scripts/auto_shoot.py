@@ -20,7 +20,7 @@ if _SRC_DIR not in sys.path:
 try:
     from src.adb_controller import DeviceController
     from src.vision_matcher import VisionMatcher
-    from src.ocr_utils import build_easyocr_reader
+    from src.ocr_utils import get_cached_easyocr_reader
     # 從 single_shoot 引入共用的常數與函式
     from call_of_the_gale.scripts.single_shoot import (
         get_scroll_count,
@@ -88,7 +88,7 @@ def main():
     matcher = VisionMatcher()
 
     print("[Info] 初始化 OCR 與影像比對引擎 (可能需要幾秒鐘)...")
-    reader = build_easyocr_reader()
+    reader = get_cached_easyocr_reader(("en",), download_enabled=False)
 
     while True:
         # 每次進入新迴圈先截圖

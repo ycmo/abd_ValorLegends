@@ -50,7 +50,7 @@ class MidasTask(BaseTask):
     REWARD_WAIT_SECONDS = 12.0
     STATE_POLL_SECONDS = 1.0
     MAX_ALLOWED_TAPS = 12
-    COOLDOWN_OCR_ROI: Roi = (470, 116, 100, 38)
+    COOLDOWN_OCR_ROI: Roi = (482, 124, 74, 22)
     COOLDOWN_OCR_MIN_CONFIDENCE = 0.50
     COOLDOWN_MAX_SECONDS = 8 * 60 * 60
     task_scene_anchors = (
@@ -113,8 +113,18 @@ class MidasTask(BaseTask):
             screen = self._wait_for_non_busy_screen()
             active = self._first_active_button_on_screen(screen)
             if active is None:
+                self._save_no_active_debug(screen)
                 return completed
             label, match = active
+            annotate = getattr(self.context.controller, "annotate_next_tap_debug", None)
+            if annotate is not None:
+                annotate(
+                    lines=[
+                        f"midas active button={label}",
+                        f"template={match.template_path.name} confidence={match.confidence:.3f}",
+                    ],
+                    boxes=[(*match.bbox, label)],
+                )
             self.context.controller.tap(*match.center)
             completed.append(label)
             self._wait_for_reward_after_tap()
@@ -152,18 +162,66 @@ class MidasTask(BaseTask):
             xs = [float(point[0]) for point in box]
             pieces.append((min(xs), str(text).strip(), float(confidence)))
         pieces.sort(key=lambda item: item[0])
-        ocr_text = "".join(piece[1] for piece in pieces).replace(" ", "")
-        confidence = min((piece[2] for piece in pieces), default=0.0)
-        seconds = self._parse_cooldown_seconds(ocr_text, confidence)
+        seconds, ocr_text, confidence = self._select_cooldown_candidate(pieces)
+        save_debug = getattr(self.context.controller, "save_annotated_debug", None)
+        if save_debug is not None:
+            status = "valid" if seconds is not None else "invalid"
+            save_debug(
+                f"midas_cooldown_ocr_{status}",
+                screen,
+                lines=[
+                    f"midas cooldown OCR {status}",
+                    f"text={ocr_text!r} confidence={confidence:.3f}",
+                    f"seconds={seconds}",
+                ],
+                boxes=[(*self.COOLDOWN_OCR_ROI, "cooldown_ocr_roi")],
+            )
         return seconds, ocr_text, confidence
+
+    @classmethod
+    def _select_cooldown_candidate(
+        cls,
+        pieces: list[tuple[float, str, float]],
+    ) -> tuple[Optional[int], str, float]:
+        raw_text = "".join(piece[1] for piece in pieces).replace(" ", "")
+        raw_confidence = min((piece[2] for piece in pieces), default=0.0)
+        candidates = [(piece[1].replace(" ", ""), piece[2]) for piece in pieces]
+        candidates.append((raw_text, raw_confidence))
+
+        valid = []
+        for text, confidence in candidates:
+            seconds = cls._parse_cooldown_seconds(text, confidence)
+            if seconds is not None:
+                valid.append((confidence, seconds, text))
+        if not valid:
+            return None, raw_text, raw_confidence
+
+        confidence, seconds, text = max(valid, key=lambda item: item[0])
+        return seconds, text, confidence
+
+    def _save_no_active_debug(self, screen) -> None:
+        save_debug = getattr(self.context.controller, "save_annotated_debug", None)
+        if save_debug is None:
+            return
+        save_debug(
+            "midas_no_active_button",
+            screen,
+            lines=["midas: no active free/20/50 button matched"],
+            boxes=[
+                (*self.FREE_BUTTON_ROI, "free_roi"),
+                (*self.GEM_20_BUTTON_ROI, "20_gem_roi"),
+                (*self.GEM_50_BUTTON_ROI, "50_gem_roi"),
+            ],
+        )
 
     @classmethod
     def _parse_cooldown_seconds(cls, text: str, confidence: float) -> Optional[int]:
         if confidence <= cls.COOLDOWN_OCR_MIN_CONFIDENCE:
             return None
-        match = re.fullmatch(r"(\d{2}):([0-5]\d):([0-5]\d)", text)
-        if match is None:
+        matches = list(re.finditer(r"(?<!\d)(\d{2}):([0-5]\d):([0-5]\d)(?!\d)", text))
+        if not matches:
             return None
+        match = matches[-1]
         hours, minutes, seconds = (int(value) for value in match.groups())
         total = hours * 3600 + minutes * 60 + seconds
         if total >= cls.COOLDOWN_MAX_SECONDS:

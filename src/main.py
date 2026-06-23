@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+_MODULE_LOAD_STARTED = time.perf_counter()
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -494,6 +497,12 @@ def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None, cons
 
 
 def main(argv: list = None) -> int:
+    if os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on"):
+        print(
+            f"[perf pid={os.getpid()}] src.main imports_ready "
+            f"elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s",
+            flush=True,
+        )
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:

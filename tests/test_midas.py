@@ -112,6 +112,9 @@ class MidasSafetyTests(unittest.TestCase):
     def test_parse_valid_cooldown(self):
         self.assertEqual(MidasTask._parse_cooldown_seconds("01:28:22", 0.51), 5302)
 
+    def test_parse_cooldown_uses_valid_trailing_time_after_ocr_prefix_noise(self):
+        self.assertEqual(MidasTask._parse_cooldown_seconds("0:02:03:06", 0.943), 7386)
+
     def test_parse_cooldown_rejects_low_confidence_and_eight_hours(self):
         self.assertIsNone(MidasTask._parse_cooldown_seconds("01:28:22", 0.50))
         self.assertIsNone(MidasTask._parse_cooldown_seconds("08:00:00", 0.99))
@@ -119,6 +122,24 @@ class MidasSafetyTests(unittest.TestCase):
     def test_parse_cooldown_rejects_invalid_time(self):
         self.assertIsNone(MidasTask._parse_cooldown_seconds("01:61:00", 0.99))
         self.assertIsNone(MidasTask._parse_cooldown_seconds("1:02:03", 0.99))
+
+    def test_cooldown_candidate_ignores_isolated_leading_noise(self):
+        seconds, text, confidence = MidasTask._select_cooldown_candidate(
+            [(0.0, "0", 0.76), (10.0, "04:58:36", 0.99)]
+        )
+
+        self.assertEqual(seconds, 17916)
+        self.assertEqual(text, "04:58:36")
+        self.assertEqual(confidence, 0.99)
+
+    def test_cooldown_candidate_can_join_split_time_pieces(self):
+        seconds, text, confidence = MidasTask._select_cooldown_candidate(
+            [(0.0, "04:", 0.91), (10.0, "58:", 0.88), (20.0, "36", 0.95)]
+        )
+
+        self.assertEqual(seconds, 17916)
+        self.assertEqual(text, "04:58:36")
+        self.assertEqual(confidence, 0.88)
 
     def test_active_button_scan_reuses_one_screen_and_preserves_priority(self):
         screen = object()

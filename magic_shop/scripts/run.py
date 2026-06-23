@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher, write_image
-from src.ocr_utils import read_texts_easyocr, build_easyocr_reader
+from src.ocr_utils import get_cached_easyocr_reader, read_texts_easyocr
 from src.config import DEFAULT_SERIAL
 
 def get_gold_amount(device, debug_dir, reader, debug=False):
@@ -164,7 +164,7 @@ def main():
     print("Starting Magic Shop automation...")
     device = DeviceController(DEFAULT_SERIAL)
     matcher = VisionMatcher()
-    reader = build_easyocr_reader()
+    reader = get_cached_easyocr_reader(("en",), download_enabled=False)
     
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     assets_dir = os.path.join(base_dir, 'assets')

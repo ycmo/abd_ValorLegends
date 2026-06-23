@@ -311,9 +311,9 @@ class ArenaTask(BaseTask):
 
     def _get_ocr_reader(self):
         if self._ocr_reader is None:
-            from src.ocr_utils import build_easyocr_reader
+            from src.ocr_utils import get_cached_easyocr_reader
 
-            self._ocr_reader = build_easyocr_reader()
+            self._ocr_reader = get_cached_easyocr_reader(("en",), download_enabled=False)
         return self._ocr_reader
 
     def _tap_task_asset(

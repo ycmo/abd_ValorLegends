@@ -319,8 +319,6 @@ class AbyssTaskTests(unittest.TestCase):
                     ("busy_waiting_overlay.png", None),
                     ("training_button.png", training),
                     ("busy_waiting_overlay.png", None),
-                    ("training_button.png", None),
-                    ("busy_waiting_overlay.png", None),
                     ("start_training_button.png", start),
                 ]
             ),
@@ -332,6 +330,80 @@ class AbyssTaskTests(unittest.TestCase):
             task._tap_training_entry()
 
         self.assertEqual(controller.taps, [(910, 290)])
+
+    def test_rented_hero_selection_waits_for_formation_and_confirms_checkmark(self):
+        controller = FakeController()
+        start = MatchResult(Path("start_training_button.png"), 0.99, (900, 480), (860, 450, 80, 60))
+        available = MatchResult(Path("rented_hero_available.png"), 1.0, (57, 481), (29, 466, 57, 31))
+        selected = MatchResult(Path("rented_hero_selected.png"), 1.0, (56, 482), (26, 465, 60, 33))
+        context = SimpleNamespace(
+            controller=controller,
+            matcher=ScriptedTemplateMatcher(
+                [
+                    ("artifact_tab_2.png", None),
+                    ("busy_waiting_overlay.png", None),
+                    ("start_training_button.png", start),
+                    ("rented_hero_selected.png", None),
+                    ("rented_hero_available.png", available),
+                    ("rented_hero_selected.png", selected),
+                ]
+            ),
+            logger=None,
+        )
+        task = AbyssTask(context)
+
+        with patch("src.tasks.abyss.time.sleep"):
+            task._tap_rented_hero()
+
+        self.assertEqual(controller.taps, [(55, 482)])
+
+    def test_rented_hero_selection_skips_when_first_slot_is_not_rented_hero(self):
+        controller = FakeController()
+        start = MatchResult(Path("start_training_button.png"), 0.99, (900, 480), (860, 450, 80, 60))
+        context = SimpleNamespace(
+            controller=controller,
+            matcher=ScriptedTemplateMatcher(
+                [
+                    ("artifact_tab_2.png", None),
+                    ("busy_waiting_overlay.png", None),
+                    ("start_training_button.png", start),
+                    ("rented_hero_selected.png", None),
+                    ("rented_hero_available.png", None),
+                ]
+            ),
+            logger=None,
+        )
+        task = AbyssTask(context)
+
+        with patch("src.tasks.abyss.time.sleep"):
+            task._tap_rented_hero()
+
+        self.assertEqual(controller.taps, [])
+        self.assertEqual(controller.debug_saves[0][0][0], "abyss_rented_hero_not_available")
+
+    def test_rented_hero_selection_closes_artifact_dialog_first(self):
+        controller = FakeController()
+        artifact_tab = MatchResult(Path("artifact_tab_2.png"), 1.0, (622, 115), (600, 100, 44, 30))
+        start = MatchResult(Path("start_training_button.png"), 0.99, (900, 480), (860, 450, 80, 60))
+        selected = MatchResult(Path("rented_hero_selected.png"), 1.0, (56, 482), (26, 465, 60, 33))
+        context = SimpleNamespace(
+            controller=controller,
+            matcher=ScriptedTemplateMatcher(
+                [
+                    ("artifact_tab_2.png", artifact_tab),
+                    ("busy_waiting_overlay.png", None),
+                    ("start_training_button.png", start),
+                    ("rented_hero_selected.png", selected),
+                ]
+            ),
+            logger=None,
+        )
+        task = AbyssTask(context)
+
+        with patch("src.tasks.abyss.time.sleep"):
+            task._tap_rented_hero()
+
+        self.assertEqual(controller.taps, [(850, 95)])
 
     def test_rental_list_swipe_stays_inside_power_column_roi(self):
         controller = FakeController()
@@ -501,6 +573,25 @@ class AbyssTaskTests(unittest.TestCase):
 
         self.assertEqual(controller.taps, [(368, 478), (590, 398), (590, 477)])
 
+    def test_initial_zero_status_exits_without_tapping_keep_result(self):
+        controller = FakeController()
+        initial_done = MatchResult(Path("initial_done_zero.png"), 0.98, (438, 443), (418, 435, 40, 17))
+        exit_button = MatchResult(Path("exit_button.png"), 1.0, (590, 477), (570, 466, 41, 23))
+        script = [
+            ("initial_done_zero.png", initial_done),
+            ("exit_button.png", exit_button),
+            ("exit_button.png", exit_button),
+            ("initial_done_zero.png", None),
+            ("exit_button.png", None),
+        ]
+        context = SimpleNamespace(controller=controller, matcher=ScriptedTemplateMatcher(script), logger=None)
+        task = AbyssTask(context)
+
+        with patch("src.tasks.abyss.time.sleep"):
+            task._wait_skip_and_keep_result()
+
+        self.assertEqual(controller.taps, [(590, 477)])
+
     def test_post_battle_result_loop_uses_long_wait_after_action_buttons(self):
         controller = FakeController()
         yes = MatchResult(Path("yes_button.png"), 1.0, (590, 398), (568, 380, 44, 37))
@@ -522,6 +613,32 @@ class AbyssTaskTests(unittest.TestCase):
 
         self.assertEqual(sleeps[0], task.POST_RESULT_WAIT_SECONDS)
         self.assertEqual(controller.taps, [(590, 398), (590, 477)])
+
+    def test_post_battle_result_loop_uses_short_wait_after_accept_result(self):
+        controller = FakeController()
+        accept = MatchResult(Path("accept_result_button.png"), 1.0, (368, 478), (338, 466, 60, 24))
+        yes = MatchResult(Path("yes_button.png"), 1.0, (590, 398), (568, 380, 44, 37))
+        done = MatchResult(Path("final_done_zero.png"), 1.0, (408, 477), (393, 466, 40, 26))
+        exit_button = MatchResult(Path("exit_button.png"), 1.0, (590, 477), (564, 460, 53, 35))
+        script = [
+            ("final_done_zero.png", None),
+            ("accept_result_button.png", accept),
+            ("final_done_zero.png", None),
+            ("accept_result_button.png", None),
+            ("yes_button.png", yes),
+            ("final_done_zero.png", done),
+            ("exit_button.png", exit_button),
+        ]
+        context = SimpleNamespace(controller=controller, matcher=ScriptedTemplateMatcher(script), logger=None)
+        task = AbyssTask(context)
+        sleeps = []
+
+        with patch("src.tasks.abyss.time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+            task._run_post_battle_result_sequence()
+
+        self.assertEqual(sleeps[0], task.POST_RESULT_ACCEPT_WAIT_SECONDS)
+        self.assertIn(task.POST_RESULT_WAIT_SECONDS, sleeps)
+        self.assertEqual(controller.taps, [(368, 478), (590, 398), (590, 477)])
 
     def test_post_battle_result_retries_exit_until_result_closes(self):
         controller = FakeController()

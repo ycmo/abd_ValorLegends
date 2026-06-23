@@ -1,7 +1,6 @@
 import sys
 import time
 import argparse
-import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -16,13 +15,18 @@ if str(project_root) not in sys.path:
 
 from switch_account.switch_account import detect_current_account, switch_account, load_accounts
 from src.daily_runner import build_context
+from src.exceptions import TaskFailedError
 from src.tasks.midas import MidasAutoResult, MidasTask
+from src.vision_matcher import write_image
 from AwayFromKeyboard.ui_recovery import UIRecovery
 from AwayFromKeyboard.integration_task.router import RouteNavigator
 
 AUTO_SHORT_COOLDOWN_SECONDS = 5 * 60
 AUTO_OCR_FAILURE_SLEEP_SECONDS = 2 * 60 * 60
-AUTO_WAKE_BUFFER_SECONDS = 5
+AUTO_WAKEUP_BUFFER_SECONDS = 4 * 60
+AUTO_ALL_ACCOUNT_ORDER = ("em3", "311", "tiger", "14")
+MIDAS_POPUP_RECOVERY_ATTEMPTS = 3
+MIDAS_TITLE_ROI = MidasTask.TITLE_ROI
 
 def parse_interval_to_seconds(interval_str: str) -> float:
     parts = interval_str.split(':')
@@ -31,44 +35,13 @@ def parse_interval_to_seconds(interval_str: str) -> float:
     h, m, s = [float(p) for p in parts]
     return h * 3600 + m * 60 + s
 
-def run_route(route_name: str, router_script: Path, recovery: UIRecovery):
-    print(f"\n[ToggleLoop] 準備呼叫路由任務: {route_name}")
-    cmd = [sys.executable, str(router_script), route_name]
-    try:
-        result = subprocess.run(cmd, cwd=str(project_root))
-        if result.returncode != 0:
-            print(f"⚠️ [警告] 路由 '{route_name}' 回傳了錯誤碼 (returncode={result.returncode})，將靜默略過並繼續流程。")
-    except Exception as e:
-        print(f"⚠️ [警告] 執行路由 '{route_name}' 時發生崩潰: {e}")
-        
-    print("🔍 路由任務結束，交由 UIRecovery 強制驗證主城狀態...")
-    if not recovery.recover_to_main():
-        print("⚠️ [系統] 畫面卡死或無法自動回到主城。啟動浴火重生(強制重啟)機制...")
-        try:
-            # 1. 強制關閉遊戲
-            recovery.controller.shell("am force-stop com.ageofeternity.global")
-            time.sleep(3)
-            # 2. 重新啟動遊戲
-            recovery.controller.shell("monkey -p com.ageofeternity.global -c android.intent.category.LAUNCHER 1")
-            print("⏳ 遊戲已重啟，等待載入...")
-            time.sleep(10) # 給予初始載入時間
-            
-            # 3. 呼叫封裝好的登入重入機制
-            from src.game_entry import reenter_game
-            if reenter_game(recovery.controller, recovery.matcher):
-                print("✅ 強制重啟並登入成功，已安全重返主城，繼續掛機流程！")
-            else:
-                print("❌ [錯誤] 重啟後仍無法成功進入主城，徹底終止程式。")
-                sys.exit(1)
-        except Exception as e:
-            print(f"❌ [錯誤] 執行強制重啟時發生異常: {e}")
-            sys.exit(1)
-
-
-def build_auto_account_order(current_account: str | None, accounts: dict, use_all: bool) -> list[str]:
+def build_auto_account_order(
+    accounts: dict,
+    use_all: bool,
+) -> list[str]:
     configured = ["em3"]
     if use_all:
-        configured.extend(account for account in accounts if account != "em3")
+        configured = list(AUTO_ALL_ACCOUNT_ORDER)
     else:
         configured.append("311")
 
@@ -76,11 +49,7 @@ def build_auto_account_order(current_account: str | None, accounts: dict, use_al
     if missing:
         raise ValueError(f"--auto 缺少必要帳號設定: {', '.join(missing)}")
 
-    order = []
-    for account in ([current_account] if current_account in accounts else []) + configured:
-        if account not in order:
-            order.append(account)
-    return order
+    return configured
 
 
 def _format_seconds(seconds: float) -> str:
@@ -108,11 +77,87 @@ def _recover_or_restart(recovery: UIRecovery) -> None:
         raise RuntimeError("重啟後仍無法成功進入主城")
 
 
+def _save_midas_popup_recovery_debug(context, screen, attempt: int) -> None:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    failure_path = (
+        project_root
+        / "captures"
+        / "failures"
+        / "midas"
+        / f"midas_dialog_missing_before_popup_recovery_{timestamp}_attempt{attempt}.png"
+    )
+    write_image(failure_path, screen)
+    print(f"📷 [Midas] 已保存點金視窗缺失畫面: {failure_path}")
+
+    save_debug = getattr(context.controller, "save_annotated_debug", None)
+    if save_debug is None:
+        return
+    x, y, w, h = MIDAS_TITLE_ROI
+    save_debug(
+        f"midas_dialog_missing_popup_recovery_{attempt}",
+        screen,
+        lines=[
+            f"Midas dialog missing; popup recovery attempt {attempt}/{MIDAS_POPUP_RECOVERY_ATTEMPTS}",
+            "checking known gift-pack blocker before retrying route",
+        ],
+        boxes=[(x, y, w, h, "expected Midas title ROI")],
+    )
+
+
+def _execute_midas_with_popup_recovery(context, recovery: UIRecovery, route, action):
+    for recovery_count in range(MIDAS_POPUP_RECOVERY_ATTEMPTS + 1):
+        try:
+            return action()
+        except TaskFailedError:
+            if recovery_count >= MIDAS_POPUP_RECOVERY_ATTEMPTS:
+                raise
+            attempt = recovery_count + 1
+            screen = context.controller.screenshot()
+            _save_midas_popup_recovery_debug(context, screen, attempt)
+            if not route.handle_blocking_popup(screen):
+                raise
+
+            print(
+                f"⚠️ [Midas] 已關閉臨時禮包廣告，"
+                f"恢復主城並重新進入點金手 ({attempt}/{MIDAS_POPUP_RECOVERY_ATTEMPTS})。"
+            )
+            _recover_or_restart(recovery)
+            route.execute_route(phase="enter")
+
+    raise AssertionError("unreachable")
+
+
 def run_midas_auto_once(context, recovery: UIRecovery, *, require_cooldown: bool) -> MidasAutoResult:
     route = RouteNavigator(route_name="點金手", controller=context.controller)
     route.execute_route(phase="enter")
     try:
-        return MidasTask(context).execute_auto(require_cooldown_after_success=require_cooldown)
+        return _execute_midas_with_popup_recovery(
+            context,
+            recovery,
+            route,
+            lambda: MidasTask(context).execute_auto(
+                require_cooldown_after_success=require_cooldown
+            ),
+        )
+    finally:
+        try:
+            route.execute_route(phase="exit")
+        finally:
+            _recover_or_restart(recovery)
+
+
+def run_midas_once(context, recovery: UIRecovery) -> str:
+    route = RouteNavigator(route_name="點金手", controller=context.controller)
+    route.execute_route(phase="enter")
+    try:
+        result = _execute_midas_with_popup_recovery(
+            context,
+            recovery,
+            route,
+            lambda: MidasTask(context).execute(),
+        )
+        print(f"✅ [ToggleLoop] 點金手執行完成：{result}")
+        return result
     finally:
         try:
             route.execute_route(phase="exit")
@@ -136,8 +181,12 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
             print(f"✅ [Auto] 帳號 【{account}】 點金成功，前往下一帳號。")
             return True
         if not result.cooldown_valid:
-            _print_ocr_failure(result)
-            return False
+            print(
+                "⚠️ [Auto] 點金手冷卻 OCR 失敗："
+                f"text={result.ocr_text!r}, confidence={result.ocr_confidence:.3f}；"
+                "視為冷卻超過 5 分鐘，前往下一帳號。"
+            )
+            return True
 
         cooldown = result.cooldown_seconds or 0
         print(f"⏱️ [Auto] 帳號 【{account}】 剩餘冷卻 {_format_seconds(cooldown)}")
@@ -145,7 +194,7 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
             print("➡️ [Auto] 冷卻超過 5 分鐘，前往下一帳號。")
             return True
 
-        wait_seconds = cooldown + AUTO_WAKE_BUFFER_SECONDS
+        wait_seconds = cooldown
         wake_time = datetime.now() + timedelta(seconds=wait_seconds)
         print(
             f"💤 [Auto] 短冷卻，原帳號等待 {_format_seconds(wait_seconds)}；"
@@ -158,18 +207,23 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
         _recover_or_restart(recovery)
 
 
-def run_auto_round(context, recovery: UIRecovery, *, accounts: dict, use_all: bool) -> int:
+def run_auto_round(
+    context,
+    recovery: UIRecovery,
+    *,
+    accounts: dict,
+    use_all: bool,
+) -> int:
     print("\n🌅 [Auto] 新一輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
         print("✅ [Auto] 喚醒異常狀態已排除。")
     _recover_or_restart(recovery)
 
     current_account = detect_current_account(context.controller, context.matcher)
-    order = build_auto_account_order(current_account, accounts, use_all)
+    order = build_auto_account_order(accounts, use_all)
     displayed_order = order if order[-1] == "em3" else order + ["em3"]
     print(f"🔄 [Auto] 本輪帳號順序: {' -> '.join(displayed_order)}")
 
-    ocr_failed = False
     active_account = current_account
     for account in order:
         if active_account != account:
@@ -177,30 +231,36 @@ def run_auto_round(context, recovery: UIRecovery, *, accounts: dict, use_all: bo
             if not switch_account(account):
                 raise RuntimeError(f"切換至帳號 {account} 失敗")
             active_account = account
-        if not process_auto_account(context, recovery, account):
-            ocr_failed = True
-            break
+        process_auto_account(context, recovery, account)
 
     if active_account != "em3":
         print("🔄 [Auto] 返回起點帳號 【em3】")
         if not switch_account("em3"):
             raise RuntimeError("返回 em3 失敗")
 
-    if ocr_failed:
-        return AUTO_OCR_FAILURE_SLEEP_SECONDS
-
     print("\n🔎 [Auto] 已回到 em3，讀取大休眠冷卻時間...")
     final_result = run_midas_auto_once(context, recovery, require_cooldown=True)
     if not final_result.cooldown_valid:
         _print_ocr_failure(final_result)
         return AUTO_OCR_FAILURE_SLEEP_SECONDS
-    return (final_result.cooldown_seconds or 0) + AUTO_WAKE_BUFFER_SECONDS
+    cooldown = final_result.cooldown_seconds or 0
+    sleep_seconds = max(0, cooldown - AUTO_WAKEUP_BUFFER_SECONDS)
+    print(
+        f"⏰ [Auto] em3 冷卻 {_format_seconds(cooldown)}，"
+        f"扣除 4 分鐘登入緩衝後休眠 {_format_seconds(sleep_seconds)}。"
+    )
+    return sleep_seconds
 
 
 def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool) -> None:
     accounts = load_accounts()
     while True:
-        sleep_seconds = run_auto_round(context, recovery, accounts=accounts, use_all=use_all)
+        sleep_seconds = run_auto_round(
+            context,
+            recovery,
+            accounts=accounts,
+            use_all=use_all,
+        )
         next_time = datetime.now() + timedelta(seconds=sleep_seconds)
         print(
             f"💤 [Auto] 本輪結束，休眠 {_format_seconds(sleep_seconds)}；"
@@ -215,6 +275,11 @@ def main():
     parser.add_argument("--all", action="store_true", help="切換全部 4 個帳號 (使用 next 模式)")
     parser.add_argument("--delay", type=str, default=None, help="首次啟動前的延遲等待時間 (hh:mm:ss)")
     parser.add_argument("--auto", action="store_true", help="依點金手冷卻時間自動輪轉帳號並休眠")
+    parser.add_argument(
+        "--debug-actions",
+        action="store_true",
+        help="儲存 Router 與點金手每次操作前後的偵錯截圖",
+    )
     args = parser.parse_args()
 
     try:
@@ -237,8 +302,6 @@ def main():
     switch_cmd = "next" if args.all else "toggle"
     total_runs = accounts_per_round * args.toggles
         
-    router_script = current_dir / "integration_task" / "run_router.py"
-
     print("==================================================")
     print(f"🔄 開始執行定時雙帳號掛機 (Loop Toggle Midas)")
     print(f"⏱️ 設定休眠區間: {args.interval} ({int(interval_seconds)} 秒)")
@@ -247,7 +310,7 @@ def main():
     print("==================================================")
 
     try:
-        context = build_context(console_debug=True)
+        context = build_context(debug=args.debug_actions, console_debug=True)
         if not context.controller.connect():
              print("❌ 無法連線至 ADB 裝置")
              sys.exit(1)
@@ -295,7 +358,7 @@ def main():
                         print(f"⚠️ [警告] 切換帳號發生錯誤: {e}")
                         
                 # 針對當前畫面上的帳號執行任務
-                run_route("點金手", router_script, recovery)
+                run_midas_once(context, recovery)
             
             # 執行完畢
             print(f"\n▶️ === 結尾復原切換 ({switch_cmd})：準備回到首發帳號 ===")

@@ -1,5 +1,8 @@
 import sys
+import time
 from pathlib import Path
+
+_MODULE_LOAD_STARTED = time.perf_counter()
 
 # 加入當下目錄與父目錄以利載入模組
 current_dir = Path(__file__).resolve().parent
@@ -19,6 +22,12 @@ import argparse
 sys.stdout.reconfigure(encoding='utf-8')
 
 def main():
+    if os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on"):
+        print(
+            f"[perf pid={os.getpid()}] run_router imports_ready "
+            f"elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s",
+            flush=True,
+        )
     parser = argparse.ArgumentParser(description="AFK route runner")
     parser.add_argument("route_name", nargs="?", default="點金手", help="要執行的路由任務名稱")
     parser.add_argument(

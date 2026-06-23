@@ -16,7 +16,7 @@ def _get_config() -> configparser.ConfigParser:
         # 建立預設設定檔
         config["點金手"] = {
             "enable": "Y",
-            "command": "-m src.main --debug run-task midas"
+            "command": "-m src.main --debug run-current-scene-task midas"
         }
         config["疾風呼喚"] = {
             "enable": "Y",

@@ -10,7 +10,7 @@ import cv2
 
 from src.config import CAPTURES_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSkippedError
-from src.ocr_utils import build_easyocr_reader, parse_power_value
+from src.ocr_utils import get_cached_easyocr_reader, parse_power_value
 from src.task_runner import BaseTask, TaskRunResult, TaskSceneAnchor, TaskState
 from src.vision_matcher import MatchResult, Roi, write_image
 
@@ -40,6 +40,8 @@ class AbyssTask(BaseTask):
         "rented_button.png",
         "training_button.png",
         "start_training_button.png",
+        "rented_hero_available.png",
+        "rented_hero_selected.png",
         "artifact_plan_1.png",
         "artifact_plan_2.png",
         "artifact_tab_2.png",
@@ -50,6 +52,7 @@ class AbyssTask(BaseTask):
         "accept_result_button.png",
         "yes_button.png",
         "exit_button.png",
+        "initial_done_zero.png",
         "final_done_zero.png",
         "main_done_zero.png",
     )
@@ -72,7 +75,12 @@ class AbyssTask(BaseTask):
     FOREST_TAB_POINT = (507, 466)
     TRAINING_ENTRY_POINT = (912, 318)
     RENTED_HERO_POINT = (55, 482)
+    RENTED_HERO_ROI: Roi = (18, 440, 80, 85)
+    RENTED_HERO_AVAILABLE_THRESHOLD = 0.85
+    RENTED_HERO_SELECTED_THRESHOLD = 0.85
+    RENTED_HERO_MAX_TAPS = 3
     ARTIFACT_PLAN_POINT = (914, 286)
+    ARTIFACT_DIALOG_CLOSE_POINT = (850, 95)
     ARTIFACT_TAB_2_POINT = (622, 115)
     UNIFY_ARTIFACT_POINT = (769, 397)
     YES_POINT = (588, 402)
@@ -108,10 +116,13 @@ class AbyssTask(BaseTask):
     ACCEPT_RESULT_ROI: Roi = (270, 435, 200, 80)
     YES_BUTTON_ROI: Roi = (500, 350, 180, 90)
     EXIT_BUTTON_ROI: Roi = (500, 430, 180, 90)
+    INITIAL_DONE_ZERO_ROI: Roi = (395, 425, 80, 45)
+    INITIAL_DONE_ZERO_THRESHOLD = 0.95
     FINAL_DONE_STATUS_ROI: Roi = (393, 466, 40, 26)
     FINAL_DONE_STATUS_THRESHOLD = 0.90
     POST_RESULT_TIMEOUT_SECONDS = 180.0
     POST_RESULT_MAX_TAPS = 30
+    POST_RESULT_ACCEPT_WAIT_SECONDS = 0.8
     POST_RESULT_WAIT_SECONDS = 6.0
     EXIT_RESULT_MAX_TAPS = 5
 
@@ -174,8 +185,8 @@ class AbyssTask(BaseTask):
         time.sleep(TRANSITION_WAIT_SECONDS)
 
         self._tap_training_entry()
-        self._tap_rented_hero()
         self._ensure_artifact_plan_2()
+        self._tap_rented_hero()
         self._tap_start_training()
         self._wait_skip_and_keep_result()
         return f"abyss one round completed; {rental_message}"
@@ -197,6 +208,21 @@ class AbyssTask(BaseTask):
             )
             best_text = "none" if probe is None else f"{probe.confidence:.3f}"
             self._log(f"Abyss main done check not matched; template=main_done_zero.png best_confidence={best_text}")
+            boxes = [(*self.MAIN_DONE_ZERO_ROI, "done_status_roi")]
+            if probe is not None:
+                boxes.append((*probe.bbox, "best_match"))
+            self._save_abyss_debug(
+                "abyss_main_done_zero_not_matched",
+                screen,
+                lines=[
+                    "Abyss main completion check not matched",
+                    (
+                        "template=main_done_zero.png "
+                        f"best_confidence={best_text} threshold={self.MAIN_DONE_ZERO_THRESHOLD:.3f}"
+                    ),
+                ],
+                boxes=boxes,
+            )
             return False
 
         self._log(f"Abyss already completed; template=main_done_zero.png confidence={match.confidence:.3f}")
@@ -539,12 +565,16 @@ class AbyssTask(BaseTask):
             timeout_seconds=self.TRAINING_ENTRY_WAIT_SECONDS,
             label="Abyss training entry",
         )
-        self.tap_match_until_gone(
-            match,
-            label="Abyss open training formation",
-            threshold=0.78,
-            max_taps=4,
+        self.context.controller.annotate_next_tap_debug(
+            lines=[
+                "Abyss open training formation",
+                f"template=training_button.png confidence={match.confidence:.3f}",
+                "confirmation=start_training_button.png appears",
+            ],
+            boxes=[(*match.bbox, "go")],
         )
+        self.context.controller.tap(*match.center)
+        time.sleep(TRANSITION_WAIT_SECONDS)
         self._wait_for_template(
             "start_training_button.png",
             threshold=0.78,
@@ -606,15 +636,158 @@ class AbyssTask(BaseTask):
         raise TaskFailedError(f"Abyss template not found: {asset_name}{best_suffix}")
 
     def _tap_rented_hero(self) -> None:
+        self._close_artifact_dialog_if_open()
+        self._wait_for_template(
+            "start_training_button.png",
+            threshold=0.78,
+            roi=(820, 420, 130, 110),
+            timeout_seconds=self.FORMATION_WAIT_SECONDS,
+            label="Abyss formation before rented hero selection",
+        )
+
+        screen = self.context.controller.screenshot()
+        selected = self._match_rented_hero_selected(screen)
+        if selected is not None:
+            self._record_rented_hero_selected(screen, selected, already_selected=True)
+            return
+
+        available = self._match_rented_hero_available(screen)
+        if available is None:
+            probe = self.context.matcher.best_template_match(
+                screen,
+                self.asset_path("rented_hero_available.png"),
+                roi=self.RENTED_HERO_ROI,
+            )
+            best_text = "none" if probe is None else f"{probe.confidence:.3f}"
+            self._log(
+                "Abyss rented hero not available in first slot; skipping selection; "
+                f"template=rented_hero_available.png best_confidence={best_text}"
+            )
+            boxes = [(*self.RENTED_HERO_ROI, "status_roi")]
+            if probe is not None:
+                boxes.append((*probe.bbox, "best_match"))
+            self._save_abyss_debug(
+                "abyss_rented_hero_not_available",
+                screen,
+                lines=[
+                    "Abyss rented hero not available in first slot; continue without it",
+                    (
+                        "template=rented_hero_available.png "
+                        f"best_confidence={best_text} "
+                        f"threshold={self.RENTED_HERO_AVAILABLE_THRESHOLD:.3f}"
+                    ),
+                ],
+                boxes=boxes,
+            )
+            return
+
+        for attempt in range(1, self.RENTED_HERO_MAX_TAPS + 1):
+            self.context.controller.annotate_next_tap_debug(
+                lines=[
+                    f"Abyss select rented hero attempt {attempt}/{self.RENTED_HERO_MAX_TAPS}",
+                    "template=rented_hero_selected.png confidence=not_found",
+                    f"fixed_point={self.RENTED_HERO_POINT[0]},{self.RENTED_HERO_POINT[1]}",
+                ],
+                boxes=[(*self.RENTED_HERO_ROI, "go")],
+            )
+            self.context.controller.tap(*self.RENTED_HERO_POINT)
+            time.sleep(TRANSITION_WAIT_SECONDS)
+            screen = self.context.controller.screenshot()
+            selected = self._match_rented_hero_selected(screen)
+            if selected is not None:
+                self._record_rented_hero_selected(screen, selected, attempt=attempt)
+                return
+
+        screen = self.context.controller.screenshot()
+        probe = self.context.matcher.best_template_match(
+            screen,
+            self.asset_path("rented_hero_selected.png"),
+            roi=self.RENTED_HERO_ROI,
+        )
+        best_text = "none" if probe is None else f"{probe.confidence:.3f}"
+        self._save_abyss_debug(
+            "abyss_rented_hero_not_selected",
+            screen,
+            lines=[
+                "Abyss rented hero selection not confirmed",
+                (
+                    "template=rented_hero_selected.png "
+                    f"best_confidence={best_text} threshold={self.RENTED_HERO_SELECTED_THRESHOLD:.3f}"
+                ),
+            ],
+            boxes=[(*self.RENTED_HERO_ROI, "status_roi")],
+        )
+        raise TaskFailedError(
+            "Abyss rented hero was not selected: "
+            f"rented_hero_selected.png best_confidence={best_text}"
+        )
+
+    def _match_rented_hero_selected(self, screen) -> Optional[MatchResult]:
+        return self.context.matcher.match_template(
+            screen,
+            self.asset_path("rented_hero_selected.png"),
+            threshold=self.RENTED_HERO_SELECTED_THRESHOLD,
+            roi=self.RENTED_HERO_ROI,
+            check_brightness=False,
+        )
+
+    def _match_rented_hero_available(self, screen) -> Optional[MatchResult]:
+        return self.context.matcher.match_template(
+            screen,
+            self.asset_path("rented_hero_available.png"),
+            threshold=self.RENTED_HERO_AVAILABLE_THRESHOLD,
+            roi=self.RENTED_HERO_ROI,
+            check_brightness=False,
+        )
+
+    def _record_rented_hero_selected(
+        self,
+        screen,
+        selected: MatchResult,
+        *,
+        attempt: Optional[int] = None,
+        already_selected: bool = False,
+    ) -> None:
+        state = "already selected" if already_selected else f"selected after tap {attempt}"
+        self._log(
+            f"Abyss rented hero {state}; "
+            f"template=rented_hero_selected.png confidence={selected.confidence:.3f}"
+        )
+        self._save_abyss_debug(
+            "abyss_rented_hero_selected",
+            screen,
+            lines=[
+                f"Abyss rented hero {state}",
+                (
+                    "template=rented_hero_selected.png "
+                    f"confidence={selected.confidence:.3f} "
+                    f"threshold={self.RENTED_HERO_SELECTED_THRESHOLD:.3f}"
+                ),
+            ],
+            boxes=[(*self.RENTED_HERO_ROI, "status_roi"), (*selected.bbox, "matched")],
+        )
+
+    def _close_artifact_dialog_if_open(self) -> None:
+        screen = self.context.controller.screenshot()
+        artifact_tab = self.context.matcher.match_template(
+            screen,
+            self.asset_path("artifact_tab_2.png"),
+            threshold=0.78,
+            roi=self.ARTIFACT_TAB_ROI,
+            check_brightness=False,
+        )
+        if artifact_tab is None:
+            return
+
         self.context.controller.annotate_next_tap_debug(
             lines=[
-                "abyss select rented hero fixed slot",
-                "template=none fixed_slot=rented hero",
-                f"fixed_point={self.RENTED_HERO_POINT[0]},{self.RENTED_HERO_POINT[1]}",
+                "Abyss close artifact dialog before rented hero selection",
+                f"template=artifact_tab_2.png confidence={artifact_tab.confidence:.3f}",
+                f"fixed_point={self.ARTIFACT_DIALOG_CLOSE_POINT[0]},{self.ARTIFACT_DIALOG_CLOSE_POINT[1]}",
             ],
-            boxes=[(18, 445, 76, 78, "go")],
+            boxes=[(*artifact_tab.bbox, "label"), (830, 75, 45, 45, "go")],
         )
-        self.context.controller.tap(*self.RENTED_HERO_POINT)
+        self.context.controller.tap(*self.ARTIFACT_DIALOG_CLOSE_POINT)
         time.sleep(TRANSITION_WAIT_SECONDS)
 
     def _ensure_artifact_plan_2(self) -> None:
@@ -819,6 +992,33 @@ class AbyssTask(BaseTask):
         skip_tapped = False
         while time.time() < deadline:
             screen = self.context.controller.screenshot()
+            initial_done = self.context.matcher.match_template(
+                screen,
+                self.asset_path("initial_done_zero.png"),
+                threshold=self.INITIAL_DONE_ZERO_THRESHOLD,
+                roi=self.INITIAL_DONE_ZERO_ROI,
+                check_brightness=False,
+            )
+            if initial_done is not None:
+                exit_match = self.context.matcher.match_template(
+                    screen,
+                    self.asset_path("exit_button.png"),
+                    threshold=0.80,
+                    roi=self.EXIT_BUTTON_ROI,
+                    check_brightness=False,
+                )
+                if exit_match is not None:
+                    self._log("Abyss initial result already shows 0/2; skipping keep-result and exiting")
+                    self._tap_exit_result_button_with_debug(
+                        screen,
+                        initial_done,
+                        done_asset_name="initial_done_zero.png",
+                        done_roi=self.INITIAL_DONE_ZERO_ROI,
+                        done_threshold=self.INITIAL_DONE_ZERO_THRESHOLD,
+                        check_brightness=False,
+                    )
+                    return
+
             keep_result = self.context.matcher.match_template(
                 screen,
                 self.asset_path("keep_result_button.png"),
@@ -873,10 +1073,20 @@ class AbyssTask(BaseTask):
                 self._tap_exit_result_button_with_debug(screen, done)
                 return
 
-            for label, asset_name, roi in (
-                ("accept result", "accept_result_button.png", self.ACCEPT_RESULT_ROI),
-                ("confirm paid challenge", "yes_button.png", self.YES_BUTTON_ROI),
-                ("post-keep confirm", "post_keep_confirm_button.png", self.POST_KEEP_CONFIRM_ROI),
+            for label, asset_name, roi, wait_seconds in (
+                (
+                    "accept result",
+                    "accept_result_button.png",
+                    self.ACCEPT_RESULT_ROI,
+                    self.POST_RESULT_ACCEPT_WAIT_SECONDS,
+                ),
+                ("confirm paid challenge", "yes_button.png", self.YES_BUTTON_ROI, self.POST_RESULT_WAIT_SECONDS),
+                (
+                    "post-keep confirm",
+                    "post_keep_confirm_button.png",
+                    self.POST_KEEP_CONFIRM_ROI,
+                    self.POST_RESULT_WAIT_SECONDS,
+                ),
             ):
                 match = self.context.matcher.match_template(
                     screen,
@@ -895,7 +1105,7 @@ class AbyssTask(BaseTask):
                 )
                 self.context.controller.tap(*match.center)
                 taps += 1
-                time.sleep(self.POST_RESULT_WAIT_SECONDS)
+                time.sleep(wait_seconds)
                 break
             else:
                 self._log("Abyss post-result loop waiting for actionable button")
@@ -905,7 +1115,18 @@ class AbyssTask(BaseTask):
                 raise TaskFailedError("Abyss post-result loop exceeded tap limit")
         raise TaskFailedError("Abyss post-result loop timed out before final done status")
 
-    def _tap_exit_result_button_with_debug(self, screen, done: MatchResult) -> None:
+    def _tap_exit_result_button_with_debug(
+        self,
+        screen,
+        done: MatchResult,
+        *,
+        done_asset_name: str = "final_done_zero.png",
+        done_roi: Optional[Roi] = None,
+        done_threshold: Optional[float] = None,
+        check_brightness: bool = True,
+    ) -> None:
+        done_roi = done_roi or self.FINAL_DONE_STATUS_ROI
+        done_threshold = done_threshold or self.FINAL_DONE_STATUS_THRESHOLD
         current_screen = screen
         current_done: Optional[MatchResult] = done
         last_after = screen
@@ -917,11 +1138,12 @@ class AbyssTask(BaseTask):
                 self.asset_path("exit_button.png"),
                 threshold=0.80,
                 roi=self.EXIT_BUTTON_ROI,
+                check_brightness=check_brightness,
             )
-            boxes = [(*self.FINAL_DONE_STATUS_ROI, "done_status")]
+            boxes = [(*done_roi, "done_status")]
             lines = [
                 f"Abyss final done status detected; exit attempt {attempt}/{self.EXIT_RESULT_MAX_TAPS}",
-                f"template=final_done_zero.png confidence={self._match_confidence_text(current_done)}",
+                f"template={done_asset_name} confidence={self._match_confidence_text(current_done)}",
             ]
             if exit_match is not None:
                 boxes.append((*exit_match.bbox, "go"))
@@ -952,20 +1174,22 @@ class AbyssTask(BaseTask):
             after = self.context.controller.screenshot()
             after_done = self.context.matcher.match_template(
                 after,
-                self.asset_path("final_done_zero.png"),
-                threshold=self.FINAL_DONE_STATUS_THRESHOLD,
-                roi=self.FINAL_DONE_STATUS_ROI,
+                self.asset_path(done_asset_name),
+                threshold=done_threshold,
+                roi=done_roi,
+                check_brightness=check_brightness,
             )
             after_exit = self.context.matcher.match_template(
                 after,
                 self.asset_path("exit_button.png"),
                 threshold=0.80,
                 roi=self.EXIT_BUTTON_ROI,
+                check_brightness=check_brightness,
             )
-            after_boxes = [(*self.FINAL_DONE_STATUS_ROI, "done_status"), (*self.EXIT_BUTTON_ROI, "go")]
+            after_boxes = [(*done_roi, "done_status"), (*self.EXIT_BUTTON_ROI, "go")]
             after_lines = [
                 f"Abyss after exit tap check {attempt}/{self.EXIT_RESULT_MAX_TAPS}",
-                f"template=final_done_zero.png confidence={self._match_confidence_text(after_done)}",
+                f"template={done_asset_name} confidence={self._match_confidence_text(after_done)}",
                 f"template=exit_button.png confidence={self._match_confidence_text(after_exit)}",
             ]
             self._save_abyss_debug(
@@ -993,14 +1217,14 @@ class AbyssTask(BaseTask):
             last_after,
             lines=[
                 "Abyss exit result did not close",
-                f"template=final_done_zero.png confidence={self._match_confidence_text(last_after_done)}",
+                f"template={done_asset_name} confidence={self._match_confidence_text(last_after_done)}",
                 f"template=exit_button.png confidence={self._match_confidence_text(last_after_exit)}",
             ],
-            boxes=[(*self.FINAL_DONE_STATUS_ROI, "done_status"), (*self.EXIT_BUTTON_ROI, "go")],
+            boxes=[(*done_roi, "done_status"), (*self.EXIT_BUTTON_ROI, "go")],
         )
         raise TaskFailedError(
             "Abyss exit result did not close after repeated taps: "
-            f"final_done_zero.png={self._match_confidence_text(last_after_done)}, "
+            f"{done_asset_name}={self._match_confidence_text(last_after_done)}, "
             f"exit_button.png={self._match_confidence_text(last_after_exit)}"
         )
 
@@ -1209,7 +1433,7 @@ class AbyssTask(BaseTask):
 
     def _get_ocr_reader(self):
         if self._ocr_reader is None:
-            self._ocr_reader = build_easyocr_reader(["en"], download_enabled=False)
+            self._ocr_reader = get_cached_easyocr_reader(("en",), download_enabled=False)
         return self._ocr_reader
 
     def _log(self, message: str) -> None:

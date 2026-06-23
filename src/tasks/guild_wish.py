@@ -5,6 +5,7 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
+from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult, Roi
 
@@ -38,7 +39,7 @@ class GuildWishTask(BaseTask):
             wait_after_seconds=TRANSITION_WAIT_SECONDS,
         )
         self._dismiss_reward_overlay_if_present()
-        self._close_dialog()
+        self._finish_after_reward_overlay()
         return "free guild wish completed"
 
     def execute_from_current_scene(self) -> str:
@@ -46,7 +47,7 @@ class GuildWishTask(BaseTask):
             return self.execute()
 
         self._dismiss_reward_overlay_if_present()
-        self._close_dialog()
+        self._finish_after_reward_overlay()
         return "free guild wish completed after reward overlay"
 
     def _require_guild_wish_dialog(self) -> None:
@@ -103,10 +104,25 @@ class GuildWishTask(BaseTask):
 
     def _dismiss_reward_overlay_if_present(self) -> None:
         self.dismiss_reward_overlay_by_blank_taps(
-            is_closed=lambda: self._is_guild_wish_dialog_visible(timeout_seconds=0.8),
+            is_closed=self._reward_overlay_closed,
             max_taps=2,
             failure_message="Guild Wish reward overlay did not close after two blank-area taps",
         )
+
+    def _reward_overlay_closed(self) -> bool:
+        return self._is_guild_wish_dialog_visible(timeout_seconds=0.8) or self._is_daily_tasks_visible()
+
+    def _is_daily_tasks_visible(self) -> bool:
+        screen = self.context.controller.screenshot()
+        return self.context.detector.detect(screen).scene == Scene.DAILY_TASKS
+
+    def _finish_after_reward_overlay(self) -> None:
+        if self._is_daily_tasks_visible():
+            return
+        if self._is_guild_wish_dialog_visible(timeout_seconds=1.0):
+            self._close_dialog()
+            return
+        raise TaskFailedError("Guild Wish reward closed into an unexpected scene")
 
     def _close_dialog(self) -> None:
         self._require_task_asset(

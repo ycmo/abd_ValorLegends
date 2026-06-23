@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from src.config import CAPTURES_DIR, SHARED_ASSETS_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import CAPTURES_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
 from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult
@@ -44,6 +44,7 @@ class GuildDungeonTask(BaseTask):
         "continue_button.png",
         "outpost_close_button.png",
         "back_button.png",
+        "guild_lobby_back_button.png",
         "remaining_attempts_zero_anchor.png",
     )
     task_scene_anchors = (
@@ -239,7 +240,10 @@ class GuildDungeonTask(BaseTask):
                     time.sleep(self.OUTPOST_WAIT_SECONDS)
 
                     outpost_screen = self.context.controller.screenshot()
-                    challenge, remaining_matches, challenge_matches = self._find_challenge_probe(outpost_screen)
+                    challenge, remaining_matches, challenge_matches = self._find_challenge_probe(
+                        outpost_screen,
+                        allow_without_remaining=target.kind == "flag",
+                    )
                     self.last_probe_records.append(
                         GuildDungeonProbeRecord(
                             scan_index=scan_index + 1,
@@ -317,6 +321,8 @@ class GuildDungeonTask(BaseTask):
     def _find_challenge_probe(
         self,
         screen,
+        *,
+        allow_without_remaining: bool = False,
     ) -> tuple[Optional[MatchResult], list[MatchResult], list[MatchResult]]:
         remaining_matches = self.context.matcher.match_template_all(
             screen,
@@ -333,9 +339,24 @@ class GuildDungeonTask(BaseTask):
             min_center_distance=120,
         )
         bonus_matches = self._find_bonus_matches(screen)
-        if not remaining_matches or not challenge_matches:
+        if not challenge_matches:
             self._save_outpost_probe_debug(screen, remaining_matches, challenge_matches, None)
             return None, remaining_matches, challenge_matches
+
+        if not remaining_matches:
+            selected = None
+            if allow_without_remaining:
+                if bonus_matches:
+                    selected = min(
+                        challenge_matches,
+                        key=lambda challenge: min(
+                            abs(challenge.x - bonus.x) for bonus in bonus_matches
+                        ),
+                    )
+                else:
+                    selected = min(challenge_matches, key=lambda challenge: challenge.x)
+            self._save_outpost_probe_debug(screen, remaining_matches, challenge_matches, selected)
+            return selected, remaining_matches, challenge_matches
 
         remaining_matches = sorted(remaining_matches, key=lambda item: item.x)
         bonus_columns = sorted(match.x for match in bonus_matches)
@@ -535,16 +556,16 @@ class GuildDungeonTask(BaseTask):
             self.context.controller.tap(*close_match.center)
             time.sleep(TRANSITION_WAIT_SECONDS)
 
-        returned = self.context.navigator.return_to_daily_tasks_from_known_route(
-            max_back_taps=4,
-            back_asset=SHARED_ASSETS_DIR / "back_button2.png",
-        )
-        if returned:
-            return True
-        return self.context.navigator.return_to_daily_tasks_from_known_route(
-            max_back_taps=4,
-            back_asset=self.asset_path("back_button.png"),
-        )
+        for back_asset in (
+            self.asset_path("back_button.png"),
+            self.asset_path("guild_lobby_back_button.png"),
+        ):
+            if self.context.navigator.return_to_daily_tasks_from_known_route(
+                max_back_taps=4,
+                back_asset=back_asset,
+            ):
+                return True
+        return False
 
     def _swipe_map(self, scan_index: int) -> None:
         x1, y1, x2, y2, duration = self.MAP_SWIPES[scan_index]

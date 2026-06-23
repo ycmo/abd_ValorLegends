@@ -33,10 +33,11 @@ def load_config():
 
 def run_midas():
     print("\n💰 開始執行點金手任務...")
-    # 使用 subprocess 呼叫主程式的 Midas，保持環境乾淨且不互相干擾狀態
+    # Recurring Midas must enter through the AFK lobby route, never Daily Tasks.
     python_exe = sys.executable
+    run_router_script = PROJECT_ROOT / "AwayFromKeyboard" / "integration_task" / "run_router.py"
     result = subprocess.run(
-        [python_exe, "-m", "src.main", "run-task", "midas"],
+        [python_exe, str(run_router_script), "點金手"],
         cwd=str(PROJECT_ROOT)
     )
     if result.returncode == 0:
