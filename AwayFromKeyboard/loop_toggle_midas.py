@@ -28,13 +28,6 @@ AUTO_ALL_ACCOUNT_ORDER = ("em3", "311", "tiger", "14")
 MIDAS_POPUP_RECOVERY_ATTEMPTS = 3
 MIDAS_TITLE_ROI = MidasTask.TITLE_ROI
 
-def parse_interval_to_seconds(interval_str: str) -> float:
-    parts = interval_str.split(':')
-    if len(parts) != 3:
-        raise ValueError(f"時間格式錯誤 '{interval_str}'，請使用 hh:mm:ss")
-    h, m, s = [float(p) for p in parts]
-    return h * 3600 + m * 60 + s
-
 def build_auto_account_order(
     accounts: dict,
     use_all: bool,
@@ -47,9 +40,44 @@ def build_auto_account_order(
 
     missing = [account for account in configured if account not in accounts]
     if missing:
-        raise ValueError(f"--auto 缺少必要帳號設定: {', '.join(missing)}")
+        raise ValueError(f"auto 缺少必要帳號設定: {', '.join(missing)}")
 
     return configured
+
+
+def build_sweep_first_order(current_account: str | None, accounts: dict, use_all: bool) -> list[str]:
+    """First-run order that minimizes Google/email account switching before returning to em3."""
+    if not use_all:
+        configured = [current_account] if current_account else []
+        if "em3" not in configured:
+            configured.append("em3")
+        if "311" not in configured and current_account == "em3":
+            configured.insert(1, "311")
+        elif "311" not in configured and current_account not in (None, "311"):
+            configured.append("311")
+    elif current_account == "em3":
+        configured = ["em3", "311", "tiger", "14"]
+    elif current_account == "311":
+        configured = ["311", "tiger", "14"]
+    elif current_account == "tiger":
+        configured = ["tiger", "14", "311"]
+    elif current_account == "14":
+        configured = ["14", "tiger", "311"]
+    else:
+        configured = ["em3", "311", "tiger", "14"]
+
+    deduped: list[str] = []
+    for account in configured:
+        if account not in deduped:
+            deduped.append(account)
+    if deduped[-1] != "em3":
+        deduped.append("em3")
+
+    missing = [account for account in deduped if account not in accounts]
+    if missing:
+        raise ValueError(f"--sweep-first 缺少必要帳號設定: {', '.join(missing)}")
+
+    return deduped
 
 
 def _format_seconds(seconds: float) -> str:
@@ -207,6 +235,79 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
         _recover_or_restart(recovery)
 
 
+def _read_em3_sleep_seconds(context, recovery: UIRecovery) -> int:
+    print("\n🔎 [Auto] 已回到 em3，讀取大休眠冷卻時間...")
+    final_result = run_midas_auto_once(context, recovery, require_cooldown=True)
+    if not final_result.cooldown_valid:
+        _print_ocr_failure(final_result)
+        return AUTO_OCR_FAILURE_SLEEP_SECONDS
+
+    cooldown = final_result.cooldown_seconds or 0
+    sleep_seconds = max(0, cooldown - AUTO_WAKEUP_BUFFER_SECONDS)
+    print(
+        f"⏰ [Auto] em3 冷卻 {_format_seconds(cooldown)}，"
+        f"扣除 4 分鐘登入緩衝後休眠 {_format_seconds(sleep_seconds)}。"
+    )
+    return sleep_seconds
+
+
+def run_auto_initial_round(context, recovery: UIRecovery) -> int:
+    print("\n🌅 [Auto] 初始輪啟動，先檢查異地登入與登入畫面...")
+    if recovery.handle_wakeup_exceptions():
+        print("✅ [Auto] 初始輪喚醒異常狀態已排除。")
+    _recover_or_restart(recovery)
+
+    current_account = detect_current_account(context.controller, context.matcher)
+    current_label = current_account or "目前帳號"
+    print(
+        "\n▶️ [Auto] 初始輪：先執行當前畫面帳號點金，"
+        "再回 em3 讀取第一次大休眠時間。"
+    )
+    process_auto_account(context, recovery, current_label)
+
+    if current_account != "em3":
+        print("🔄 [Auto] 初始輪返回起點帳號 【em3】")
+        if not switch_account("em3"):
+            raise RuntimeError("初始輪返回 em3 失敗")
+
+    return _read_em3_sleep_seconds(context, recovery)
+
+
+def run_auto_sweep_first_round(
+    context,
+    recovery: UIRecovery,
+    *,
+    accounts: dict,
+    use_all: bool,
+) -> int:
+    print("\n🌅 [Auto] sweep-first 初始輪啟動，先檢查異地登入與登入畫面...")
+    if recovery.handle_wakeup_exceptions():
+        print("✅ [Auto] sweep-first 初始輪喚醒異常狀態已排除。")
+    _recover_or_restart(recovery)
+
+    current_account = detect_current_account(context.controller, context.matcher)
+    order = build_sweep_first_order(current_account, accounts, use_all)
+    process_order = order[:-1]
+    final_account = order[-1]
+    print(f"🔄 [Auto] sweep-first 初始輪帳號順序: {' -> '.join(order)}")
+
+    active_account = current_account
+    for account in process_order:
+        if active_account != account:
+            print(f"🔄 [Auto] 切換至帳號 【{account}】")
+            if not switch_account(account):
+                raise RuntimeError(f"sweep-first 切換至帳號 {account} 失敗")
+            active_account = account
+        process_auto_account(context, recovery, account)
+
+    if active_account != final_account:
+        print(f"🔄 [Auto] sweep-first 返回起點帳號 【{final_account}】")
+        if not switch_account(final_account):
+            raise RuntimeError(f"sweep-first 返回 {final_account} 失敗")
+
+    return _read_em3_sleep_seconds(context, recovery)
+
+
 def run_auto_round(
     context,
     recovery: UIRecovery,
@@ -238,22 +339,27 @@ def run_auto_round(
         if not switch_account("em3"):
             raise RuntimeError("返回 em3 失敗")
 
-    print("\n🔎 [Auto] 已回到 em3，讀取大休眠冷卻時間...")
-    final_result = run_midas_auto_once(context, recovery, require_cooldown=True)
-    if not final_result.cooldown_valid:
-        _print_ocr_failure(final_result)
-        return AUTO_OCR_FAILURE_SLEEP_SECONDS
-    cooldown = final_result.cooldown_seconds or 0
-    sleep_seconds = max(0, cooldown - AUTO_WAKEUP_BUFFER_SECONDS)
-    print(
-        f"⏰ [Auto] em3 冷卻 {_format_seconds(cooldown)}，"
-        f"扣除 4 分鐘登入緩衝後休眠 {_format_seconds(sleep_seconds)}。"
-    )
-    return sleep_seconds
+    return _read_em3_sleep_seconds(context, recovery)
 
 
-def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool) -> None:
+def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool, sweep_first: bool = False) -> None:
     accounts = load_accounts()
+    if sweep_first:
+        sleep_seconds = run_auto_sweep_first_round(
+            context,
+            recovery,
+            accounts=accounts,
+            use_all=use_all,
+        )
+    else:
+        sleep_seconds = run_auto_initial_round(context, recovery)
+    next_time = datetime.now() + timedelta(seconds=sleep_seconds)
+    print(
+        f"💤 [Auto] 初始輪結束，休眠 {_format_seconds(sleep_seconds)}；"
+        f"預計 {next_time.strftime('%Y-%m-%d %H:%M:%S')} 喚醒後進入第一輪。"
+    )
+    time.sleep(sleep_seconds)
+
     while True:
         sleep_seconds = run_auto_round(
             context,
@@ -270,11 +376,12 @@ def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="AwayFromKeyboard 雙帳號定時切換掛機腳本 (點金手專用版)")
-    parser.add_argument("--interval", type=str, default="08:00:00", help="休眠倒數時間 (hh:mm:ss)，預設 08:00:00")
-    parser.add_argument("--toggles", type=int, default=1, help="執行幾輪 (Rounds)。預設 1 輪")
-    parser.add_argument("--all", action="store_true", help="切換全部 4 個帳號 (使用 next 模式)")
-    parser.add_argument("--delay", type=str, default=None, help="首次啟動前的延遲等待時間 (hh:mm:ss)")
-    parser.add_argument("--auto", action="store_true", help="依點金手冷卻時間自動輪轉帳號並休眠")
+    parser.add_argument("--all", action="store_true", help="自動循環全部 4 個帳號；預設只循環 em3 與 311")
+    parser.add_argument(
+        "--sweep-first",
+        action="store_true",
+        help="第一輪先把其他帳號掃過一次，再回 em3 點金、讀冷卻並睡眠",
+    )
     parser.add_argument(
         "--debug-actions",
         action="store_true",
@@ -282,13 +389,6 @@ def main():
     )
     args = parser.parse_args()
 
-    try:
-        interval_seconds = parse_interval_to_seconds(args.interval)
-        delay_seconds = parse_interval_to_seconds(args.delay) if args.delay else 0
-    except ValueError as e:
-        print(f"❌ [錯誤] {e}")
-        sys.exit(1)
-        
     if args.all:
         try:
             accounts_map = load_accounts()
@@ -299,14 +399,10 @@ def main():
     else:
         accounts_per_round = 2
         
-    switch_cmd = "next" if args.all else "toggle"
-    total_runs = accounts_per_round * args.toggles
-        
     print("==================================================")
-    print(f"🔄 開始執行定時雙帳號掛機 (Loop Toggle Midas)")
-    print(f"⏱️ 設定休眠區間: {args.interval} ({int(interval_seconds)} 秒)")
-    print(f"🔄 執行輪數: {args.toggles} 輪，單輪帳號數: {accounts_per_round}")
-    print(f"🔄 總執行次數: {total_runs} 次")
+    print("🔄 開始執行點金手自動循環 (Loop Toggle Midas)")
+    print(f"🔄 循環帳號數: {accounts_per_round}")
+    print(f"🔄 初始策略: {'sweep-first' if args.sweep_first else 'current-account then em3'}")
     print("==================================================")
 
     try:
@@ -320,62 +416,7 @@ def main():
         sys.exit(1)
 
     try:
-        if args.auto:
-            if args.delay:
-                print("ℹ️ [Auto] --auto 模式忽略 --delay。")
-            if args.interval != "08:00:00" or args.toggles != 1:
-                print("ℹ️ [Auto] --auto 模式忽略 --interval 與 --toggles。")
-            run_auto_loop(context, recovery, use_all=args.all)
-            return
-
-        if args.delay:
-            wake_time = datetime.now() + timedelta(seconds=delay_seconds)
-            print(f"\n⏳ [延遲啟動] 接收到 --delay 指令，將先進行首次休眠: {args.delay} ({int(delay_seconds)} 秒)")
-            print(f"⏰ 預計首次喚醒時間 (Local Time): {wake_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            time.sleep(delay_seconds)
-            
-        while True:
-            print("\n🌅 系統喚醒，執行一次性特殊檢查...")
-            if recovery.handle_wakeup_exceptions():
-                print("✅ 喚醒異常狀態已排除，準備載入遊戲大廳。")
-                recovery.recover_to_main(max_attempts=20) # 排除後需確保回到大廳
-                
-            print(f"🔄 本次大循環將執行 {args.toggles} 輪，每輪 {accounts_per_round} 個帳號，總計 {total_runs} 次任務。")
-            
-            for i in range(total_runs):
-                if i == 0:
-                    print("\n▶️ === 本輪首發任務 (當前帳號) ===")
-                else:
-                    print(f"\n▶️ === 執行第 {i}/{total_runs-1} 次切換 ({switch_cmd}) ===")
-                    print("[ToggleLoop] 執行帳號切換...")
-                    print("\n" + "=" * 60)
-                    print("🛠️ [Debug] 若腳本卡住，可手動在終端機貼上以下指令重新測試帳號切換：")
-                    print(f">>> {sys.executable} -m switch_account.switch_account {switch_cmd}")
-                    print("=" * 60 + "\n")
-                    try:
-                        switch_account(switch_cmd)
-                    except Exception as e:
-                        print(f"⚠️ [警告] 切換帳號發生錯誤: {e}")
-                        
-                # 針對當前畫面上的帳號執行任務
-                run_midas_once(context, recovery)
-            
-            # 執行完畢
-            print(f"\n▶️ === 結尾復原切換 ({switch_cmd})：準備回到首發帳號 ===")
-            print("[ToggleLoop] 執行結尾帳號切換...")
-            try:
-                switch_account(switch_cmd)
-            except Exception as e:
-                print(f"⚠️ [警告] 結尾切換帳號發生錯誤: {e}")
-                
-            print("\n" + "=" * 50)
-            next_time = datetime.now() + timedelta(seconds=interval_seconds)
-            print(f"✅ 本輪 {args.toggles} 輪 ({total_runs} 次) 帳號任務執行完畢！")
-            print(f"💤 進入休眠模式，將休息 {args.interval} ({int(interval_seconds)} 秒)")
-            print(f"⏰ 預計下次喚醒時間 (Local Time): {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print("=" * 50 + "\n")
-            
-            time.sleep(interval_seconds)
+        run_auto_loop(context, recovery, use_all=args.all, sweep_first=args.sweep_first)
             
     except KeyboardInterrupt:
         print("\n🛑 [中止] 接收到手動中斷指令 (Ctrl+C)，已安全退出掛機腳本。")

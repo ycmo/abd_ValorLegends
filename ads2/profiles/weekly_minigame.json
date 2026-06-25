@@ -1,0 +1,16 @@
+{
+  "name": "weekly_minigame",
+  "title_zh": "每週遊戲：看完廣告自動關閉",
+  "description": "每週遊戲看完廣告後，辨識已回到遊戲畫面（終止狀態）。",
+  "usage": "python.exe ads2/cli.py run --profile weekly_minigame --debug",
+  "ad_wait": 15,
+  "finish_templates": [
+    {
+      "name": "weekly_minigame_finish",
+      "description": "每週遊戲看廣告後出現的特定UI標誌",
+      "template": "templates/weekly_minigame_finish.png",
+      "roi": [870, 460, 90, 40],
+      "threshold": 0.85
+    }
+  ]
+}

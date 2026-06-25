@@ -98,7 +98,15 @@ class RedBoxFinder:
         return best_center, best_rect, img
 
 class RouteNavigator:
-    def __init__(self, route_name: str, controller=None, finder=None, base_dir=None, debug_actions=None):
+    def __init__(
+        self,
+        route_name: str,
+        controller=None,
+        finder=None,
+        base_dir=None,
+        debug_actions=None,
+        debug_label=None,
+    ):
         self.route_name = route_name
         self.debug_actions = ACTION_DEBUG_ENABLED if debug_actions is None else bool(debug_actions)
         
@@ -107,7 +115,10 @@ class RouteNavigator:
         else:
             if DeviceController is None:
                 raise ImportError("找不到 DeviceController 模組且未提供 Mock Controller。")
-            self.controller = DeviceController(debug_actions=self.debug_actions)
+            self.controller = DeviceController(
+                debug_actions=self.debug_actions,
+                debug_label=debug_label or f"route_{self.route_name}",
+            )
             if not self.controller.connect():
                 raise RuntimeError("無法連線到任何可用的 ADB 裝置。")
             

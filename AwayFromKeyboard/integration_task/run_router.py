@@ -42,7 +42,12 @@ def main():
     print("-" * 40)
     
     try:
-        navigator = RouteNavigator(route_name=route_name, debug_actions=args.debug_actions)
+        route_debug_label = f"route_{route_name}"
+        navigator = RouteNavigator(
+            route_name=route_name,
+            debug_actions=args.debug_actions,
+            debug_label=route_debug_label,
+        )
         print(f"[Router] 開始執行進場路由...")
         navigator.execute_route(phase="enter")
         print("-" * 40)
@@ -66,6 +71,7 @@ def main():
                 child_env = os.environ.copy()
                 if args.debug_actions:
                     child_env["VL_DEBUG_ACTIONS"] = "1"
+                    child_env.setdefault("VL_ACTION_DEBUG_LABEL", route_debug_label)
                 selected_serial = getattr(navigator.controller, "serial", None)
                 if selected_serial:
                     child_env["VL_ADB_SERIAL"] = selected_serial

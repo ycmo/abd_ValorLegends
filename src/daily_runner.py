@@ -36,9 +36,10 @@ def build_context(
     serial: str = DEFAULT_SERIAL,
     debug: Optional[bool] = None,
     console_debug: bool = False,
+    debug_label: Optional[str] = None,
 ) -> TaskContext:
     logger = DebugLogger(console_debug)
-    controller = DeviceController(serial=serial, debug_actions=debug, logger=logger)
+    controller = DeviceController(serial=serial, debug_actions=debug, debug_label=debug_label, logger=logger)
     matcher = VisionMatcher()
     detector = SceneDetector(matcher)
     finder = DailyTaskFinder(controller, matcher, logger=logger)
@@ -117,6 +118,7 @@ class DailyRunner:
         runnable_tasks = set(order)
         handled_tasks: set[str] = set()
         results: List[TaskRunResult] = []
+        self._log_action_debug_dir(log_prefix)
         if not self.context.navigator.go_to_daily_tasks():
             return [
                 TaskRunResult(
@@ -128,9 +130,9 @@ class DailyRunner:
 
         task_specs = {task_key: task_class.spec for task_key, task_class in TASK_CLASSES.items()}
         max_scans = 30
-        for _scan_index in range(max_scans):
+        for scan_index in range(1, max_scans + 1):
             self.context.logger.log(
-                f"{log_prefix} scan handled={','.join(sorted(handled_tasks))}",
+                f"{log_prefix} scan={scan_index:02d}/{max_scans} handled={','.join(sorted(handled_tasks))}",
                 force=True,
             )
             try:
@@ -259,6 +261,15 @@ class DailyRunner:
             if not swipe_result:
                 break
         return results
+
+    def _log_action_debug_dir(self, log_prefix: str) -> None:
+        controller = getattr(self.context, "controller", None)
+        if controller is None or not getattr(controller, "debug_actions", False):
+            return
+        debug_dir = getattr(controller, "debug_dir", None)
+        if debug_dir is None:
+            return
+        self.context.logger.log(f"{log_prefix} action_debug_dir={debug_dir}", force=True)
 
     def _swipe_daily_list_or_failed(self, log_prefix: str):
         try:

@@ -27,6 +27,13 @@ class AdbControllerError(BotError):
 
 PREFERRED_FALLBACK_SERIALS: Tuple[str, ...] = ("127.0.0.1:5555", "emulator-5554")
 
+def _sanitize_debug_label(label: Optional[str]) -> str:
+    if not label:
+        return ""
+    cleaned = re.sub(r"[^\w.-]+", "_", str(label).strip(), flags=re.UNICODE)
+    cleaned = cleaned.strip("._-")
+    return cleaned[:80]
+
 
 class DeviceController:
     """Small ADB wrapper optimized for screenshot-driven UI automation."""
@@ -36,14 +43,19 @@ class DeviceController:
         serial: Optional[str] = DEFAULT_SERIAL,
         debug_actions: Optional[bool] = None,
         debug_dir: Optional[Path] = None,
+        debug_label: Optional[str] = None,
         logger: Optional[DebugLogger] = None,
     ):
         self.serial = serial or DEFAULT_SERIAL
         self.debug_actions = ACTION_DEBUG_ENABLED if debug_actions is None else debug_actions
         self.logger = logger or DebugLogger(False)
         base_debug_dir = debug_dir or ACTION_DEBUG_DIR
+        label = _sanitize_debug_label(debug_label or os.environ.get("VL_ACTION_DEBUG_LABEL"))
+        debug_dir_name = f"{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
+        if label:
+            debug_dir_name = f"{debug_dir_name}_{label}"
         self.debug_dir = (
-            base_debug_dir / f"{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
+            base_debug_dir / debug_dir_name
             if self.debug_actions
             else base_debug_dir
         )
@@ -95,13 +107,38 @@ class DeviceController:
                 return True
             return self._connect_available_fallback_device()
 
-        try:
-            self._run(["get-state"], timeout=10)
+        if self.serial in PREFERRED_FALLBACK_SERIALS and self._connect_available_fallback_device_once():
             return True
-        except AdbControllerError:
-            return self._connect_available_fallback_device()
+        if self._raw_get_state(self.serial):
+            return True
+        return self._connect_available_fallback_device()
+
+    @staticmethod
+    def _raw_get_state(serial: str) -> bool:
+        try:
+            result = subprocess.run(
+                ["adb", "-s", serial, "get-state"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        return result.returncode == 0 and result.stdout.strip() == "device"
 
     def _connect_available_fallback_device(self) -> bool:
+        if self._connect_available_fallback_device_once():
+            return True
+
+        print("[ADB] no usable device after reconnect probe; resetting adb server...")
+        if not self._reset_adb_server():
+            return False
+        return self._connect_available_fallback_device_once()
+
+    def _connect_available_fallback_device_once(self) -> bool:
         for serial in PREFERRED_FALLBACK_SERIALS:
             if ":" not in serial:
                 continue
@@ -121,6 +158,32 @@ class DeviceController:
             print(f"[ADB] serial {self.serial!r} unavailable; using {selected!r}")
         self.serial = selected
         return True
+
+    @staticmethod
+    def _reset_adb_server() -> bool:
+        try:
+            subprocess.run(
+                ["adb", "kill-server"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=10,
+            )
+            time.sleep(1)
+            result = subprocess.run(
+                ["adb", "start-server"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=15,
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        return result.returncode == 0
 
     @staticmethod
     def _try_adb_connect(serial: str) -> None:
@@ -158,21 +221,28 @@ class DeviceController:
         return self._capture_screen()
 
     def _capture_screen(self) -> np.ndarray:
-        cmd = self.base_cmd + ["shell", "screencap", "-p"]
-        try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=30,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise AdbControllerError(
-                f"ADB screenshot timed out after 30s: {' '.join(cmd)}"
-            ) from exc
+        for attempt in range(2):
+            cmd = self.base_cmd + ["shell", "screencap", "-p"]
+            try:
+                result = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise AdbControllerError(
+                    f"ADB screenshot timed out after 30s: {' '.join(cmd)}"
+                ) from exc
 
-        if result.returncode != 0:
-            raise AdbControllerError(result.stderr.decode("utf-8", errors="ignore").strip())
+            if result.returncode == 0:
+                break
+
+            stderr = result.stderr.decode("utf-8", errors="ignore").strip()
+            if attempt == 0 and self._reconnect_after_adb_error(stderr):
+                continue
+            raise AdbControllerError(stderr)
+
         if not result.stdout:
             raise AdbControllerError("screencap returned empty output")
 
@@ -482,23 +552,46 @@ class DeviceController:
         args: Iterable[str],
         timeout: int = 15,
     ) -> subprocess.CompletedProcess:
-        cmd = self.base_cmd + list(args)
-        try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="ignore",
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise AdbControllerError(
-                f"ADB command timed out after {timeout}s: {' '.join(cmd)}"
-            ) from exc
-        if result.returncode != 0:
+        adb_args = list(args)
+        for attempt in range(2):
+            cmd = self.base_cmd + adb_args
+            try:
+                result = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="ignore",
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise AdbControllerError(
+                    f"ADB command timed out after {timeout}s: {' '.join(cmd)}"
+                ) from exc
+            if result.returncode == 0:
+                return result
+            if attempt == 0 and self._reconnect_after_adb_error(result.stderr):
+                continue
             raise AdbControllerError(
                 f"ADB command failed: {' '.join(cmd)}\n{result.stderr.strip()}"
             )
-        return result
+        raise AdbControllerError("ADB command failed after reconnect retry")
+
+    @staticmethod
+    def _is_reconnectable_adb_error(message: str) -> bool:
+        normalized = str(message).lower()
+        if "device" in normalized and "not found" in normalized:
+            return True
+        return any(marker in normalized for marker in ("offline", "no devices/emulators found"))
+
+    def _reconnect_after_adb_error(self, message: str) -> bool:
+        if not self._is_reconnectable_adb_error(message):
+            return False
+        old_serial = self.serial
+        print(f"[ADB] connection lost for {old_serial!r}: {str(message).strip()}; reconnecting...")
+        if not self.connect():
+            return False
+        if self.serial != old_serial:
+            print(f"[ADB] reconnected using {self.serial!r}")
+        return True

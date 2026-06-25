@@ -6,8 +6,12 @@ from AwayFromKeyboard.loop_toggle_midas import (
     AUTO_OCR_FAILURE_SLEEP_SECONDS,
     AUTO_WAKEUP_BUFFER_SECONDS,
     build_auto_account_order,
+    build_sweep_first_order,
     process_auto_account,
+    run_auto_initial_round,
+    run_auto_loop,
     run_auto_round,
+    run_auto_sweep_first_round,
     run_midas_once,
 )
 from AwayFromKeyboard import task_config
@@ -139,6 +143,31 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual(order, ["em3", "311", "tiger", "14"])
         self.assertEqual(len(order), len(set(order)))
 
+    def test_sweep_first_order_minimizes_google_email_switches(self):
+        accounts = {
+            "em3": {"type": "google"},
+            "311": {"type": "google"},
+            "tiger": {"type": "email"},
+            "14": {"type": "email"},
+        }
+
+        self.assertEqual(
+            build_sweep_first_order("em3", accounts, True),
+            ["em3", "311", "tiger", "14", "em3"],
+        )
+        self.assertEqual(
+            build_sweep_first_order("311", accounts, True),
+            ["311", "tiger", "14", "em3"],
+        )
+        self.assertEqual(
+            build_sweep_first_order("tiger", accounts, True),
+            ["tiger", "14", "311", "em3"],
+        )
+        self.assertEqual(
+            build_sweep_first_order("14", accounts, True),
+            ["14", "tiger", "311", "em3"],
+        )
+
     @patch("AwayFromKeyboard.loop_toggle_midas.time.sleep")
     @patch("AwayFromKeyboard.loop_toggle_midas.run_midas_auto_once")
     @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
@@ -239,6 +268,104 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual(sleep_seconds, AUTO_OCR_FAILURE_SLEEP_SECONDS)
         self.assertEqual([call.args[2] for call in mock_process.call_args_list], ["em3", "311", "tiger", "14"])
         self.assertEqual([call.args[0] for call in mock_switch.call_args_list], ["em3", "311", "tiger", "14", "em3"])
+
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_midas_auto_once")
+    @patch("AwayFromKeyboard.loop_toggle_midas.process_auto_account", return_value=True)
+    @patch("AwayFromKeyboard.loop_toggle_midas.switch_account", return_value=True)
+    @patch("AwayFromKeyboard.loop_toggle_midas.detect_current_account", return_value="311")
+    @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
+    def test_initial_round_runs_current_account_then_returns_em3_for_sleep(
+        self,
+        mock_recover,
+        mock_detect,
+        mock_switch,
+        mock_process,
+        mock_run,
+    ):
+        context = SimpleNamespace(controller=object(), matcher=object())
+        recovery = MagicMock()
+        mock_run.return_value = MidasAutoResult(False, 3600, "01:00:00", 0.9)
+
+        sleep_seconds = run_auto_initial_round(context, recovery)
+
+        self.assertEqual(sleep_seconds, 3600 - AUTO_WAKEUP_BUFFER_SECONDS)
+        mock_process.assert_called_once_with(context, recovery, "311")
+        mock_switch.assert_called_once_with("em3")
+        mock_run.assert_called_once_with(context, recovery, require_cooldown=True)
+
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_midas_auto_once")
+    @patch("AwayFromKeyboard.loop_toggle_midas.process_auto_account", return_value=True)
+    @patch("AwayFromKeyboard.loop_toggle_midas.switch_account", return_value=True)
+    @patch("AwayFromKeyboard.loop_toggle_midas.detect_current_account", return_value="tiger")
+    @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
+    def test_sweep_first_round_uses_requested_order_then_reads_em3_cooldown(
+        self,
+        mock_recover,
+        mock_detect,
+        mock_switch,
+        mock_process,
+        mock_run,
+    ):
+        context = SimpleNamespace(controller=object(), matcher=object())
+        recovery = MagicMock()
+        accounts = {
+            "em3": {"type": "google"},
+            "311": {"type": "google"},
+            "tiger": {"type": "email"},
+            "14": {"type": "email"},
+        }
+        mock_run.return_value = MidasAutoResult(False, 3600, "01:00:00", 0.9)
+
+        sleep_seconds = run_auto_sweep_first_round(
+            context,
+            recovery,
+            accounts=accounts,
+            use_all=True,
+        )
+
+        self.assertEqual(sleep_seconds, 3600 - AUTO_WAKEUP_BUFFER_SECONDS)
+        self.assertEqual([call.args[2] for call in mock_process.call_args_list], ["tiger", "14", "311"])
+        self.assertEqual([call.args[0] for call in mock_switch.call_args_list], ["14", "311", "em3"])
+        mock_run.assert_called_once_with(context, recovery, require_cooldown=True)
+
+    @patch("AwayFromKeyboard.loop_toggle_midas.time.sleep", side_effect=KeyboardInterrupt)
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_round")
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_initial_round", return_value=123)
+    @patch("AwayFromKeyboard.loop_toggle_midas.load_accounts", return_value={"em3": {}, "311": {}})
+    def test_auto_loop_sleeps_after_initial_round_before_later_rounds(
+        self,
+        mock_load,
+        mock_initial,
+        mock_round,
+        mock_sleep,
+    ):
+        with self.assertRaises(KeyboardInterrupt):
+            run_auto_loop(object(), object(), use_all=False)
+
+        mock_initial.assert_called_once()
+        mock_sleep.assert_called_once_with(123)
+        mock_round.assert_not_called()
+
+    @patch("AwayFromKeyboard.loop_toggle_midas.time.sleep", side_effect=KeyboardInterrupt)
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_round")
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_sweep_first_round", return_value=234)
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_initial_round")
+    @patch("AwayFromKeyboard.loop_toggle_midas.load_accounts", return_value={"em3": {}, "311": {}})
+    def test_auto_loop_can_use_sweep_first_initial_round(
+        self,
+        mock_load,
+        mock_initial,
+        mock_sweep,
+        mock_round,
+        mock_sleep,
+    ):
+        with self.assertRaises(KeyboardInterrupt):
+            run_auto_loop(object(), object(), use_all=False, sweep_first=True)
+
+        mock_sweep.assert_called_once()
+        mock_initial.assert_not_called()
+        mock_sleep.assert_called_once_with(234)
+        mock_round.assert_not_called()
 
 
 if __name__ == "__main__":

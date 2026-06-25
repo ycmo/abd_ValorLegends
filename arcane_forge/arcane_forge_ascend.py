@@ -5,7 +5,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from src.adb_controller import DeviceController
-from src.ocr_utils import get_cached_easyocr_reader, read_texts_easyocr
+from src.ocr_utils import get_cached_easyocr_reader, parse_compact_number, read_texts_easyocr
 from src.vision_matcher import VisionMatcher, read_image
 
 logger = logging.getLogger(__name__)
@@ -64,20 +64,15 @@ class ArcaneForgeAscendTask:
             screen = self.ctrl.screenshot()
             # 精準鎖定彈窗內紫粉數量 (x, y, w, h)
             roi = (500, 110, 100, 40)
-            ocr_results = read_texts_easyocr(screen, roi=roi, reader=self.reader, allowlist="0123456789,")
+            ocr_results = read_texts_easyocr(screen, roi=roi, reader=self.reader, allowlist="0123456789,kKmM")
 
             dust_amount = -1
             confidence = 0.0
             if ocr_results:
                 # 取得信心度最高的數字
                 best_match = max(ocr_results, key=lambda x: x['confidence'])
-                # 過濾逗號再轉型
-                clean_text = best_match['text'].replace(',', '')
                 confidence = best_match['confidence']
-                try:
-                    dust_amount = int(clean_text)
-                except ValueError:
-                    pass
+                dust_amount = parse_compact_number(best_match['text'])
 
             if dust_amount != -1 and dust_amount < 180:
                 logger.warning(f"OCR 解析紫粉數量不足 ({dust_amount} < 180)，結束任務以保護資源")

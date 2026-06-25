@@ -156,6 +156,19 @@ class SummonReturnTests(unittest.TestCase):
 
         self.assertEqual(task.context.controller.taps, [(129, 53), (129, 53)])
 
+    def test_result_detail_is_tapped_until_confirm_appears(self):
+        task = FakeSummonTask(
+            Scene.UNKNOWN,
+            page_match_sequence=[False],
+            confirm_match_sequence=[False, True],
+            five_star_match_sequence=[False],
+        )
+        task.RESULT_DETAIL_GRACE_SECONDS = 0.0
+
+        task._wait_for_confirm_dismissing_five_star()
+
+        self.assertEqual(task.context.controller.taps, [SummonTask.RESULT_DETAIL_TAP_POINT])
+
     def test_current_scene_can_resume_from_five_star_result(self):
         task = FakeSummonTask(
             Scene.UNKNOWN,

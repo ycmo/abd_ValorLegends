@@ -1,6 +1,8 @@
 import io
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.daily_runner import DailyRunner
@@ -153,6 +155,29 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         self.assertEqual(results, [])
         self.assertEqual(context.controller.taps, [])
         self.assertEqual(context.finder.swipes, [])
+
+    def test_run_all_go_first_logs_action_debug_dir_and_scan_index(self):
+        class Finder:
+            def scan_current_screen_go_first(self, _specs):
+                return [
+                    GoFirstTaskRow(None, TaskSearchResult(TaskSearchStatus.DONE_OR_CLAIMABLE, done_match=_match()), "completed", 420),
+                ]
+
+        class Navigator:
+            def go_to_daily_tasks(self):
+                return True
+
+        context = FakeContext()
+        context.finder = Finder()
+        context.navigator = Navigator()
+        context.controller = SimpleNamespace(debug_actions=True, debug_dir=Path("captures/action_debug/run123"))
+        runner = DailyRunner(context=context)
+
+        runner.run_all_go_first(["midas"], log_prefix="run-all", failure_sleep_seconds=0.1)
+
+        messages = [message for message, _force in context.logger.messages]
+        self.assertIn("run-all action_debug_dir=captures\\action_debug\\run123", messages)
+        self.assertIn("run-all scan=01/30 handled=", messages)
 
     def test_run_all_go_first_returns_failed_result_when_scan_swipe_times_out(self):
         class Finder:

@@ -27,8 +27,11 @@ class SummonTask(BaseTask):
     FIVE_STAR_RESULT_ROI: Roi = (0, 0, 300, 120)
     LEAVE_BUTTON_ROI: Roi = (0, 0, 110, 90)
     PAGE_LOAD_TIMEOUT_SECONDS = 45.0
-    RESULT_TIMEOUT_SECONDS = 20.0
+    RESULT_TIMEOUT_SECONDS = 35.0
     FREE_BUTTON_THRESHOLD = 0.80
+    RESULT_DETAIL_TAP_POINT = (80, 500)
+    RESULT_DETAIL_TAP_INTERVAL_SECONDS = 1.2
+    RESULT_DETAIL_GRACE_SECONDS = 10.0
 
     def __init__(self, context):
         super().__init__(context)
@@ -120,7 +123,9 @@ class SummonTask(BaseTask):
         return self.execute()
 
     def _wait_for_confirm_dismissing_five_star(self) -> None:
-        deadline = time.time() + self.RESULT_TIMEOUT_SECONDS
+        started = time.time()
+        deadline = started + self.RESULT_TIMEOUT_SECONDS
+        last_detail_tap_at = 0.0
         while time.time() <= deadline:
             confirm = self._match_task_asset(
                 "confirm_button.png",
@@ -150,7 +155,34 @@ class SummonTask(BaseTask):
                 time.sleep(1.0)
                 continue
 
+            elapsed = time.time() - started
+            if (
+                elapsed >= self.RESULT_DETAIL_GRACE_SECONDS
+                and time.time() - last_detail_tap_at >= self.RESULT_DETAIL_TAP_INTERVAL_SECONDS
+            ):
+                still_on_summon_page = self._match_task_asset(
+                    "advanced_contract_label.png",
+                    roi=self.PAGE_LABEL_ROI,
+                    threshold=0.78,
+                    timeout_seconds=0.2,
+                )
+                if still_on_summon_page is None:
+                    self._tap_result_detail_to_continue()
+                    last_detail_tap_at = time.time()
+                    time.sleep(1.0)
+                    continue
+
             time.sleep(0.35)
+
+    def _tap_result_detail_to_continue(self) -> None:
+        if hasattr(self.context.controller, "annotate_next_tap_debug"):
+            self.context.controller.annotate_next_tap_debug(
+                lines=[
+                    "summon result detail",
+                    "confirm not visible; tap blank area to continue",
+                ],
+            )
+        self.context.controller.tap(*self.RESULT_DETAIL_TAP_POINT)
 
     def _dismiss_post_confirm_reward_if_present(self) -> None:
         self.context.controller.tap(80, 500)

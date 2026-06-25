@@ -479,6 +479,18 @@ def _format_optional_float(value) -> str:
     return "-" if value is None else f"{value:.4f}"
 
 
+def _default_debug_label(args: argparse.Namespace) -> Optional[str]:
+    command = getattr(args, "command", None)
+    task = getattr(args, "task", None)
+    if task:
+        return str(task)
+    if command in {"run-all", "run-tested-daily"}:
+        return str(command).replace("-", "_")
+    if command in {"go-daily", "probe-guild-dungeon-target", "probe-abyss-rental-scan"}:
+        return str(command).replace("-", "_")
+    return None
+
+
 def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None, console_debug: bool = False) -> int:
     context = build_context(serial, debug=debug_actions, console_debug=console_debug)
     if not context.controller.connect():
@@ -505,6 +517,10 @@ def main(argv: list = None) -> int:
         )
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.debug_actions:
+        auto_label = _default_debug_label(args)
+        if auto_label:
+            os.environ.setdefault("VL_ACTION_DEBUG_LABEL", auto_label)
     try:
         if args.command == "devices":
             return cmd_devices()

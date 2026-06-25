@@ -307,6 +307,21 @@ class ReactiveRunner:
         if not self.profile:
             return None
         for condition in self.profile.finish_templates:
+            best_probe = None
+            if self.debug_mode:
+                best_probe = self.matcher.match_template(
+                    screen,
+                    condition.template_path,
+                    threshold=0.0,
+                    roi=condition.roi,
+                    check_brightness=False,
+                )
+                best_text = "none" if best_probe is None else f"{best_probe.confidence:.3f}"
+                print(
+                    f"    template={condition.name} | "
+                    f"threshold={condition.threshold:.3f} | "
+                    f"best={best_text} | roi={condition.roi}"
+                )
             result = self.matcher.match_template(
                 screen,
                 condition.template_path,
@@ -333,13 +348,14 @@ class ReactiveRunner:
         print("--------------------------------------------------")
         
         # 自訂掃描器：優先比對新圖，並在失敗時印出最高信心值
-        def scan_category(paths, threshold, category_name, roi=None):
+        def scan_category(paths, threshold, category_name, roi=None, source_screen=None):
             if not paths: return None
+            target_screen = source_screen if source_screen is not None else screen
             # 依照修改時間排序，最新切好的圖排最前面 (優先比對)
             paths = sorted(paths, key=lambda p: p.stat().st_mtime, reverse=True)
             
             for p in paths:
-                res = self.matcher.match_template(screen, p, threshold=threshold, roi=roi)
+                res = self.matcher.match_template(target_screen, p, threshold=threshold, roi=roi)
                 if res:
                     return res
                     
@@ -369,7 +385,7 @@ class ReactiveRunner:
                     
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 📸 正在獲取設備截圖..." + " "*20, end="", flush=True)
+                    print(f"[{now_str}] 📸 截圖")
                     
                 cap_start = time.time()
                 screen = self._safe_screenshot()
@@ -385,17 +401,33 @@ class ReactiveRunner:
                 
                 # --------------------------------------------------------
                 # 重新調整優先級 (Priority)：
-                # 1. 免費廣告 (free_ad_icons) - 在主畫面上點擊廣告
-                # 2. 關閉按鈕 (close_icons) - 如果有未關閉的彈窗，先關掉
-                # 3. 獲得道具 (got_icons) - 因為看完廣告一定會跳這個
-                # 4. Profile 結束條件 - 用來判定是否已回到特定任務畫面
+                # 1. Profile 結束條件 - 任務專用正常結束狀態必須優先於通用免費廣告
+                # 2. 免費廣告 (free_ad_icons) - 在主畫面上點擊廣告
+                # 3. 關閉按鈕 (close_icons) - 如果有未關閉的彈窗，先關掉
+                # 4. 獲得道具 (got_icons) - 因為看完廣告一定會跳這個
                 # 5. 主畫面錨點 (scene_anchors) - 用來判定是否已經全部看完
                 # --------------------------------------------------------
+
+                # 1. 先尋找 profile 自訂正常結束條件
+                if self.debug_mode and self.profile:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"[{now_str}] 🔍 [1/5] Profile 結束條件: {self.profile.name}")
+                    
+                profile_finish = self.match_profile_finish(screen)
+                if profile_finish:
+                    condition, finish_match = profile_finish
+                    print(
+                        f"\n✅ [Profile 結束] {condition.name} "
+                        f"(信心值: {finish_match.confidence:.2f})"
+                    )
+                    if condition.description:
+                        print(f"   {condition.description}")
+                    break
                 
-                # 1. 尋找免費廣告 (free_ad_icons)
+                # 2. 尋找免費廣告 (free_ad_icons)
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [1/4] 正在比對 免費廣告 (free_ad_icons)..." + " "*10, end="", flush=True)
+                    print(f"[{now_str}] 🔍 [2/5] 免費廣告: free_ad_icons")
                     
                 free_ad_paths = list(self.free_ad_icons_dir.rglob("*.png"))
                 free_ad_match = scan_category(free_ad_paths, 0.75, "免費廣告按鈕")
@@ -433,10 +465,10 @@ class ReactiveRunner:
                     screen = self._safe_screenshot()
                     if screen is None: continue
 
-                # 2. 尋找關閉按鈕 (close_icons)
+                # 3. 尋找關閉按鈕 (close_icons)
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [2/4] 正在比對 關閉按鈕 (close_icons)..." + " "*10, end="", flush=True)
+                    print(f"[{now_str}] 🔍 [3/5] 關閉按鈕: close_icons")
                     
                 close_paths = list(self.close_icons_dir.rglob("*.png"))
                 h, w = screen.shape[:2]
@@ -474,7 +506,7 @@ class ReactiveRunner:
                     screen = self._safe_screenshot()
                     if screen is None: continue
 
-                # 3. 尋找獲得道具 (got_icons)
+                # 4. 尋找獲得道具 (got_icons)
                 if close_successful:
                     print(f"\n⏳ [轉場等待] 廣告已關閉，強制等待 3 秒讓遊戲跳出獲得道具...")
                     self.sleep_or_esc(3.0)
@@ -483,7 +515,7 @@ class ReactiveRunner:
 
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [3/4] 正在比對 獲得道具 (got_icons)..." + " "*10, end="", flush=True)
+                    print(f"[{now_str}] 🔍 [4/5] 獲得道具: got_icons")
                     
                 got_paths = list(self.got_icons_dir.rglob("*.png"))
                 got_match = scan_category(got_paths, 0.70, "獲得道具")
@@ -521,7 +553,11 @@ class ReactiveRunner:
                     screen = self._safe_screenshot()
                     if screen is None: continue
 
-                # 4. 尋找 profile 自訂正常結束條件
+                # 4b. 動作後再尋找 profile 自訂正常結束條件
+                if self.debug_mode and self.profile:
+                    now_str = time.strftime("%H:%M:%S")
+                    print(f"[{now_str}] 🔍 [4/5] Profile 結束條件: {self.profile.name}")
+                    
                 profile_finish = self.match_profile_finish(screen)
                 if profile_finish:
                     condition, finish_match = profile_finish
@@ -536,7 +572,7 @@ class ReactiveRunner:
                 # 5. 尋找主畫面錨點 (scene_anchors)
                 if self.debug_mode:
                     now_str = time.strftime("%H:%M:%S")
-                    print(f"\r[{now_str}] 🔍 [5/5] 正在比對 主畫面錨點 (scene_anchors)..." + " "*10, end="", flush=True)
+                    print(f"[{now_str}] 🔍 [5/5] 主畫面錨點: scene_anchors")
                     
                 scene_paths = list(self.scene_anchors_dir.rglob("*.png"))
                 scene_match = scan_category(scene_paths, 0.75, "主畫面")
@@ -551,7 +587,12 @@ class ReactiveRunner:
                     final_screen = self._safe_screenshot()
                     if final_screen is not None:
                         free_ad_paths = list(self.free_ad_icons_dir.rglob("*.png"))
-                        final_free_match = scan_category(free_ad_paths, 0.75, "免費廣告按鈕(最終確認)")
+                        final_free_match = scan_category(
+                            free_ad_paths,
+                            0.75,
+                            "免費廣告按鈕(最終確認)",
+                            source_screen=final_screen,
+                        )
                         if final_free_match:
                             print("😅 [虛驚一場] 緩衝後發現免費廣告按鈕浮現了！繼續執行...")
                             continue
@@ -564,9 +605,9 @@ class ReactiveRunner:
                         now_str = time.strftime("%H:%M:%S")
                         total_time = time.time() - loop_start_time
                         match_time = time.time() - match_start
-                        print(f"\r[{now_str}] ⏱️ 截圖: {cap_time:.2f}s | 比對: {match_time:.2f}s | 總計: {total_time:.2f}s (觀察中...)" + " "*10, end="", flush=True)
+                        print(f"[{now_str}] ⏱️ 截圖 {cap_time:.2f}s | 比對 {match_time:.2f}s | 總計 {total_time:.2f}s | 觀察中")
                     else:
-                        print("👀 [觀察中] 畫面無已知特徵 (正在看廣告或轉場中)... 等待 0.5 秒" + " "*10, end="\r", flush=True)
+                        print("👀 [觀察中] 畫面無已知特徵，等待 0.5 秒")
                     
                     self.sleep_or_esc(0.5)
             

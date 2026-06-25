@@ -57,6 +57,21 @@ def parse_power_value(text: str) -> int:
     return value if suffix == "k" else value // 1000
 
 
+def parse_compact_number(text: str) -> int:
+    """解析帶有 k, m 單位後綴的資源數量字串，並返回實際的整數值"""
+    cleaned = text.lower().replace(",", "").replace(" ", "")
+    match = re.search(r"(\d+)([km])?", cleaned)
+    if not match:
+        return -1
+    value = int(match.group(1))
+    suffix = match.group(2)
+    if suffix == "m":
+        return value * 1000000
+    elif suffix == "k":
+        return value * 1000
+    return value
+
+
 def power_has_scale_suffix(text: str) -> bool:
     return re.search(r"[kKmM]", str(text)) is not None
 
