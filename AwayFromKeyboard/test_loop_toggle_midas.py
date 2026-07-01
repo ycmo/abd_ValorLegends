@@ -289,7 +289,7 @@ class AutoMidasLoopTests(unittest.TestCase):
         sleep_seconds = run_auto_initial_round(context, recovery)
 
         self.assertEqual(sleep_seconds, 3600 - AUTO_WAKEUP_BUFFER_SECONDS)
-        mock_process.assert_called_once_with(context, recovery, "311")
+        mock_process.assert_called_once_with(context, recovery, "311", notify_enabled=False)
         mock_switch.assert_called_once_with("em3")
         mock_run.assert_called_once_with(context, recovery, require_cooldown=True)
 

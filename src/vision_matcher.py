@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -10,6 +13,17 @@ import numpy as np
 from src.config import MATCH_THRESHOLD
 
 Roi = Tuple[int, int, int, int]  # x, y, width, height
+
+PROFILE_LOADS_ENABLED = os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on")
+_PROCESS_TIMER_STARTED = time.perf_counter()
+_TEMPLATE_CACHE_LOCK = threading.RLock()
+_TEMPLATE_CACHE = {}
+
+
+def _profile_load(message: str) -> None:
+    if PROFILE_LOADS_ENABLED:
+        uptime = time.perf_counter() - _PROCESS_TIMER_STARTED
+        print(f"[perf pid={os.getpid()} uptime={uptime:.3f}s] {message}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -35,6 +49,20 @@ def read_image(path: Path, flags: int = cv2.IMREAD_UNCHANGED) -> np.ndarray:
     if image is None:
         raise ValueError(f"Cannot read image: {path}")
     return image
+
+
+def clear_template_cache() -> None:
+    with _TEMPLATE_CACHE_LOCK:
+        _TEMPLATE_CACHE.clear()
+
+
+def _template_cache_key(path: Path, flags: int) -> Optional[Tuple[str, int, int, int]]:
+    try:
+        stat = path.stat()
+        resolved = path.resolve()
+    except OSError:
+        return None
+    return (str(resolved), int(stat.st_mtime_ns), int(stat.st_size), int(flags))
 
 
 def write_image(path: Path, image: np.ndarray) -> Path:
@@ -319,8 +347,7 @@ class VisionMatcher:
         if not template_path.exists():
             return None
 
-        template_raw = read_image(template_path, cv2.IMREAD_UNCHANGED)
-        template, mask = self._split_template_and_mask(template_raw)
+        template, mask = self._load_template(template_path)
         haystack, offset = self._crop(screen, roi)
 
         th, tw = template.shape[:2]
@@ -344,6 +371,27 @@ class VisionMatcher:
             result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED)
 
         return template, mask, haystack, offset, result
+
+    def _load_template(self, template_path: Path) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        cache_key = _template_cache_key(template_path, cv2.IMREAD_UNCHANGED)
+        if cache_key is not None:
+            with _TEMPLATE_CACHE_LOCK:
+                cached = _TEMPLATE_CACHE.get(cache_key)
+                if cached is not None:
+                    _profile_load(f"template cache hit path={template_path.name}")
+                    return cached
+
+        started = time.perf_counter()
+        template_raw = read_image(template_path, cv2.IMREAD_UNCHANGED)
+        template, mask = self._split_template_and_mask(template_raw)
+        _profile_load(
+            f"template loaded path={template_path.name} elapsed={time.perf_counter() - started:.4f}s"
+        )
+
+        if cache_key is not None:
+            with _TEMPLATE_CACHE_LOCK:
+                _TEMPLATE_CACHE[cache_key] = (template, mask)
+        return template, mask
 
     @staticmethod
     def _brightness_ratio(template: np.ndarray, matched_roi: np.ndarray, mask: Optional[np.ndarray]) -> Optional[float]:

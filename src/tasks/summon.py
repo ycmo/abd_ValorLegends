@@ -32,6 +32,7 @@ class SummonTask(BaseTask):
     RESULT_DETAIL_TAP_POINT = (80, 500)
     RESULT_DETAIL_TAP_INTERVAL_SECONDS = 1.2
     RESULT_DETAIL_GRACE_SECONDS = 10.0
+    OCR_FALLBACK_DELAY_SECONDS = 5.0
 
     def __init__(self, context):
         super().__init__(context)
@@ -58,7 +59,7 @@ class SummonTask(BaseTask):
             )
             if match is not None:
                 return True
-        return self._screen_ocr_indicates_advanced_contract(screen)
+        return False
 
     def execute(self) -> str:
         self._require_summon_page()
@@ -222,7 +223,8 @@ class SummonTask(BaseTask):
             raise TaskFailedError("Summon expected screen element not found: advanced contract summon page")
 
     def _is_summon_page_visible(self, timeout_seconds: float) -> bool:
-        deadline = time.time() + timeout_seconds
+        started = time.time()
+        deadline = started + timeout_seconds
         while time.time() <= deadline:
             match = self._match_task_asset(
                 "advanced_contract_label.png",
@@ -233,7 +235,10 @@ class SummonTask(BaseTask):
             if match is not None:
                 return True
             screen = self.context.controller.screenshot()
-            if self._screen_ocr_indicates_advanced_contract(screen):
+            if (
+                time.time() - started >= self.OCR_FALLBACK_DELAY_SECONDS
+                and self._screen_ocr_indicates_advanced_contract(screen)
+            ):
                 return True
             time.sleep(0.5)
         return False

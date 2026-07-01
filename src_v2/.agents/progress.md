@@ -34,22 +34,25 @@
 
 ---
 
-## Phase 3 — 高複雜度 task + 獨立模組整合
+## Phase 3 — 高複雜度 task + stub 同步 ✅ 完成
 
-目標：移植剩餘 task + 整合獨立模組
+目標：移植剩餘 task（含 stub）
 
 | 項目 | 狀態 |
 |------|------|
-| `src_v2/tasks/arena.py` | 🔲 未開始 |
-| `src_v2/tasks/endless_trial.py` | 🔲 未開始 |
-| `src_v2/tasks/bounty.py` | 🔲 未開始 |
-| `src_v2/tasks/campaign.py` | 🔲 未開始 |
-| `src_v2/tasks/guild_dungeon.py` | 🔲 未開始 |
-| `src_v2/tasks/magic_shop.py` | 🔲 未開始 |
-| `AwayFromKeyboard/` 整合規劃 | 🔲 未開始 |
-| `ads2/` 整合規劃 | 🔲 未開始 |
-| `call_of_the_gale/` 整合規劃 | 🔲 未開始 |
-| `switch_account/` 整合規劃 | 🔲 未開始 |
+| `src_v2/tasks/arena.py` | ✅ 55 tests |
+| `src_v2/tasks/endless_trial.py` | ✅ 55 tests |
+| `src_v2/tasks/guild_dungeon.py` | ✅ 55 tests |
+| `src_v2/tasks/bounty.py` | ✅ stub 同步 |
+| `src_v2/tasks/campaign.py` | ✅ stub 同步 |
+| `src_v2/tasks/magic_shop.py` | ✅ stub 同步 |
+
+**累計**：`TASK_ORDER` 內全部 11 個 task 皆已在 src_v2 登記，55 passed, 0 failed
+
+**已知技術風險**：
+- `arena.py` 的 3 個 `save_failure()` 錯誤呼叫（已修）
+- `guild_dungeon.py` 的 `_wait_for_battle_continue()` None check 遺漏（已修）
+- `BATTLE_READY_ASSET` 跨 task 路徑依賴（可接受）
 
 ---
 

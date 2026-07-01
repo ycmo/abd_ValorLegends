@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 import sys
 import cv2
+import numpy as np
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -11,6 +13,7 @@ from src.config import SHARED_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.task_runner import BaseTask
 from src.exceptions import TaskFailedError
 from src.ocr_utils import get_cached_easyocr_reader, read_texts_easyocr, parse_power_value
+from src.vision_matcher import read_image
 
 class MagicShopTask(BaseTask):
     spec = TASK_SPECS["magic_shop"]
@@ -19,16 +22,27 @@ class MagicShopTask(BaseTask):
         "競技場券480k.png",
         "金牌5000k.png",
         "英雄碎片1800k.png",
-        "碎片買滿.png",
+        "商品圖片/紫珠800.png",
+        "商品圖片/競技場券5.png",
+        "商品圖片/金牌10.png",
+        "商品圖片/英雄碎片30.png",
         "購買.png",
         "獲得道具.png",
         "是.png",
         "back_arrow.png",
+        "刷新100.png",
+        "刷新200.png",
     )
     BACK_ARROW_ROI = (0, 0, 100, 80)
     SHOP_ITEM_ROI = (250, 100, 710, 440)
     SHOP_SCAN_VIEWS = 3
-    SHOP_SWIPE = (480, 450, 480, 150, 500)
+    SHOP_SWIPE = (480, 450, 480, 150, 900)
+    SHOP_SETTLE_SECONDS = 1.0
+    ITEM_COLUMN_ROIS = {
+        "left": (280, 100, 145, 440),
+        "middle": (430, 100, 145, 440),
+        "right_middle": (580, 100, 145, 440),
+    }
 
     def asset_path(self, name: str, source: str = "task") -> Path:
         if source == "shared":
@@ -68,9 +82,24 @@ class MagicShopTask(BaseTask):
                 return True
         return False
 
-    # 改用 OCR 辨識字串，取代原本的圖片比對
-    # 由於字體太擠，5000k 有時會被吃掉一個零變成 500k，甚至吃掉 k 變成 5000，因此我們把容錯清單加大
-    TARGET_PRICES = ["960k", "960", "480k", "480", "5000k", "5000", "1800k", "1800", "500k", "500"]
+    TARGET_ITEM_TEMPLATES = (
+        ("960k", "商品圖片/紫珠800.png", "紫珠960k.png", "left"),
+        ("480k", "商品圖片/競技場券5.png", "競技場券480k.png", "middle"),
+        ("5000k", "商品圖片/金牌10.png", "金牌5000k.png", "right_middle"),
+        ("1800k", "商品圖片/英雄碎片30.png", "英雄碎片1800k.png", "middle"),
+    )
+    ITEM_TEMPLATE_THRESHOLD = 0.60
+    ITEM_ICON_THRESHOLD = 0.80
+    ITEM_PRICE_VERIFY_THRESHOLD = 0.85
+    ITEM_PRICE_ONLY_FALLBACKS = {
+        "480k": 0.98,
+    }
+    ITEM_CLUSTER_DISTANCE = 48
+    ITEM_PRICE_ROI_OFFSET = (-85, 55, 170, 65)
+    REFRESH_BUTTON_ROI = (700, 40, 220, 90)
+    REFRESH_TEMPLATE_THRESHOLD = 0.82
+    REFRESH_TEMPLATE_MARGIN = 0.03
+    REFRESH_TEMPLATE_DIGIT_CROP_X = 45
 
     def __init__(self, context):
         super().__init__(context)
@@ -111,192 +140,173 @@ class MagicShopTask(BaseTask):
         return max_val
 
     def buy_items_on_screen(self, dry_run: bool = False, ignore_boxes: list = None) -> int:
-        if ignore_boxes is None:
-            ignore_boxes = []
-
         bought_count = 0
-        loop_limit = 1
-        loop_count = 0
+        screen = self.context.controller.screenshot()
+        candidates = self._find_buyable_item_candidates(screen)
+        print(f"  [比對] 本次掃描找到 {len(candidates)} 個亮著的目標商品。")
 
-        # 商店商品區塊在畫面右側（X軸 250 以後），避開左側的「魔法商店」等中文選單
-        # Y軸 100~540 避開頂端金幣與底部邊界。 w=710 代表掃描到 960 (250+710)
-        ocr_roi = (250, 100, 710, 440)
-
-        while loop_count < loop_limit:
-            loop_count += 1
-            screen = self.context.controller.screenshot()
-            found_any = False
-
-            # 截取 ROI
-            x, y, w, h = ocr_roi
-            roi_img = screen[y:y+h, x:x+w]
-
-            print("  ⏳ [辨識中] 正在呼叫 OCR 掃描畫面上的商品價格 (這可能需要 1~2 秒)...")
-            # 使用 allowlist 強制模型只輸出數字、k、m 和逗號
-            # 經過測試，mag_ratio=3.0 能讓 5000k 的信心度從 0.69 暴增到 0.97！
-            ocr_results = self._get_ocr_reader().readtext(roi_img, detail=1, allowlist="0123456789km,", mag_ratio=3.0)
-            print(f"  ✅ [掃描完成] 共發現 {len(ocr_results)} 個潛在文字區塊。")
-
-            fragments = []
-            for box, text, confidence in ocr_results:
-                offset_box = [[pt[0] + x, pt[1] + y] for pt in box]
-                fragments.append({
-                    "text": str(text),
-                    "confidence": float(confidence),
-                    "box": offset_box
-                })
-
-            print("  [OCR 偵測結果] 本次掃描到的文字 (信心度 >= 0.30)：")
-            for frag in fragments:
-                if frag['confidence'] >= 0.30:
-                    print(f"    - '{frag['text']}' (信心度: {frag['confidence']:.3f})")
-
-            for frag in fragments:
-                text = str(frag['text']).lower().replace(' ', '').replace(',', '')
-                confidence = frag['confidence']
-
-                # 因為我們有了「圖片比對」這個終極雙重確認機制，就算錯認也沒關係
-                # OCR 就算非常不確定 (信心度 > 0.35)，我們也可以大膽放行給後方的圖片比對去嚴格把關
-                if text in self.TARGET_PRICES and confidence > 0.35:
-                    box = frag['box']
-                    center_x = int((box[0][0] + box[2][0]) / 2)
-                    center_y = int((box[0][1] + box[2][1]) / 2)
-
-                    # 檢查是否為已售罄(忽略)的座標
-                    is_ignored = False
-                    for ibox in ignore_boxes:
-                        if ibox[0][0] - 20 <= center_x <= ibox[2][0] + 20 and ibox[0][1] - 20 <= center_y <= ibox[2][1] + 20:
-                            is_ignored = True
-                            break
-                    if is_ignored:
-                        continue
-
-                    # 準備對應的模板圖檔名稱
-                    template_map = {
-                        "960k": "紫珠960k.png",
-                        "960": "紫珠960k.png",
-                        "480k": "競技場券480k.png",
-                        "480": "競技場券480k.png",
-                        "5000k": "金牌5000k.png",
-                        "5000": "金牌5000k.png",
-                        "500k": "金牌5000k.png",  # 容錯
-                        "500": "金牌5000k.png",
-                        "1800k": "英雄碎片1800k.png",
-                        "1800": "英雄碎片1800k.png"
-                    }
-                    template_name = template_map.get(text)
-
-                    if template_name:
-                        print(f"  🔍 [驗證中] OCR 鎖定 {text}，正在拿原圖 ({template_name}) 進行亮度與形狀雙重驗證...")
-                        # 【方案二】雙重確認：用圖片比對來驗證該區域是否為「亮著的」按鈕
-                        # 設定一個涵蓋此 OCR 框框的 ROI (向外擴張 40 像素)
-                        exp = 40
-                        roi_x = max(0, int(box[0][0]) - exp)
-                        roi_y = max(0, int(box[0][1]) - exp)
-                        roi_w = min(screen.shape[1], int(box[2][0]) + exp) - roi_x
-                        roi_h = min(screen.shape[0], int(box[2][1]) + exp) - roi_y
-
-                        match = self.context.matcher.match_template(
-                            screen, self.asset_path(template_name), threshold=0.60, roi=(roi_x, roi_y, roi_w, roi_h)
-                        )
-
-                        # vision_matcher 內建了 brightness < 75% 的阻擋機制，如果回傳 None 代表按鈕暗掉了 (售罄)
-                        if match is None:
-                            print(f"    ⚠️ [雙重確認] OCR 找到 {text}，但圖片比對失敗 (按鈕可能變灰售罄)，自動跳過。")
-                            ignore_boxes.append(box)
-                            continue
-                    else:
-                        # 如果沒有對應的圖片 (防呆)，就直接當作成功
-                        pass
-
-                    print(f"  ➡️ [OCR+比對] 成功鎖定目標：{text}，信心度：{confidence:.3f}")
-
-                    if dry_run:
-                        debug_path = Path(__file__).parent / "debug_output" / f"dry_run_ocr_{text}_{int(time.time())}.png"
-                        debug_path.parent.mkdir(parents=True, exist_ok=True)
-                        debug_img = screen.copy()
-                        cv2.rectangle(debug_img, (int(box[0][0]), int(box[0][1])), (int(box[2][0]), int(box[2][1])), (0,0,255), 2)
-                        cv2.putText(debug_img, f"{text} {confidence:.2f}", (int(box[0][0]), int(box[0][1])-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
-                        cv2.imwrite(str(debug_path), debug_img)
-                        print(f"    📸 截圖已儲存至：{debug_path.relative_to(Path(__file__).parent)}")
-                        found_any = True
-                        continue
-
-                    # ----------------------------------
-                    # 進入購買迴圈 (處理有數量的商品，例如買 3 次碎片)
-                    # ----------------------------------
-                    while True:
-                        self.context.controller.tap(center_x, center_y)
-                        time.sleep(1.0)
-
-                        # 點擊商品後，有些商品可能會跳出數量選擇
-                        max_btn_path = self.asset_path("碎片買滿.png")
-                        if max_btn_path.exists():
-                            max_match = self.context.matcher.match_template(self.context.controller.screenshot(), max_btn_path, threshold=0.82)
-                            if max_match is not None:
-                                self.context.controller.tap(*max_match.center)
-                                print(f"    🌟 點擊了「碎片買滿」")
-                                time.sleep(0.5)
-
-                        # 尋找購買按鈕
-                        print("  ⏳ [等待中] 正在尋找「購買確認」按鈕...")
-                        buy_btn_path = self.asset_path("購買.png")
-                        buy_match = None
-                        if buy_btn_path.exists():
-                            buy_screen = self.context.controller.screenshot()
-                            buy_match = self.context.matcher.match_template(buy_screen, buy_btn_path, threshold=0.82)
-
-                        if buy_match is not None:
-                            self.context.controller.tap(*buy_match.center)
-                            print(f"    ✅ 點擊了購買按鈕！")
-                            time.sleep(1.5)
-
-                            print("  ⏳ [檢查中] 檢查是否有獲得道具的關閉視窗...")
-                            reward_path = self.asset_path("獲得道具.png")
-                            if reward_path.exists():
-                                reward_match = self.context.matcher.match_template(self.context.controller.screenshot(), reward_path, threshold=0.82)
-                                if reward_match is not None:
-                                    self.context.controller.tap(*reward_match.center)
-                                    print(f"    🎁 點擊了「獲得道具」關閉視窗")
-                                    time.sleep(1.0)
-                                else:
-                                    self.context.controller.tap(80, 500)
-                                    time.sleep(1.0)
-                            else:
-                                self.context.controller.tap(80, 500)
-                                time.sleep(1.0)
-
-                            bought_count += 1
-                            found_any = True
-
-                            # 買完一次後，原地再次截圖比對，確認按鈕是否變灰
-                            if template_name:
-                                print(f"  🔍 [多次購買檢查] 檢查 {text} 是否還有剩餘購買次數...")
-                                fresh_screen = self.context.controller.screenshot()
-                                fresh_match = self.context.matcher.match_template(
-                                    fresh_screen, self.asset_path(template_name), threshold=0.60, roi=(roi_x, roi_y, roi_w, roi_h)
-                                )
-                                if fresh_match is None:
-                                    print(f"    ✅ {text} 已完全售罄 (按鈕變灰)！")
-                                    break
-                                else:
-                                    print(f"    🔄 {text} 還有剩餘次數，繼續購買！")
-                            else:
-                                break
-
-                        else:
-                            print(f"    ⚠️ 點擊了 {text} 但沒有出現購買按鈕，可能已售罄。將其加入忽略清單。")
-                            ignore_boxes.append(box)
-                            found_any = True
-                            break # 結束迴圈
-
-                    # 該商品徹底買完或失敗後，跳到下一個 OCR 區塊
-                    continue
+        for text, template_name, match in candidates:
+            roi_x, roi_y, roi_w, roi_h = self._expanded_roi_around_bbox(screen, match.bbox)
+            print(f"  -> [比對] {text} template={template_name} confidence={match.confidence:.3f}")
 
             if dry_run:
-                break
+                self._save_dry_run_template_debug(screen, text, match)
+                continue
+
+            while True:
+                fresh_screen = self.context.controller.screenshot()
+                fresh_match = self.context.matcher.match_template(
+                    fresh_screen,
+                    self.asset_path(template_name),
+                    threshold=self.ITEM_TEMPLATE_THRESHOLD,
+                    roi=(roi_x, roi_y, roi_w, roi_h),
+                )
+                if fresh_match is None:
+                    print(f"    {text} 目前已不是亮著的可買狀態，跳過。")
+                    break
+
+                self.context.controller.tap(*fresh_match.center)
+                time.sleep(1.0)
+
+                print("  [等待中] 正在尋找「購買確認」按鈕...")
+                buy_btn_path = self.asset_path("購買.png")
+                buy_match = None
+                if buy_btn_path.exists():
+                    buy_screen = self.context.controller.screenshot()
+                    buy_match = self.context.matcher.match_template(buy_screen, buy_btn_path, threshold=0.82)
+
+                if buy_match is None:
+                    print(f"    點擊了 {text} 但沒有出現購買按鈕，可能已售罄。")
+                    break
+
+                self.context.controller.tap(*buy_match.center)
+                print("    點擊了購買按鈕。")
+                time.sleep(1.5)
+
+                print("  [檢查中] 檢查是否有獲得道具的關閉視窗...")
+                reward_path = self.asset_path("獲得道具.png")
+                if reward_path.exists():
+                    reward_match = self.context.matcher.match_template(
+                        self.context.controller.screenshot(),
+                        reward_path,
+                        threshold=0.82,
+                    )
+                    if reward_match is not None:
+                        self.context.controller.tap(*reward_match.center)
+                        print("    點擊了「獲得道具」關閉視窗")
+                        time.sleep(1.0)
+                    else:
+                        self.context.controller.tap(80, 500)
+                        time.sleep(1.0)
+                else:
+                    self.context.controller.tap(80, 500)
+                    time.sleep(1.0)
+
+                bought_count += 1
+
+                print(f"  [多次購買檢查] 檢查 {text} 是否還有剩餘購買次數...")
+                fresh_screen = self.context.controller.screenshot()
+                fresh_match = self.context.matcher.match_template(
+                    fresh_screen,
+                    self.asset_path(template_name),
+                    threshold=self.ITEM_TEMPLATE_THRESHOLD,
+                    roi=(roi_x, roi_y, roi_w, roi_h),
+                )
+                if fresh_match is None:
+                    print(f"    {text} 已完全售罄或變灰。")
+                    break
+                print(f"    {text} 還有剩餘次數，繼續購買。")
 
         return bought_count
+
+    def _find_buyable_item_candidates(self, screen) -> list:
+        raw_candidates = []
+        for text, icon_name, price_name, column_name in self.TARGET_ITEM_TEMPLATES:
+            search_roi = self.ITEM_COLUMN_ROIS[column_name]
+            icon_matches = self.context.matcher.match_template_all(
+                screen,
+                self.asset_path(icon_name),
+                threshold=self.ITEM_ICON_THRESHOLD,
+                roi=search_roi,
+                max_results=8,
+                min_center_distance=50,
+            )
+            for icon_match in icon_matches:
+                price_roi = self._price_roi_for_icon(screen, icon_match.center)
+                price_match = self.context.matcher.match_template(
+                    screen,
+                    self.asset_path(price_name),
+                    threshold=self.ITEM_PRICE_VERIFY_THRESHOLD,
+                    roi=price_roi,
+                )
+                if price_match is None:
+                    continue
+                raw_candidates.append((text, price_name, price_match))
+
+            fallback_threshold = self.ITEM_PRICE_ONLY_FALLBACKS.get(text)
+            if fallback_threshold is not None:
+                price_matches = self.context.matcher.match_template_all(
+                    screen,
+                    self.asset_path(price_name),
+                    threshold=fallback_threshold,
+                    roi=search_roi,
+                    max_results=8,
+                    min_center_distance=50,
+                )
+                for price_match in price_matches:
+                    raw_candidates.append((text, price_name, price_match))
+
+        raw_candidates.sort(key=lambda item: item[2].confidence, reverse=True)
+        candidates = []
+        min_distance_sq = self.ITEM_CLUSTER_DISTANCE * self.ITEM_CLUSTER_DISTANCE
+        for candidate in raw_candidates:
+            center = candidate[2].center
+            if any(
+                (center[0] - kept[2].center[0]) ** 2 + (center[1] - kept[2].center[1]) ** 2
+                < min_distance_sq
+                for kept in candidates
+            ):
+                continue
+            candidates.append(candidate)
+
+        candidates.sort(key=lambda item: (item[2].center[1], item[2].center[0], item[0]))
+        return candidates
+
+    def _price_roi_for_icon(self, screen, center):
+        cx, cy = center
+        dx, dy, width, height = self.ITEM_PRICE_ROI_OFFSET
+        roi_x = max(0, cx + dx)
+        roi_y = max(0, cy + dy)
+        roi_w = min(screen.shape[1], roi_x + width) - roi_x
+        roi_h = min(screen.shape[0], roi_y + height) - roi_y
+        return roi_x, roi_y, roi_w, roi_h
+
+    @staticmethod
+    def _expanded_roi_around_bbox(screen, bbox, exp: int = 40):
+        bx, by, bw, bh = bbox
+        roi_x = max(0, bx - exp)
+        roi_y = max(0, by - exp)
+        roi_w = min(screen.shape[1], bx + bw + exp) - roi_x
+        roi_h = min(screen.shape[0], by + bh + exp) - roi_y
+        return roi_x, roi_y, roi_w, roi_h
+
+    def _save_dry_run_template_debug(self, screen, text: str, match) -> None:
+        debug_path = Path(__file__).parent / "debug_output" / f"dry_run_template_{text}_{int(time.time())}.png"
+        debug_path.parent.mkdir(parents=True, exist_ok=True)
+        debug_img = screen.copy()
+        bx, by, bw, bh = match.bbox
+        cv2.rectangle(debug_img, (bx, by), (bx + bw, by + bh), (0, 0, 255), 2)
+        cv2.putText(
+            debug_img,
+            f"{text} {match.confidence:.2f}",
+            (bx, max(18, by - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2,
+        )
+        cv2.imwrite(str(debug_path), debug_img)
+        print(f"    截圖已儲存至：{debug_path.relative_to(Path(__file__).parent)}")
 
     def execute(self, dry_run: bool = False, ask_refresh: bool = False) -> str:
         if dry_run:
@@ -327,21 +337,11 @@ class MagicShopTask(BaseTask):
             if current_coins >= 12000:
                 print(f"  💰 目前金幣為 {current_coins}k (>= 12000k 安全線)，繼續檢查右上角刷新按鈕...")
 
-                print("  ⏳ [辨識中] 正在掃描右上角刷新按鈕 (OCR)...")
-                # 檢查 100 紅鑽按鈕 (使用 OCR 避免 100 跟 200 誤判)
-                # 根據截圖，按鈕大約在畫面右上角，x=750~950, y=20~90
-                refresh_roi = (750, 20, 200, 70)
-                rx, ry, rw, rh = refresh_roi
-                refresh_img = screen[ry:ry+rh, rx:rx+rw]
-
-                # 使用 OCR 辨識字串，嚴格白名單只允許數字
-                refresh_res = self._get_ocr_reader().readtext(refresh_img, detail=1, allowlist="0123456789", mag_ratio=3.0)
-
-                for box, text, conf in refresh_res:
-                    if str(text) == "100" and conf > 0.60:
-                        can_refresh = True
-                        refresh_center = (int(rx + (box[0][0] + box[2][0]) / 2), int(ry + (box[0][1] + box[2][1]) / 2))
-                        break
+                print("  [辨識中] 正在交叉比對右上角 100/200 紅鑽刷新按鈕...")
+                refresh_match = self._find_safe_refresh_100(screen)
+                if refresh_match is not None:
+                    can_refresh = True
+                    refresh_center = refresh_match.center
 
                 if can_refresh:
                     print("  ✅ [判定結果] 系統建議：可以執行刷新！(理由：金幣充足，且右上角標籤為 100 紅鑽)")
@@ -406,6 +406,40 @@ class MagicShopTask(BaseTask):
         self._return_to_daily_tasks()
         return f"Bought {total_bought} items, refreshed {refreshes} times."
 
+    def _find_safe_refresh_100(self, screen):
+        match_100 = self._refresh_template_probe(screen, "刷新100.png")
+        match_200 = self._refresh_template_probe(screen, "刷新200.png")
+        conf_100 = match_100.confidence
+        conf_200 = match_200.confidence
+        print(f"    refresh_100_conf={conf_100:.3f}, refresh_200_conf={conf_200:.3f}")
+
+        if conf_100 < self.REFRESH_TEMPLATE_THRESHOLD:
+            return None
+        if conf_200 >= self.REFRESH_TEMPLATE_THRESHOLD and conf_100 - conf_200 < self.REFRESH_TEMPLATE_MARGIN:
+            return None
+        return match_100
+
+    def _refresh_template_probe(self, screen, asset_name: str):
+        x, y, w, h = self.REFRESH_BUTTON_ROI
+        haystack = screen[y:y + h, x:x + w]
+        if haystack.ndim == 3 and haystack.shape[2] == 4:
+            haystack = cv2.cvtColor(haystack, cv2.COLOR_BGRA2BGR)
+
+        template = read_image(self.asset_path(asset_name), cv2.IMREAD_COLOR)
+        crop_x = min(self.REFRESH_TEMPLATE_DIGIT_CROP_X, max(0, template.shape[1] - 1))
+        template = template[:, crop_x:]
+        th, tw = template.shape[:2]
+        if th > haystack.shape[0] or tw > haystack.shape[1]:
+            return SimpleNamespace(confidence=0.0, center=(x + w // 2, y + h // 2))
+
+        result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED)
+        result = np.nan_to_num(result, nan=-1.0, posinf=-1.0, neginf=-1.0)
+        _min_val, max_val, _min_loc, max_loc = cv2.minMaxLoc(result)
+        return SimpleNamespace(
+            confidence=float(max_val),
+            center=(x + max_loc[0] + tw // 2, y + max_loc[1] + th // 2),
+        )
+
     def _scan_shop_views(self) -> int:
         """Scan stable top/middle/bottom shop views with overlap."""
         bought_count = 0
@@ -418,7 +452,7 @@ class MagicShopTask(BaseTask):
             x1, y1, x2, y2, duration = self.SHOP_SWIPE
             print("  [滑動] 向下捲動一個重疊區段...")
             self.context.controller.swipe(x1, y1, x2, y2, duration_ms=duration)
-            time.sleep(1.0)
+            time.sleep(self.SHOP_SETTLE_SECONDS)
         return bought_count
 
     def _return_to_daily_tasks(self) -> None:

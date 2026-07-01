@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import unittest
+import cv2
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.exceptions import TaskFailedError
 from src.tasks.guild_dungeon import GuildDungeonTask
-from src.vision_matcher import MatchResult
+from src.vision_matcher import MatchResult, VisionMatcher, read_image
 
 
 class FakeController:
@@ -57,6 +58,17 @@ class FakeLogger:
 
     def log(self, message):
         self.messages.append(message)
+
+
+class FakeDetector:
+    def __init__(self, scenes):
+        self.scenes = list(scenes)
+        self.last_scene = self.scenes[-1]
+
+    def detect(self, _screen):
+        scene = self.scenes.pop(0) if self.scenes else self.last_scene
+        self.last_scene = scene
+        return SimpleNamespace(scene=scene)
 
 
 class GuildDungeonTaskTests(unittest.TestCase):
@@ -289,6 +301,27 @@ class GuildDungeonTaskTests(unittest.TestCase):
         self.assertEqual(navigator.calls[0]["max_back_taps"], 4)
         self.assertEqual(navigator.calls[0]["back_asset"].name, "back_button.png")
 
+    def test_outpost_close_matches_latest_debug_capture(self):
+        path = Path(
+            "captures/action_debug/20260629_113036_113104_route_每日任務/"
+            "000121_20260629_113847_before_swipe_360_430_360_230_420.png"
+        )
+        if not path.exists():
+            self.skipTest("latest guild dungeon debug capture is not available")
+
+        screen = read_image(path, cv2.IMREAD_COLOR)
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=FakeController(),
+                matcher=VisionMatcher(),
+            )
+        )
+
+        match = task._match_outpost_close_on_screen(screen)
+
+        self.assertIsNotNone(match)
+        self.assertGreaterEqual(match.confidence, 0.99)
+
     def test_return_uses_lobby_back_asset_after_map_route_stops(self):
         navigator = FakeNavigator(results=[False, True])
         task = GuildDungeonTask(
@@ -304,6 +337,53 @@ class GuildDungeonTaskTests(unittest.TestCase):
         self.assertEqual(len(navigator.calls), 2)
         self.assertEqual(navigator.calls[0]["back_asset"].name, "back_button.png")
         self.assertEqual(navigator.calls[1]["back_asset"].name, "guild_lobby_back_button.png")
+
+    def test_return_waits_for_loading_to_finish_before_navigator(self):
+        from src.scene_detector import Scene
+
+        navigator = FakeNavigator()
+        matcher = FakeMatcher(
+            matches={
+                "map_title_anchor.png": _match("map_title_anchor.png", 127, 38),
+            }
+        )
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=FakeController(),
+                matcher=matcher,
+                navigator=navigator,
+                detector=FakeDetector([Scene.LOADING, Scene.UNKNOWN]),
+            )
+        )
+
+        with patch("src.tasks.guild_dungeon.time.sleep"):
+            self.assertTrue(task._return_to_daily_tasks())
+
+        self.assertEqual(len(navigator.calls), 1)
+
+    def test_post_battle_wait_retries_visible_continue_with_fresh_match(self):
+        from src.scene_detector import Scene
+
+        controller = FakeController()
+        continue_match = _match("continue_button.png", 481, 482)
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=controller,
+                matcher=FakeMatcher(
+                    matches={
+                        "continue_button.png": continue_match,
+                    }
+                ),
+                detector=FakeDetector([Scene.BATTLE_RESULT, Scene.BATTLE_RESULT, Scene.BATTLE_RESULT, Scene.BATTLE_RESULT]),
+            )
+        )
+
+        with patch("src.tasks.guild_dungeon.time.sleep"), \
+             patch("src.tasks.guild_dungeon.time.time", side_effect=[0, 1, 2, 3, 4]):
+            self.assertFalse(task._wait_for_returnable_screen_after_battle())
+
+        self.assertEqual(controller.taps, [(481, 482), (481, 482), (481, 482)])
+        self.assertEqual(controller.debug_saves[0][0][0], "guild_dungeon_post_battle_continue_still_visible")
 
     def test_daily_attempts_exhausted_detects_zero_counter(self):
         controller = FakeController()

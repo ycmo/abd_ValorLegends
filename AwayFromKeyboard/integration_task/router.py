@@ -9,93 +9,113 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-BLOCKER_GIFT_PACK_ROI = (340, 150, 320, 130)  # x, y, w, h
-BLOCKER_GIFT_PACK_THRESHOLD = 0.82
-BLOCKER_GIFT_PACK_CLOSE_POINT = (660, 22)
-
 # 若獨立測試時尚未有 DeviceController，使用延遲載入或在測試中 Mock
 try:
     from src.adb_controller import DeviceController
+    from src.blocker_handler import BlockerHandler
     from src.config import ACTION_DEBUG_ENABLED
 except ImportError:
     DeviceController = None
+    BlockerHandler = None
     ACTION_DEBUG_ENABLED = False
 
 class RedBoxFinder:
+    def find_largest_box_info(self, img_path: Path) -> tuple[tuple[int, int], tuple[int, int, int, int], np.ndarray, str]:
+        return self._find_largest_box_info(img_path, allowed_colors=("red", "green"))
+
     def find_largest_red_box_info(self, img_path: Path) -> tuple[tuple[int, int], tuple[int, int, int, int], np.ndarray]:
+        center, rect, img, _ = self._find_largest_box_info(img_path, allowed_colors=("red",))
+        return center, rect, img
+
+    def find_largest_green_box_info(self, img_path: Path) -> tuple[tuple[int, int], tuple[int, int, int, int], np.ndarray]:
+        center, rect, img, _ = self._find_largest_box_info(img_path, allowed_colors=("green",))
+        return center, rect, img
+
+    def _find_largest_box_info(
+        self,
+        img_path: Path,
+        *,
+        allowed_colors: tuple[str, ...],
+    ) -> tuple[tuple[int, int], tuple[int, int, int, int], np.ndarray, str]:
         img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"無法讀取圖片: {img_path}")
             
-        # 嚴格抓取紅色 (雙遮罩邏輯)
-        lower_red = np.array([30, 20, 230])
-        upper_red = np.array([50, 40, 255])
-        mask1 = cv2.inRange(img, lower_red, upper_red)
-        
-        # 容許純紅
-        lower_red2 = np.array([0, 0, 240])
-        upper_red2 = np.array([10, 10, 255])
-        mask2 = cv2.inRange(img, lower_red2, upper_red2)
-        
-        mask = mask1 | mask2
-        
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+        masks: list[tuple[str, np.ndarray]] = []
+        if "red" in allowed_colors:
+            # 嚴格抓取紅色 (雙遮罩邏輯)
+            lower_red = np.array([30, 20, 230])
+            upper_red = np.array([50, 40, 255])
+            mask1 = cv2.inRange(img, lower_red, upper_red)
+            # 容許純紅
+            lower_red2 = np.array([0, 0, 240])
+            upper_red2 = np.array([10, 10, 255])
+            mask2 = cv2.inRange(img, lower_red2, upper_red2)
+            masks.append(("red", mask1 | mask2))
+        if "green" in allowed_colors:
+            b, g, r = cv2.split(img)
+            green_mask = ((g > 140) & (r < 100) & (b < 100) & (g > r + 50)).astype(np.uint8) * 255
+            masks.append(("green", green_mask))
+
         best_area = 0
         best_center = None
         best_rect = None
-        
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            if w < 15 or h < 15:
-                continue
-            
-            area = w * h
-            if area > best_area:
-                # ====== 智慧去紅邊 ======
-                sub_mask = mask[y:y+h, x:x+w]
-                mid_x1, mid_x2 = int(w * 0.3), int(w * 0.7)
-                mid_y1, mid_y2 = int(h * 0.3), int(h * 0.7)
-                
-                row_sums_mid = np.sum(sub_mask[:, mid_x1:mid_x2] > 0, axis=1)
-                mid_w = mid_x2 - mid_x1
-                
-                top = 0
-                while top < h and row_sums_mid[top] > mid_w * 0.3:
-                    top += 1
-                    
-                bottom = h - 1
-                while bottom >= 0 and row_sums_mid[bottom] > mid_w * 0.3:
-                    bottom -= 1
-                    
-                col_sums_mid = np.sum(sub_mask[mid_y1:mid_y2, :] > 0, axis=0)
-                mid_h = mid_y2 - mid_y1
-                
-                left = 0
-                while left < w and col_sums_mid[left] > mid_h * 0.3:
-                    left += 1
-                    
-                right = w - 1
-                while right >= 0 and col_sums_mid[right] > mid_h * 0.3:
-                    right -= 1
-                
-                if top > bottom or left > right:
-                    inner_x, inner_y, inner_w, inner_h = x, y, w, h
-                else:
-                    inner_x = x + left
-                    inner_y = y + top
-                    inner_w = right - left + 1
-                    inner_h = bottom - top + 1
-                # =======================
+        best_kind = None
 
-                best_area = area
-                best_center = (x + w // 2, y + h // 2)
-                best_rect = (inner_x, inner_y, inner_w, inner_h)
+        for kind, mask in masks:
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                x, y, w, h = cv2.boundingRect(cnt)
+                if w < 15 or h < 15:
+                    continue
+                
+                area = w * h
+                if area > best_area:
+                    # ====== 智慧去框線 ======
+                    sub_mask = mask[y:y+h, x:x+w]
+                    mid_x1, mid_x2 = int(w * 0.3), int(w * 0.7)
+                    mid_y1, mid_y2 = int(h * 0.3), int(h * 0.7)
+                    
+                    row_sums_mid = np.sum(sub_mask[:, mid_x1:mid_x2] > 0, axis=1)
+                    mid_w = mid_x2 - mid_x1
+                    
+                    top = 0
+                    while top < h and row_sums_mid[top] > mid_w * 0.3:
+                        top += 1
+                        
+                    bottom = h - 1
+                    while bottom >= 0 and row_sums_mid[bottom] > mid_w * 0.3:
+                        bottom -= 1
+                        
+                    col_sums_mid = np.sum(sub_mask[mid_y1:mid_y2, :] > 0, axis=0)
+                    mid_h = mid_y2 - mid_y1
+                    
+                    left = 0
+                    while left < w and col_sums_mid[left] > mid_h * 0.3:
+                        left += 1
+                        
+                    right = w - 1
+                    while right >= 0 and col_sums_mid[right] > mid_h * 0.3:
+                        right -= 1
+                    
+                    if top > bottom or left > right:
+                        inner_x, inner_y, inner_w, inner_h = x, y, w, h
+                    else:
+                        inner_x = x + left
+                        inner_y = y + top
+                        inner_w = right - left + 1
+                        inner_h = bottom - top + 1
+                    # =======================
+
+                    best_area = area
+                    best_center = (x + w // 2, y + h // 2)
+                    best_rect = (inner_x, inner_y, inner_w, inner_h)
+                    best_kind = kind
                 
         if not best_center:
-            raise ValueError(f"在 {img_path.name} 中找不到符合條件的紅框！")
+            raise ValueError(f"在 {img_path.name} 中找不到符合條件的紅框或綠框！")
             
-        return best_center, best_rect, img
+        return best_center, best_rect, img, best_kind
 
 class RouteNavigator:
     def __init__(
@@ -132,8 +152,14 @@ class RouteNavigator:
             
         self.route_dir = self.base_dir / "route_screenshots" / self.route_name
         self.blocker_dir = self.base_dir / "integration_task" / "templates" / "blockers"
+        self.blocker_handler = None
+        if BlockerHandler is not None:
+            self.blocker_handler = BlockerHandler(
+                self.controller,
+                template_path=self.blocker_dir / "gift_pack_label.png",
+            )
 
-    def execute_route(self, phase="enter"):
+    def execute_route(self, phase="enter", only_prefixes=None):
         if not self.route_dir.exists() or not self.route_dir.is_dir():
             raise FileNotFoundError(f"路由目錄不存在: {self.route_dir}")
             
@@ -162,16 +188,27 @@ class RouteNavigator:
             else:
                 prefix = f.name
             grouped_files[prefix].append(f)
+
+        grouped_items = list(grouped_files.items())
+        if only_prefixes is not None:
+            allowed_prefixes = {str(prefix) for prefix in only_prefixes}
+            grouped_items = [
+                (prefix, group)
+                for prefix, group in grouped_items
+                if prefix in allowed_prefixes
+            ]
+            if not grouped_items:
+                return
             
         get_screen_func = getattr(self.controller, "get_screen", getattr(self.controller, "screenshot", None))
         
-        for prefix, group in grouped_files.items():
+        for group_index, (prefix, group) in enumerate(grouped_items):
             templates_info = []
             has_swipe = False
             is_optional = False
             for img_path in group:
                 threshold = 0.5 if "_lowconf" in img_path.name.lower() else 0.7
-                (cx, cy), (x, y, w, h), original_img = self.finder.find_largest_red_box_info(img_path)
+                (cx, cy), (x, y, w, h), original_img, action_kind = self._find_route_box_info(img_path, prefer="red")
                 template = original_img[y:y+h, x:x+w]
                 
                 name_lower = img_path.name.lower()
@@ -187,12 +224,31 @@ class RouteNavigator:
                     "threshold": threshold,
                     "cx": cx, "cy": cy, "x": x, "y": y, "w": w, "h": h,
                     "template": template,
-                    "verify_disappear": "_verify" in img_path.stem.lower(),
+                    "action_kind": action_kind,
+                    "verify_next": "_verifynext" in img_path.stem.lower(),
+                    "verify_disappear": "_verify" in img_path.stem.lower() and "_verifynext" not in img_path.stem.lower(),
                     "is_swipe_v": is_swipe_v,
                     "is_swipe_h": is_swipe_h
                 })
+
+            next_templates_info = []
+            if group_index + 1 < len(grouped_items):
+                _, next_group = grouped_items[group_index + 1]
+                for next_img_path in next_group:
+                    threshold = 0.5 if "_lowconf" in next_img_path.name.lower() else 0.7
+                    (cx, cy), (x, y, w, h), original_img, action_kind = self._find_route_box_info(next_img_path, prefer="green")
+                    next_templates_info.append({
+                        "path": next_img_path,
+                        "threshold": threshold,
+                        "cx": cx, "cy": cy, "x": x, "y": y, "w": w, "h": h,
+                        "template": original_img[y:y+h, x:x+w],
+                        "action_kind": action_kind,
+                    })
                 
             if get_screen_func is None:
+                if templates_info[0]["action_kind"] != "red":
+                    print(f"[Fallback] 無法取得實機畫面 -> 綠框 Anchor {templates_info[0]['path'].name} 視為通過")
+                    continue
                 cx, cy = templates_info[0]["cx"], templates_info[0]["cy"]
                 print(f"[Fallback] 無法取得實機畫面 -> 退回點擊原始紅框中心 ({cx}, {cy})")
                 self.controller.tap(cx, cy)
@@ -255,7 +311,17 @@ class RouteNavigator:
                         abs_cx = roi_x1 + max_loc[0] + w // 2
                         abs_cy = roi_y1 + max_loc[1] + h // 2
                         print(f"[Router] 執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
-                        if t_info["verify_disappear"]:
+                        if t_info["verify_next"]:
+                            success = self._tap_and_verify_next(
+                                get_screen_func,
+                                phase=phase,
+                                t_info=t_info,
+                                next_templates_info=next_templates_info,
+                                roi=(roi_x1, roi_x2, roi_y1, roi_y2),
+                                match_loc=max_loc,
+                                confidence=max_val,
+                            )
+                        elif t_info["verify_disappear"]:
                             success = self._tap_and_verify_disappearance(
                                 get_screen_func,
                                 phase=phase,
@@ -264,7 +330,7 @@ class RouteNavigator:
                                 match_loc=max_loc,
                                 confidence=max_val,
                             )
-                        else:
+                        elif t_info["action_kind"] == "red":
                             self._tap_route_target(
                                 abs_cx,
                                 abs_cy,
@@ -274,6 +340,9 @@ class RouteNavigator:
                                 bbox=(roi_x1 + max_loc[0], roi_y1 + max_loc[1], w, h),
                             )
                             time.sleep(2.0)
+                            success = True
+                        else:
+                            print(f"[Router] {t_info['path'].name} 是綠框 Anchor，確認出現後不點擊")
                             success = True
                         break
                         
@@ -317,9 +386,13 @@ class RouteNavigator:
                         
                     for _ in range(swipe_count):
                         if swipe_t["is_swipe_v"]:
-                            y_start = (3 * sh // 4) if swipe_dir == 1 else (sh // 4)
-                            y_end = (sh // 4) if swipe_dir == 1 else (3 * sh // 4)
-                            self.controller.swipe(cx_orig, y_start, cx_orig, y_end, duration_ms=400)
+                            swipe_x, y_start, _, y_end, duration_ms = self._dynamic_swipe_points(
+                                swipe_t,
+                                screen_width=sw,
+                                screen_height=sh,
+                                swipe_dir=swipe_dir,
+                            )
+                            self.controller.swipe(swipe_x, y_start, swipe_x, y_end, duration_ms=duration_ms)
                         else:
                             x_start = (3 * sw // 4) if swipe_dir == 1 else (sw // 4)
                             x_end = (sw // 4) if swipe_dir == 1 else (3 * sw // 4)
@@ -371,7 +444,17 @@ class RouteNavigator:
                                 abs_cx = roi_x1 + max_loc[0] + w // 2
                                 abs_cy = roi_y1 + max_loc[1] + h // 2
                                 print(f"[Router] 滑動後執行 {t_info['path'].name} -> 找到浮動目標 (信心度 {max_val:.2f}) -> 點擊座標 ({abs_cx}, {abs_cy})")
-                                if t_info["verify_disappear"]:
+                                if t_info["verify_next"]:
+                                    success = self._tap_and_verify_next(
+                                        get_screen_func,
+                                        phase=phase,
+                                        t_info=t_info,
+                                        next_templates_info=next_templates_info,
+                                        roi=(roi_x1, roi_x2, roi_y1, roi_y2),
+                                        match_loc=max_loc,
+                                        confidence=max_val,
+                                    )
+                                elif t_info["verify_disappear"]:
                                     success = self._tap_and_verify_disappearance(
                                         get_screen_func,
                                         phase=phase,
@@ -380,7 +463,7 @@ class RouteNavigator:
                                         match_loc=max_loc,
                                         confidence=max_val,
                                     )
-                                else:
+                                elif t_info["action_kind"] == "red":
                                     self._tap_route_target(
                                         abs_cx,
                                         abs_cy,
@@ -390,6 +473,9 @@ class RouteNavigator:
                                         bbox=(roi_x1 + max_loc[0], roi_y1 + max_loc[1], w, h),
                                     )
                                     time.sleep(2.0)
+                                    success = True
+                                else:
+                                    print(f"[Router] {t_info['path'].name} 是綠框 Anchor，確認出現後不點擊")
                                     success = True
                                 break
                                 
@@ -415,6 +501,43 @@ class RouteNavigator:
                     best_overall_h,
                 )
                 raise ValueError(f"比對失敗！步驟群組 {prefix} 找不到目標 (最高信心度 {best_overall_val:.2f} < {best_overall_threshold})。\n已將偵錯畫面存至: {debug_img_path}")
+
+    def _find_route_box_info(self, img_path: Path, *, prefer: str = "red"):
+        if prefer == "green":
+            find_green = getattr(self.finder, "find_largest_green_box_info", None)
+            if find_green is not None:
+                try:
+                    center, rect, img = find_green(img_path)
+                    return center, rect, img, "green"
+                except ValueError:
+                    pass
+
+        red_error = None
+        try:
+            center, rect, img = self.finder.find_largest_red_box_info(img_path)
+            return center, rect, img, "red"
+        except ValueError as exc:
+            red_error = exc
+            if prefer == "red":
+                find_green = getattr(self.finder, "find_largest_green_box_info", None)
+                if find_green is not None:
+                    center, rect, img = find_green(img_path)
+                    return center, rect, img, "green"
+
+        find_any = getattr(self.finder, "find_largest_box_info", None)
+        if find_any is not None:
+            return find_any(img_path)
+        if red_error is not None:
+            raise red_error
+        raise ValueError(f"在 {img_path.name} 中找不到符合條件的框！")
+
+    def _dynamic_swipe_points(self, swipe_t, *, screen_width: int, screen_height: int, swipe_dir: int):
+        roi_x1 = max(0, swipe_t["x"] - 50)
+        roi_x2 = min(screen_width, swipe_t["x"] + swipe_t["w"] + 50)
+        swipe_x = (roi_x1 + roi_x2) // 2
+        y_start = (3 * screen_height // 4) if swipe_dir == 1 else (screen_height // 4)
+        y_end = (screen_height // 4) if swipe_dir == 1 else (3 * screen_height // 4)
+        return swipe_x, y_start, swipe_x, y_end, 700
 
     def _tap_route_target(
         self,
@@ -490,6 +613,80 @@ class RouteNavigator:
             f"(confidence={current_confidence:.2f})"
         )
 
+    def _tap_and_verify_next(
+        self,
+        get_screen_func,
+        *,
+        phase: str,
+        t_info: dict,
+        next_templates_info: list[dict],
+        roi: tuple[int, int, int, int],
+        match_loc: tuple[int, int],
+        confidence: float,
+    ) -> bool:
+        if not next_templates_info:
+            raise ValueError(f"{t_info['path'].name} 使用 _verifyNext，但後面沒有下一個步驟可驗證")
+
+        roi_x1, _, roi_y1, _ = roi
+        w, h = t_info["w"], t_info["h"]
+        current_loc = match_loc
+        current_confidence = confidence
+
+        for click_attempt in range(1, 4):
+            abs_x = roi_x1 + current_loc[0]
+            abs_y = roi_y1 + current_loc[1]
+            self._tap_route_target(
+                abs_x + w // 2,
+                abs_y + h // 2,
+                phase=phase,
+                template_name=t_info["path"].name,
+                confidence=current_confidence,
+                bbox=(abs_x, abs_y, w, h),
+            )
+
+            for verify_attempt in range(1, 7):
+                time.sleep(0.5)
+                screen = get_screen_func()
+                if screen is None:
+                    continue
+                matched_next = self._match_any_route_template(screen, next_templates_info)
+                best_name, best_confidence = matched_next["name"], matched_next["confidence"]
+                print(
+                    f"  [VerifyNext] {t_info['path'].name} click={click_attempt}/3 "
+                    f"check={verify_attempt}/6 next={best_name} confidence={best_confidence:.2f}"
+                )
+                if matched_next["matched"]:
+                    print(f"[Router] 驗證成功：下一步 {best_name} 已出現")
+                    return True
+
+            print(f"[Router] 下一步未出現，準備重新點擊 {t_info['path'].name}")
+
+        raise ValueError(f"點擊後驗證失敗：{t_info['path'].name} 經 3 次點擊後下一步仍未出現")
+
+    def _match_any_route_template(self, screen: np.ndarray, templates_info: list[dict]) -> dict:
+        sh, sw = screen.shape[:2]
+        best = {
+            "matched": False,
+            "name": templates_info[0]["path"].name if templates_info else "",
+            "confidence": 0.0,
+        }
+        for t_info in templates_info:
+            x, y, w, h = t_info["x"], t_info["y"], t_info["w"], t_info["h"]
+            roi_x1 = max(0, x - 50)
+            roi_x2 = min(sw, x + w + 50)
+            roi_y1 = max(0, y - 150)
+            roi_y2 = min(sh, y + h + 150)
+            screen_roi = screen[roi_y1:roi_y2, roi_x1:roi_x2]
+            result = cv2.matchTemplate(screen_roi, t_info["template"], cv2.TM_CCOEFF_NORMED)
+            _, confidence, _, _ = cv2.minMaxLoc(result)
+            if confidence > best["confidence"]:
+                best = {
+                    "matched": confidence >= t_info["threshold"],
+                    "name": t_info["path"].name,
+                    "confidence": confidence,
+                }
+        return best
+
     def _save_match_failure_debug(
         self,
         screen,
@@ -523,44 +720,9 @@ class RouteNavigator:
 
     def _handle_blocking_popup(self, screen: np.ndarray) -> bool:
         """Close known temporary popups that block route target recognition."""
-        if screen is None:
+        if self.blocker_handler is None:
             return False
-
-        gift_template = self.blocker_dir / "gift_pack_label.png"
-        if not gift_template.exists():
-            return False
-
-        template = cv2.imdecode(np.fromfile(str(gift_template), dtype=np.uint8), cv2.IMREAD_COLOR)
-        if template is None:
-            return False
-
-        x, y, w, h = BLOCKER_GIFT_PACK_ROI
-        sh, sw = screen.shape[:2]
-        x1 = max(0, x)
-        y1 = max(0, y)
-        x2 = min(sw, x + w)
-        y2 = min(sh, y + h)
-        if x2 <= x1 or y2 <= y1:
-            return False
-
-        roi = screen[y1:y2, x1:x2]
-        th, tw = template.shape[:2]
-        if th > roi.shape[0] or tw > roi.shape[1]:
-            return False
-
-        result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        if max_val < BLOCKER_GIFT_PACK_THRESHOLD:
-            return False
-
-        match_center = (x1 + max_loc[0] + tw // 2, y1 + max_loc[1] + th // 2)
-        print(
-            f"[Router] 偵測到臨時禮包廣告 "
-            f"(gift_pack_label confidence={max_val:.2f}, center={match_center})，點擊跳過..."
-        )
-        self.controller.tap(*BLOCKER_GIFT_PACK_CLOSE_POINT)
-        time.sleep(2.0)
-        return True
+        return self.blocker_handler.handle_known_blocker(screen)
 
     def handle_blocking_popup(self, screen: np.ndarray | None = None) -> bool:
         """Public recovery hook for callers whose post-route screen is blocked."""

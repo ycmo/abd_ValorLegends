@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 # Ensure router.py can be imported
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from router import BLOCKER_GIFT_PACK_CLOSE_POINT, RouteNavigator
+from router import RouteNavigator
+from src.blocker_handler import GIFT_PACK_CLOSE_POINT
 
 class FakeDeviceController:
     def __init__(self, screen_image=None, screen_images=None):
@@ -40,6 +41,27 @@ class FakeRedBoxFinder:
         if img_path.name in self.mock_results:
             return self.mock_results[img_path.name]
         raise ValueError(f"在 {img_path.name} 中找不到符合條件的紅框！(Fake)")
+
+
+class FakeColorBoxFinder(FakeRedBoxFinder):
+    def find_largest_box_info(self, img_path: Path):
+        if img_path.name in self.mock_results:
+            return self.mock_results[img_path.name]
+        raise ValueError(f"在 {img_path.name} 中找不到符合條件的框！(Fake)")
+
+    def find_largest_red_box_info(self, img_path: Path):
+        if img_path.name in self.mock_results:
+            center, rect, img, kind = self.mock_results[img_path.name]
+            if kind == "red":
+                return center, rect, img
+        raise ValueError(f"在 {img_path.name} 中找不到符合條件的紅框！(Fake)")
+
+    def find_largest_green_box_info(self, img_path: Path):
+        if img_path.name in self.mock_results:
+            center, rect, img, kind = self.mock_results[img_path.name]
+            if kind == "green":
+                return center, rect, img
+        raise ValueError(f"在 {img_path.name} 中找不到符合條件的綠框！(Fake)")
 
 
 class TestRouter(unittest.TestCase):
@@ -95,6 +117,42 @@ class TestRouter(unittest.TestCase):
         self.assertIn("router route=test_route phase=enter", lines)
         self.assertIn("template=01_first.png confidence=1.000", lines)
         self.assertEqual(boxes, [(50, 60, 20, 20, "route_match")])
+
+    def test_execute_route_only_prefixes_runs_selected_group(self):
+        (self.route_dir / "01_first.png").write_text("fake")
+        (self.route_dir / "02_second.png").write_text("fake")
+
+        original_img_01 = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img_01[20:40, 20:40] = 128
+        original_img_01[25:35, 25:35] = 255
+
+        original_img_02 = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img_02[40:60, 40:60] = 64
+        original_img_02[45:55, 45:55] = 255
+
+        mock_results = {
+            "01_first.png": ((30, 30), (20, 20, 20, 20), original_img_01),
+            "02_second.png": ((50, 50), (40, 40, 20, 20), original_img_02),
+        }
+
+        screen_image = np.zeros((200, 200, 3), dtype=np.uint8)
+        screen_image[80:100, 70:90] = 64
+        screen_image[85:95, 75:85] = 255
+
+        controller = FakeDeviceController(screen_image=screen_image)
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.time.sleep"):
+            navigator.execute_route(only_prefixes=("02",))
+
+        self.assertEqual(controller.taps, [(80, 90)])
+        lines, _boxes = controller.tap_annotations[0]
+        self.assertIn("template=02_second.png confidence=1.000", lines)
 
     def test_execute_route_fallback(self):
         # 建立假圖片檔案
@@ -188,6 +246,72 @@ class TestRouter(unittest.TestCase):
 
         self.assertEqual(controller.taps, [(60, 70), (60, 70), (60, 70)])
 
+    def test_green_anchor_matches_without_tapping(self):
+        (self.route_dir / "01_anchor.png").write_text("fake")
+
+        original_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img[40:60, 40:60] = 90
+        original_img[45:55, 45:55] = 210
+        mock_results = {
+            "01_anchor.png": ((50, 50), (40, 40, 20, 20), original_img, "green")
+        }
+
+        screen_image = np.zeros((200, 200, 3), dtype=np.uint8)
+        screen_image[60:80, 50:70] = 90
+        screen_image[65:75, 55:65] = 210
+        controller = FakeDeviceController(screen_image=screen_image)
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeColorBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.time.sleep"):
+            navigator.execute_route()
+
+        self.assertEqual(controller.taps, [])
+        self.assertEqual(controller.screenshot_count, 1)
+
+    def test_verify_next_waits_for_next_step_before_continuing(self):
+        (self.route_dir / "01_first_verifyNext.png").write_text("fake")
+        (self.route_dir / "02_next_anchor.png").write_text("fake")
+
+        first_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        first_img[40:60, 40:60] = 128
+        first_img[45:55, 45:55] = 255
+        next_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        next_img[30:50, 70:90] = 70
+        next_img[35:45, 75:85] = 200
+        mock_results = {
+            "01_first_verifyNext.png": ((50, 50), (40, 40, 20, 20), first_img, "red"),
+            "02_next_anchor.png": ((80, 40), (70, 30, 20, 20), next_img, "green"),
+        }
+
+        first_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        first_screen[60:80, 50:70] = 128
+        first_screen[65:75, 55:65] = 255
+        blank_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        next_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        next_screen[80:100, 90:110] = 70
+        next_screen[85:95, 95:105] = 200
+
+        controller = FakeDeviceController(
+            screen_images=[first_screen, blank_screen, next_screen, next_screen]
+        )
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeColorBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.time.sleep"):
+            navigator.execute_route()
+
+        self.assertEqual(controller.taps, [(60, 70)])
+        self.assertGreaterEqual(controller.screenshot_count, 4)
+
     def test_route_directory_not_found(self):
         controller = FakeDeviceController()
         finder = FakeRedBoxFinder()
@@ -258,7 +382,25 @@ class TestRouter(unittest.TestCase):
             handled = navigator._handle_blocking_popup(screen)
 
         self.assertTrue(handled)
-        self.assertEqual(controller.taps, [BLOCKER_GIFT_PACK_CLOSE_POINT])
+        self.assertEqual(controller.taps, [GIFT_PACK_CLOSE_POINT])
+
+    def test_vertical_swipe_uses_search_roi_center(self):
+        controller = FakeDeviceController()
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+
+        points = navigator._dynamic_swipe_points(
+            {"x": 9, "w": 116},
+            screen_width=960,
+            screen_height=540,
+            swipe_dir=1,
+        )
+
+        self.assertEqual(points, (87, 405, 87, 135, 700))
 
     def test_optional_miss_does_not_save_debug_by_default(self):
         (self.route_dir / "01_optional.png").write_text("fake")

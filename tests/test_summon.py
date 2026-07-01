@@ -1,5 +1,7 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.scene_detector import Scene, SceneDetection
 from src.tasks.summon import SummonTask
@@ -79,6 +81,14 @@ class FakeSummonTask(SummonTask):
         return self.context.detector.scene == Scene.DAILY_TASKS
 
 
+class NoTemplateSummonTask(FakeSummonTask):
+    def asset_path(self, asset_name):
+        return Path("__missing__") / asset_name
+
+    def _match_task_asset(self, asset_name, **kwargs):
+        return None
+
+
 class SummonReturnTests(unittest.TestCase):
     def test_return_uses_leave_button_then_stops_on_daily_tasks(self):
         task = FakeSummonTask(Scene.DAILY_TASKS)
@@ -121,10 +131,39 @@ class SummonReturnTests(unittest.TestCase):
         )
 
     def test_page_requirement_accepts_ocr_fallback(self):
-        task = FakeSummonTask(Scene.DAILY_TASKS, page_match_sequence=[False])
+        task = NoTemplateSummonTask(Scene.DAILY_TASKS)
+        task.OCR_FALLBACK_DELAY_SECONDS = 0.0
         task._screen_ocr_indicates_advanced_contract = lambda _screen: True
 
         task._require_summon_page()
+
+    def test_task_scene_check_does_not_start_ocr_fallback(self):
+        task = NoTemplateSummonTask(Scene.DAILY_TASKS)
+        task._screen_ocr_indicates_advanced_contract = lambda _screen: self.fail("OCR should not run")
+
+        self.assertFalse(task.is_task_scene(object()))
+
+    def test_page_visibility_waits_before_ocr_fallback(self):
+        task = NoTemplateSummonTask(Scene.DAILY_TASKS)
+        calls = []
+        task._screen_ocr_indicates_advanced_contract = lambda _screen: calls.append(_screen) or True
+
+        with patch("src.tasks.summon.time.time", side_effect=[0.0, 0.0, 0.2, 1.2]):
+            with patch("src.tasks.summon.time.sleep"):
+                self.assertFalse(task._is_summon_page_visible(timeout_seconds=1.0))
+
+        self.assertEqual(calls, [])
+
+    def test_page_visibility_uses_ocr_fallback_after_delay(self):
+        task = NoTemplateSummonTask(Scene.DAILY_TASKS)
+        task.OCR_FALLBACK_DELAY_SECONDS = 5.0
+        calls = []
+        task._screen_ocr_indicates_advanced_contract = lambda _screen: calls.append(_screen) or True
+
+        with patch("src.tasks.summon.time.time", side_effect=[0.0, 0.0, 6.0]):
+            self.assertTrue(task._is_summon_page_visible(timeout_seconds=10.0))
+
+        self.assertEqual(len(calls), 1)
 
     def test_current_scene_can_resume_from_result_confirm_button(self):
         task = FakeSummonTask(

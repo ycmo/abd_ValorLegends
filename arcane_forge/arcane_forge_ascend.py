@@ -1,3 +1,11 @@
+import os
+import sys
+
+# 通用根目錄解析：自動定位專案根目錄並加入系統路徑
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import logging
 import time
 from pathlib import Path
@@ -42,23 +50,51 @@ class ArcaneForgeAscendTask:
         while True:
             logger.debug(f"--- 升星循環第 {loop_count} 次 ---")
 
-            # 步驟 A：選取符文與進入彈窗
-            logger.debug("點擊第一格符文")
-            if hasattr(self, 'first_slot_box'):
-                x, y, w, h = self.first_slot_box
-                self.ctrl.annotate_next_tap_debug(boxes=[(x, y, w, h, "First Slot Box")])
-            self.ctrl.tap(*self.first_slot_pos)
-            time.sleep(1.0)
-
+            # 步驟 A：進入彈窗的終極防禦邏輯
+            # 1. 確保外層升星按鈕存在 (若無則嘗試喚醒)
             screen = self.ctrl.screenshot()
             ascend_res = self.vm.match_template(screen, self.ascend_btn_tpl)
-            if not ascend_res:
-                logger.info("未找到「升星」按鈕，可能無符文可升星，結束任務")
-                return True
 
-            logger.debug("點擊「升星」進入彈窗")
+            if not ascend_res:
+                logger.debug("未找到「升星」按鈕，嘗試點擊第一格喚醒...")
+                if hasattr(self, 'first_slot_box'):
+                    x, y, w, h = self.first_slot_box
+                    self.ctrl.annotate_next_tap_debug(boxes=[(x, y, w, h, "First Slot Box")])
+                self.ctrl.tap(*self.first_slot_pos)
+                time.sleep(1.0)
+
+                screen = self.ctrl.screenshot()
+                ascend_res = self.vm.match_template(screen, self.ascend_btn_tpl)
+                if not ascend_res:
+                    logger.info("喚醒失敗，確認無符文可升星，結束任務")
+                    return True
+
+            # 2. 點擊升星並驗證內層彈窗是否開啟
+            logger.debug("嘗試點擊外層「升星」按鈕")
             self.ctrl.tap(ascend_res.x, ascend_res.y)
-            time.sleep(1.0)
+            time.sleep(1.5)
+
+            screen = self.ctrl.screenshot()
+            if not self.vm.match_template(screen, self.auto_add_btn_tpl):
+                logger.debug("彈窗未開啟！遇到假按鈕 Bug，強制重選第一格符文...")
+                if hasattr(self, 'first_slot_box'):
+                    x, y, w, h = self.first_slot_box
+                    self.ctrl.annotate_next_tap_debug(boxes=[(x, y, w, h, "First Slot Box")])
+                self.ctrl.tap(*self.first_slot_pos)
+                time.sleep(1.0)
+
+                screen = self.ctrl.screenshot()
+                ascend_res = self.vm.match_template(screen, self.ascend_btn_tpl)
+                if ascend_res:
+                    logger.debug("再次點擊外層「升星」按鈕")
+                    self.ctrl.tap(ascend_res.x, ascend_res.y)
+                    time.sleep(1.5)
+
+                # 最終驗證
+                screen = self.ctrl.screenshot()
+                if not self.vm.match_template(screen, self.auto_add_btn_tpl):
+                    logger.info("強制選取後仍無法打開彈窗，可能已無符文，結束任務")
+                    return True
 
             # 步驟 B：OCR 判斷紫粉數量 (重要防呆)
             screen = self.ctrl.screenshot()
@@ -181,3 +217,30 @@ class ArcaneForgeAscendTask:
             loop_count += 1
 
         return True
+
+
+if __name__ == "__main__":
+    import argparse
+    from src.adb_controller import DeviceController
+    from src.vision_matcher import VisionMatcher
+
+    parser = argparse.ArgumentParser(description="獨立執行奧術熔爐-升星任務 (開發測試用)")
+    parser.add_argument("--debug-actions", action="store_true", help="開啟截圖除錯模式")
+    parser.add_argument("--debug", action="store_true", help="開啟詳細日誌輸出")
+    parser.add_argument("--target-max-stats", type=int, default=2, help="目標極品副屬性數量 (預設: 2)")
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+    else:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
+    ctrl = DeviceController(debug_actions=args.debug_actions)
+    vm = VisionMatcher()
+
+    task = ArcaneForgeAscendTask(ctrl, vm, target_max_stats=args.target_max_stats)
+    task.run()
+
+    from AwayFromKeyboard.discord_notify import notify_status
+    notify_status("奧術熔爐", "升星任務已結束")

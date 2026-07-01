@@ -10,6 +10,7 @@ from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from arcane_forge.arcane_forge_task import ArcaneForgeTask
 from arcane_forge.arcane_forge_ascend import ArcaneForgeAscendTask
+from AwayFromKeyboard.discord_notify import notify_status
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ def main():
         task = ArcaneForgeAscendTask(ctrl, vm, target_max_stats=args.target_max_stats)
         
     task.run()
+
+    notify_status("奧術熔爐", f"{args.action}任務已結束")
 
 if __name__ == "__main__":
     main()

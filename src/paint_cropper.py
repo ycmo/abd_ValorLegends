@@ -63,7 +63,8 @@ def find_colored_boxes(image: np.ndarray, color: BoxColor) -> List[CropBox]:
 
         roi_mask = mask[y : y + h, x : x + w]
         fill_ratio = float(np.count_nonzero(roi_mask)) / float(area)
-        if fill_ratio > 0.55:
+        max_fill_ratio = 0.78 if area < 800 else 0.55
+        if fill_ratio > max_fill_ratio:
             continue
 
         band = max(2, min(6, min(w, h) // 8))

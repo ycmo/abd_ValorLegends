@@ -1,3 +1,11 @@
+import os
+import sys
+
+# 通用根目錄解析：自動定位專案根目錄並加入系統路徑
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import logging
 import time
 from pathlib import Path
@@ -39,9 +47,9 @@ class ArcaneForgeTask:
         else:
             logger.warning("缺乏標題 Template，跳過防呆確認，直接開始分解循環...")
 
-        max_loops = 20
-        for i in range(max_loops):
-            logger.info(f"--- 分解循環第 {i+1} 次 ---")
+        loop_count = 1
+        while True:
+            logger.info(f"--- 分解循環第 {loop_count} 次 ---")
             screen = self.ctrl.screenshot()
 
             # 點擊「自動裝填」
@@ -82,9 +90,7 @@ class ArcaneForgeTask:
             # 點擊畫面最上方安全區域 (以 960x540 為例，480, 50 為上方置中)
             self.ctrl.tap(480, 50)
             time.sleep(1.0)
-
-        else:
-            logger.warning(f"達到最大分解次數限制 ({max_loops})，為避免死迴圈強制中斷")
+            loop_count += 1
 
         # 分解完畢後，點擊左上返回箭頭退出
         logger.info("任務結束，嘗試退出奧術熔爐...")
@@ -99,3 +105,29 @@ class ArcaneForgeTask:
             logger.warning("找不到返回鍵 Template，停止自動退出，請人工接手")
 
         return True
+
+
+if __name__ == "__main__":
+    import argparse
+    from src.adb_controller import DeviceController
+    from src.vision_matcher import VisionMatcher
+
+    parser = argparse.ArgumentParser(description="獨立執行奧術熔爐-分解任務 (開發測試用)")
+    parser.add_argument("--debug-actions", action="store_true", help="開啟截圖除錯模式")
+    parser.add_argument("--debug", action="store_true", help="開啟詳細日誌輸出")
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+    else:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
+    ctrl = DeviceController(debug_actions=args.debug_actions)
+    vm = VisionMatcher()
+
+    task = ArcaneForgeTask(ctrl, vm)
+    task.run()
+
+    from AwayFromKeyboard.discord_notify import notify_status
+    notify_status("奧術熔爐", "分解任務已結束")

@@ -54,7 +54,7 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         self.assertIn("ADB may be stalled", out.getvalue())
         self.assertIn("stopping run-all", out.getvalue())
 
-    def test_failed_normal_result_logs_without_sleep(self):
+    def test_failed_normal_result_logs_without_sleep_and_stops(self):
         runner = DailyRunner(context=FakeContext())
         result = TaskRunResult("arena", TaskState.FAILED, "Cannot find runnable task row for 競技場", 1.2)
 
@@ -62,9 +62,10 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         with patch("src.daily_runner.time.sleep") as sleep, redirect_stdout(out):
             should_stop = runner._handle_failed_run_all_result("run-all", "arena", result, 0.1)
 
-        self.assertFalse(should_stop)
+        self.assertTrue(should_stop)
         sleep.assert_not_called()
         self.assertIn("task=arena failed: Cannot find runnable task row for 競技場", out.getvalue())
+        self.assertIn("stopping run-all", out.getvalue())
         self.assertNotIn("sleeping", out.getvalue())
 
     def test_run_all_go_first_uses_detected_screen_order(self):
@@ -179,6 +180,53 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         self.assertIn("run-all action_debug_dir=captures\\action_debug\\run123", messages)
         self.assertIn("run-all scan=01/30 handled=", messages)
 
+    def test_run_all_go_first_clears_known_blocker_before_scan(self):
+        class Finder:
+            def __init__(self):
+                self.scans = 0
+
+            def scan_current_screen_go_first(self, _specs, screen=None):
+                self.scans += 1
+                self.last_screen = screen
+                return [
+                    GoFirstTaskRow(None, TaskSearchResult(TaskSearchStatus.DONE_OR_CLAIMABLE, done_match=_match()), "completed", 420),
+                ]
+
+        class Navigator:
+            def go_to_daily_tasks(self):
+                return True
+
+        class Controller:
+            def __init__(self):
+                self.screenshots = 0
+
+            def screenshot(self):
+                self.screenshots += 1
+                return object()
+
+        class Blocker:
+            def __init__(self):
+                self.calls = 0
+
+            def handle_known_blocker(self, _screen):
+                self.calls += 1
+                return self.calls == 1
+
+        context = FakeContext()
+        context.finder = Finder()
+        context.navigator = Navigator()
+        context.controller = Controller()
+        context.blocker = Blocker()
+        runner = DailyRunner(context=context)
+
+        runner.run_all_go_first(["midas"], log_prefix="run-all", failure_sleep_seconds=0.1)
+
+        self.assertEqual(context.blocker.calls, 2)
+        self.assertEqual(context.finder.scans, 1)
+        self.assertIsNotNone(context.finder.last_screen)
+        messages = [message for message, _force in context.logger.messages]
+        self.assertIn("run-all cleared known blocker before scan", messages)
+
     def test_run_all_go_first_returns_failed_result_when_scan_swipe_times_out(self):
         class Finder:
             def scan_current_screen_go_first(self, _specs):
@@ -203,6 +251,42 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         self.assertEqual(results[0].task_key, "run-all")
         self.assertEqual(results[0].state, TaskState.FAILED)
         self.assertIn("ADB command timed out", results[0].message)
+
+    def test_run_all_go_first_retries_once_after_no_movement_swipe(self):
+        class Finder:
+            def __init__(self):
+                self.scans = 0
+                self.swipes = []
+
+            def scan_current_screen_go_first(self, _specs):
+                self.scans += 1
+                if self.scans == 1:
+                    return []
+                return [
+                    GoFirstTaskRow(None, TaskSearchResult(TaskSearchStatus.DONE_OR_CLAIMABLE, done_match=_match()), "completed", 420),
+                ]
+
+            def _swipe_until_changed(self, *args, **kwargs):
+                self.swipes.append((args, kwargs))
+                return len(self.swipes) == 2
+
+        class Navigator:
+            def go_to_daily_tasks(self):
+                return True
+
+        context = FakeContext()
+        context.finder = Finder()
+        context.navigator = Navigator()
+        runner = DailyRunner(context=context)
+
+        runner.run_all_go_first(["midas"], log_prefix="run-all", failure_sleep_seconds=0.1)
+
+        self.assertEqual(len(context.finder.swipes), 2)
+        self.assertEqual(context.finder.swipes[0][1]["duration_ms"], 700)
+        self.assertEqual(context.finder.swipes[1][0], (360, 460, 360, 180))
+        self.assertEqual(context.finder.swipes[1][1]["duration_ms"], 900)
+        messages = [message for message, _force in context.logger.messages]
+        self.assertIn("run-all daily list swipe had no visible movement; retrying with longer swipe", messages)
 
     def test_run_all_go_first_treats_task_skipped_error_as_skipped(self):
         class Finder:

@@ -6,10 +6,10 @@ import cv2
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.ocr_utils import build_easyocr_reader
+from src.ocr_utils import get_cached_easyocr_reader
 
 def main():
-    reader = build_easyocr_reader()
+    reader = get_cached_easyocr_reader(("en",), download_enabled=False)
     assets_dir = Path(r"E:\antigravity\adb_vl\magic_shop\assets")
     debug_dir = Path(r"E:\antigravity\adb_vl\magic_shop\debug_output")
 

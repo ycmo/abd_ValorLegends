@@ -7,6 +7,7 @@ from typing import Optional
 
 from src.config import CAPTURES_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
+from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult
 
@@ -66,6 +67,8 @@ class GuildDungeonTask(BaseTask):
     CLOSE_BUTTON_THRESHOLD = 0.76
     BATTLE_READY_THRESHOLD = 0.82
     REMAINING_DAILY_ZERO_THRESHOLD = 0.86
+    POST_BATTLE_RETURN_WAIT_SECONDS = 45.0
+    POST_BATTLE_CONTINUE_MAX_TAPS = 3
 
     REMAINING_ROI = (120, 350, 560, 45)
     CHALLENGE_ROI = (90, 290, 620, 90)
@@ -213,6 +216,7 @@ class GuildDungeonTask(BaseTask):
             self.asset_path("outpost_close_button.png"),
             threshold=self.CLOSE_BUTTON_THRESHOLD,
             roi=self.CLOSE_ROI,
+            check_brightness=False,
         )
 
     def probe_target_from_current_map(self, *, tap_challenge: bool = True) -> str:
@@ -538,23 +542,13 @@ class GuildDungeonTask(BaseTask):
         return True
 
     def _return_to_daily_tasks(self) -> bool:
+        if not self._wait_for_returnable_screen_after_battle():
+            return False
+
         screen = self.context.controller.screenshot()
-        close_match = self.context.matcher.match_template(
-            screen,
-            self.asset_path("outpost_close_button.png"),
-            threshold=self.CLOSE_BUTTON_THRESHOLD,
-            roi=self.CLOSE_ROI,
-        )
-        if close_match is not None:
-            self.context.controller.annotate_next_tap_debug(
-                lines=[
-                    "guild dungeon close outpost before return",
-                    f"close_confidence={close_match.confidence:.3f}",
-                ],
-                boxes=[(*close_match.bbox, "go")],
-            )
-            self.context.controller.tap(*close_match.center)
-            time.sleep(TRANSITION_WAIT_SECONDS)
+        if self._close_outpost_for_return(screen):
+            if not self._wait_for_map_or_daily_after_close():
+                return False
 
         for back_asset in (
             self.asset_path("back_button.png"),
@@ -566,6 +560,123 @@ class GuildDungeonTask(BaseTask):
             ):
                 return True
         return False
+
+    def _close_outpost_for_return(self, screen) -> bool:
+        close_match = self._match_outpost_close_on_screen(screen)
+        if close_match is None:
+            return False
+        self.context.controller.annotate_next_tap_debug(
+            lines=[
+                "guild dungeon close outpost before return",
+                f"close_confidence={close_match.confidence:.3f}",
+            ],
+            boxes=[(*close_match.bbox, "go")],
+        )
+        self.context.controller.tap(*close_match.center)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+        return True
+
+    def _wait_for_map_or_daily_after_close(self, timeout_seconds: float = 8.0) -> bool:
+        if not hasattr(self.context, "detector"):
+            return True
+
+        deadline = time.time() + timeout_seconds
+        while time.time() <= deadline:
+            screen = self.context.controller.screenshot()
+            if self._match_map_title_on_screen(screen) is not None:
+                return True
+            detected = self.context.detector.detect(screen)
+            if detected.scene in (Scene.DAILY_TASKS, Scene.MAIN):
+                return True
+            if self._match_outpost_close_on_screen(screen) is None:
+                return True
+            time.sleep(0.5)
+        return False
+
+    def _wait_for_returnable_screen_after_battle(self) -> bool:
+        if not hasattr(self.context, "detector"):
+            return True
+
+        deadline = time.time() + self.POST_BATTLE_RETURN_WAIT_SECONDS
+        continue_taps = 0
+        while time.time() <= deadline:
+            screen = self.context.controller.screenshot()
+            if self._match_map_title_on_screen(screen) is not None:
+                return True
+            if self._match_outpost_close_on_screen(screen) is not None:
+                return True
+
+            detected = self.context.detector.detect(screen)
+            if detected.scene in (Scene.DAILY_TASKS, Scene.MAIN):
+                return True
+
+            continue_match = self.context.matcher.match_template(
+                screen,
+                self.asset_path("continue_button.png"),
+                threshold=self.CONTINUE_BUTTON_THRESHOLD,
+                roi=self.CONTINUE_ROI,
+            )
+            if continue_match is not None:
+                if continue_taps >= self.POST_BATTLE_CONTINUE_MAX_TAPS:
+                    self._save_post_battle_wait_debug(
+                        screen,
+                        "guild_dungeon_post_battle_continue_still_visible",
+                        continue_match,
+                        detected.scene.value,
+                    )
+                    return False
+                continue_taps += 1
+                self.context.controller.annotate_next_tap_debug(
+                    lines=[
+                        f"guild dungeon post-battle continue retry {continue_taps}/"
+                        f"{self.POST_BATTLE_CONTINUE_MAX_TAPS}",
+                        f"confidence={continue_match.confidence:.3f}",
+                    ],
+                    boxes=[(*continue_match.bbox, "go")],
+                )
+                self.context.controller.tap(*continue_match.center)
+                time.sleep(1.0)
+                continue
+
+            self._log(
+                "Guild dungeon waiting for post-battle transition before return; "
+                f"scene={detected.scene.value}"
+            )
+            time.sleep(1.0)
+
+        screen = self.context.controller.screenshot()
+        self._save_post_battle_wait_debug(
+            screen,
+            "guild_dungeon_post_battle_return_wait_timeout",
+            None,
+            self.context.detector.detect(screen).scene.value,
+        )
+        return False
+
+    def _save_post_battle_wait_debug(
+        self,
+        screen,
+        label: str,
+        continue_match: Optional[MatchResult],
+        scene_name: str,
+    ) -> None:
+        save_debug = getattr(self.context.controller, "save_annotated_debug", None)
+        if save_debug is None:
+            return
+        boxes = []
+        if continue_match is not None:
+            boxes.append((*continue_match.bbox, "status_roi"))
+        save_debug(
+            label,
+            screen,
+            lines=[
+                "guild dungeon post-battle return wait",
+                f"scene={scene_name}",
+                f"continue_confidence={continue_match.confidence:.3f}" if continue_match else "continue=none",
+            ],
+            boxes=boxes,
+            panel_position="right",
+        )
 
     def _swipe_map(self, scan_index: int) -> None:
         x1, y1, x2, y2, duration = self.MAP_SWIPES[scan_index]

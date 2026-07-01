@@ -11,7 +11,7 @@ import numpy as np
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.ocr_utils import extract_arena_powers_easyocr
+from src.ocr_utils import extract_arena_powers_easyocr, get_cached_easyocr_reader
 from src_v2.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import Roi
 
@@ -129,17 +129,14 @@ class ArenaTask(BaseTask):
                 
                 screen = self.context.controller.screenshot()
                 if self._checkbox_state(screen, opponent["row"], opponent["col"]) != "unchecked":
-                    self.context.debug_capture.save_failure("arena_failed_uncheck")
                     raise TaskFailedError("Arena failed to verify over-6500k opponent was unchecked")
             elif state != "unchecked":
-                self.context.debug_capture.save_failure("arena_checkbox_unknown")
                 raise TaskFailedError("Arena checkbox state is uncertain for over-6500k opponent")
 
         screen = self.context.controller.screenshot()
         selected_count = self._count_checked_opponents(screen)
         
         if selected_count <= 0:
-            self.context.debug_capture.save_failure("arena_no_safe_opponents")
             raise TaskFailedError("No safe opponents or OCR failed")
 
         self._tap(
@@ -155,7 +152,6 @@ class ArenaTask(BaseTask):
         opponents = extract_arena_powers_easyocr(screen, reader=self._get_ocr_reader())
         uncertain = [item for item in opponents if not self._is_ocr_power_confident_enough(item)]
         if uncertain:
-            self.context.debug_capture.save_failure("arena_ocr_uncertain")
             raise TaskFailedError("Arena OCR is uncertain")
         return opponents
 
@@ -202,9 +198,7 @@ class ArenaTask(BaseTask):
 
     def _get_ocr_reader(self):
         if self._ocr_reader is None:
-            from src.ocr_utils import build_easyocr_reader
-
-            self._ocr_reader = build_easyocr_reader()
+            self._ocr_reader = get_cached_easyocr_reader(("en",), download_enabled=False)
         return self._ocr_reader
 
     def _wait_for_battle_result_and_continue(self) -> None:

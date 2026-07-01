@@ -1,4 +1,5 @@
 import configparser
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -7,13 +8,26 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 
 CONFIG_FILE = Path(__file__).resolve().parent / "afk_tasks.ini"
+CONFIG_ENV_VAR = "AFK_TASKS_INI"
+SETTINGS_SECTIONS = ("settings", "設定", "__settings__")
+START_TIME_KEYS = ("start_time", "開始時間", "start")
+
+def get_config_file() -> Path:
+    override = os.environ.get(CONFIG_ENV_VAR)
+    if override:
+        return Path(override).expanduser().resolve()
+    return CONFIG_FILE
 
 def _get_config() -> configparser.ConfigParser:
     config = configparser.ConfigParser()
     config.optionxform = str  # 保持大小寫，避免任務名稱被轉小寫
+    config_file = get_config_file()
     
-    if not CONFIG_FILE.exists():
+    if not config_file.exists():
         # 建立預設設定檔
+        config["settings"] = {
+            "start_time": ""
+        }
         config["點金手"] = {
             "enable": "Y",
             "command": "-m src.main --debug run-current-scene-task midas"
@@ -30,11 +44,12 @@ def _get_config() -> configparser.ConfigParser:
             "enable": "N",
             "command": "-m src.main --debug run-all"
         }
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, "w", encoding="utf-8") as f:
             config.write(f)
-        print(f"📄 [提示] 已自動建立任務設定檔: {CONFIG_FILE.name}")
+        print(f"📄 [提示] 已自動建立任務設定檔: {config_file}")
     else:
-        config.read(CONFIG_FILE, encoding="utf-8")
+        config.read(config_file, encoding="utf-8")
         
     return config
 
@@ -43,6 +58,8 @@ def get_tasks_to_run() -> list[str]:
     tasks_to_run = []
     
     for section in config.sections():
+        if section in SETTINGS_SECTIONS:
+            continue
         enable_val = config.get(section, "enable", fallback="N").strip().upper()
         if enable_val in ("Y", "O", "1", "TRUE"):
             command_val = config.get(section, "command", fallback="").strip()
@@ -52,6 +69,17 @@ def get_tasks_to_run() -> list[str]:
                 tasks_to_run.append(section)
                 
     return tasks_to_run
+
+def get_start_time() -> str | None:
+    config = _get_config()
+    for section in SETTINGS_SECTIONS:
+        if not config.has_section(section):
+            continue
+        for key in START_TIME_KEYS:
+            value = config.get(section, key, fallback="").strip()
+            if value:
+                return value
+    return None
 
 def get_command_for_task(task_name: str) -> list[str]:
     config = _get_config()

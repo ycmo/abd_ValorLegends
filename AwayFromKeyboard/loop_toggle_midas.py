@@ -20,6 +20,7 @@ from src.tasks.midas import MidasAutoResult, MidasTask
 from src.vision_matcher import write_image
 from AwayFromKeyboard.ui_recovery import UIRecovery
 from AwayFromKeyboard.integration_task.router import RouteNavigator
+from AwayFromKeyboard.discord_notify import notify_status
 
 AUTO_SHORT_COOLDOWN_SECONDS = 5 * 60
 AUTO_OCR_FAILURE_SLEEP_SECONDS = 2 * 60 * 60
@@ -201,12 +202,14 @@ def _print_ocr_failure(result: MidasAutoResult) -> None:
     )
 
 
-def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
+def process_auto_account(context, recovery: UIRecovery, account: str, *, notify_enabled: bool = False) -> bool:
     while True:
         print(f"\n💰 [Auto] 執行帳號 【{account}】 點金手")
+        notify_status("Midas", "開始", account=account, route="點金手", enabled=notify_enabled)
         result = run_midas_auto_once(context, recovery, require_cooldown=False)
         if result.clicked:
             print(f"✅ [Auto] 帳號 【{account}】 點金成功，前往下一帳號。")
+            notify_status("Midas", "完成", account=account, route="點金手", enabled=notify_enabled)
             return True
         if not result.cooldown_valid:
             print(
@@ -214,12 +217,28 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
                 f"text={result.ocr_text!r}, confidence={result.ocr_confidence:.3f}；"
                 "視為冷卻超過 5 分鐘，前往下一帳號。"
             )
+            notify_status(
+                "Midas",
+                "OCR 失敗",
+                account=account,
+                route="點金手",
+                detail=f"text={result.ocr_text!r}, conf={result.ocr_confidence:.3f}",
+                enabled=notify_enabled,
+            )
             return True
 
         cooldown = result.cooldown_seconds or 0
         print(f"⏱️ [Auto] 帳號 【{account}】 剩餘冷卻 {_format_seconds(cooldown)}")
         if cooldown > AUTO_SHORT_COOLDOWN_SECONDS:
             print("➡️ [Auto] 冷卻超過 5 分鐘，前往下一帳號。")
+            notify_status(
+                "Midas",
+                "冷卻中",
+                account=account,
+                route="點金手",
+                detail=_format_seconds(cooldown),
+                enabled=notify_enabled,
+            )
             return True
 
         wait_seconds = cooldown
@@ -228,6 +247,14 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
             f"💤 [Auto] 短冷卻，原帳號等待 {_format_seconds(wait_seconds)}；"
             f"預計 {wake_time.strftime('%Y-%m-%d %H:%M:%S')} 重試。"
         )
+        notify_status(
+            "Midas",
+            "短冷卻等待",
+            account=account,
+            route="點金手",
+            detail=f"{_format_seconds(wait_seconds)}; wake={wake_time.strftime('%Y-%m-%d %H:%M:%S')}",
+            enabled=notify_enabled,
+        )
         time.sleep(wait_seconds)
         print("🌅 [Auto] 短冷卻結束，檢查異地登入與登入畫面...")
         if recovery.handle_wakeup_exceptions():
@@ -235,11 +262,19 @@ def process_auto_account(context, recovery: UIRecovery, account: str) -> bool:
         _recover_or_restart(recovery)
 
 
-def _read_em3_sleep_seconds(context, recovery: UIRecovery) -> int:
+def _read_em3_sleep_seconds(context, recovery: UIRecovery, *, notify_enabled: bool = False) -> int:
     print("\n🔎 [Auto] 已回到 em3，讀取大休眠冷卻時間...")
     final_result = run_midas_auto_once(context, recovery, require_cooldown=True)
     if not final_result.cooldown_valid:
         _print_ocr_failure(final_result)
+        notify_status(
+            "Midas",
+            "em3 OCR 失敗",
+            account="em3",
+            route="點金手",
+            detail=f"text={final_result.ocr_text!r}, conf={final_result.ocr_confidence:.3f}; sleep=02:00:00",
+            enabled=notify_enabled,
+        )
         return AUTO_OCR_FAILURE_SLEEP_SECONDS
 
     cooldown = final_result.cooldown_seconds or 0
@@ -248,10 +283,19 @@ def _read_em3_sleep_seconds(context, recovery: UIRecovery) -> int:
         f"⏰ [Auto] em3 冷卻 {_format_seconds(cooldown)}，"
         f"扣除 4 分鐘登入緩衝後休眠 {_format_seconds(sleep_seconds)}。"
     )
+    wake_time = datetime.now() + timedelta(seconds=sleep_seconds)
+    notify_status(
+        "Midas",
+        "進入大休眠",
+        account="em3",
+        route="點金手",
+        detail=f"cooldown={_format_seconds(cooldown)}, sleep={_format_seconds(sleep_seconds)}, wake={wake_time.strftime('%Y-%m-%d %H:%M:%S')}",
+        enabled=notify_enabled,
+    )
     return sleep_seconds
 
 
-def run_auto_initial_round(context, recovery: UIRecovery) -> int:
+def run_auto_initial_round(context, recovery: UIRecovery, *, notify_enabled: bool = False) -> int:
     print("\n🌅 [Auto] 初始輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
         print("✅ [Auto] 初始輪喚醒異常狀態已排除。")
@@ -263,14 +307,16 @@ def run_auto_initial_round(context, recovery: UIRecovery) -> int:
         "\n▶️ [Auto] 初始輪：先執行當前畫面帳號點金，"
         "再回 em3 讀取第一次大休眠時間。"
     )
-    process_auto_account(context, recovery, current_label)
+    process_auto_account(context, recovery, current_label, notify_enabled=notify_enabled)
 
     if current_account != "em3":
         print("🔄 [Auto] 初始輪返回起點帳號 【em3】")
+        notify_status("Midas", "切換帳號開始", account="em3", enabled=notify_enabled)
         if not switch_account("em3"):
             raise RuntimeError("初始輪返回 em3 失敗")
+        notify_status("Midas", "切換帳號完成", account="em3", enabled=notify_enabled)
 
-    return _read_em3_sleep_seconds(context, recovery)
+    return _read_em3_sleep_seconds(context, recovery, notify_enabled=notify_enabled)
 
 
 def run_auto_sweep_first_round(
@@ -279,6 +325,7 @@ def run_auto_sweep_first_round(
     *,
     accounts: dict,
     use_all: bool,
+    notify_enabled: bool = False,
 ) -> int:
     print("\n🌅 [Auto] sweep-first 初始輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
@@ -295,17 +342,21 @@ def run_auto_sweep_first_round(
     for account in process_order:
         if active_account != account:
             print(f"🔄 [Auto] 切換至帳號 【{account}】")
+            notify_status("Midas", "切換帳號開始", account=account, enabled=notify_enabled)
             if not switch_account(account):
                 raise RuntimeError(f"sweep-first 切換至帳號 {account} 失敗")
             active_account = account
-        process_auto_account(context, recovery, account)
+            notify_status("Midas", "切換帳號完成", account=account, enabled=notify_enabled)
+        process_auto_account(context, recovery, account, notify_enabled=notify_enabled)
 
     if active_account != final_account:
         print(f"🔄 [Auto] sweep-first 返回起點帳號 【{final_account}】")
+        notify_status("Midas", "切換帳號開始", account=final_account, enabled=notify_enabled)
         if not switch_account(final_account):
             raise RuntimeError(f"sweep-first 返回 {final_account} 失敗")
+        notify_status("Midas", "切換帳號完成", account=final_account, enabled=notify_enabled)
 
-    return _read_em3_sleep_seconds(context, recovery)
+    return _read_em3_sleep_seconds(context, recovery, notify_enabled=notify_enabled)
 
 
 def run_auto_round(
@@ -314,6 +365,7 @@ def run_auto_round(
     *,
     accounts: dict,
     use_all: bool,
+    notify_enabled: bool = False,
 ) -> int:
     print("\n🌅 [Auto] 新一輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
@@ -329,30 +381,48 @@ def run_auto_round(
     for account in order:
         if active_account != account:
             print(f"🔄 [Auto] 切換至帳號 【{account}】")
+            notify_status("Midas", "切換帳號開始", account=account, enabled=notify_enabled)
             if not switch_account(account):
                 raise RuntimeError(f"切換至帳號 {account} 失敗")
             active_account = account
-        process_auto_account(context, recovery, account)
+            notify_status("Midas", "切換帳號完成", account=account, enabled=notify_enabled)
+        process_auto_account(context, recovery, account, notify_enabled=notify_enabled)
 
     if active_account != "em3":
         print("🔄 [Auto] 返回起點帳號 【em3】")
+        notify_status("Midas", "切換帳號開始", account="em3", enabled=notify_enabled)
         if not switch_account("em3"):
             raise RuntimeError("返回 em3 失敗")
+        notify_status("Midas", "切換帳號完成", account="em3", enabled=notify_enabled)
 
-    return _read_em3_sleep_seconds(context, recovery)
+    return _read_em3_sleep_seconds(context, recovery, notify_enabled=notify_enabled)
 
 
-def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool, sweep_first: bool = False) -> None:
+def run_auto_loop(
+    context,
+    recovery: UIRecovery,
+    *,
+    use_all: bool,
+    sweep_first: bool = False,
+    notify_enabled: bool = False,
+) -> None:
     accounts = load_accounts()
+    notify_status(
+        "Midas",
+        "啟動",
+        detail=f"accounts={'all' if use_all else 'em3/311'}, sweep_first={sweep_first}",
+        enabled=notify_enabled,
+    )
     if sweep_first:
         sleep_seconds = run_auto_sweep_first_round(
             context,
             recovery,
             accounts=accounts,
             use_all=use_all,
+            notify_enabled=notify_enabled,
         )
     else:
-        sleep_seconds = run_auto_initial_round(context, recovery)
+        sleep_seconds = run_auto_initial_round(context, recovery, notify_enabled=notify_enabled)
     next_time = datetime.now() + timedelta(seconds=sleep_seconds)
     print(
         f"💤 [Auto] 初始輪結束，休眠 {_format_seconds(sleep_seconds)}；"
@@ -366,6 +436,7 @@ def run_auto_loop(context, recovery: UIRecovery, *, use_all: bool, sweep_first: 
             recovery,
             accounts=accounts,
             use_all=use_all,
+            notify_enabled=notify_enabled,
         )
         next_time = datetime.now() + timedelta(seconds=sleep_seconds)
         print(
@@ -387,6 +458,7 @@ def main():
         action="store_true",
         help="儲存 Router 與點金手每次操作前後的偵錯截圖",
     )
+    parser.add_argument("--no-discord", action="store_true", help="關閉 Discord 狀態通知")
     args = parser.parse_args()
 
     if args.all:
@@ -409,18 +481,34 @@ def main():
         context = build_context(debug=args.debug_actions, console_debug=True)
         if not context.controller.connect():
              print("❌ 無法連線至 ADB 裝置")
+             notify_status("Midas", "ADB 連線失敗", enabled=not args.no_discord)
              sys.exit(1)
         recovery = UIRecovery(context.controller, context.matcher, context.detector)
     except Exception as e:
         print(f"❌ 初始化 UIRecovery 失敗: {e}")
+        notify_status("Midas", "初始化失敗", detail=str(e), enabled=not args.no_discord)
         sys.exit(1)
 
     try:
-        run_auto_loop(context, recovery, use_all=args.all, sweep_first=args.sweep_first)
+        run_auto_loop(
+            context,
+            recovery,
+            use_all=args.all,
+            sweep_first=args.sweep_first,
+            notify_enabled=not args.no_discord,
+        )
             
     except KeyboardInterrupt:
         print("\n🛑 [中止] 接收到手動中斷指令 (Ctrl+C)，已安全退出掛機腳本。")
         sys.exit(0)
+    except Exception as e:
+        notify_status(
+            "Midas",
+            "崩潰",
+            detail=str(e),
+            enabled=not args.no_discord,
+        )
+        raise
 
 if __name__ == "__main__":
     main()

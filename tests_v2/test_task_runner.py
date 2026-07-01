@@ -47,6 +47,7 @@ from src_v2.tasks.time_travel import TimeTravelTask
 from src_v2.tasks.midas import MidasTask
 from src_v2.tasks.endless_trial import EndlessTrialTask, EndlessTrialScene
 from src_v2.tasks.arena import ArenaTask
+from src_v2.tasks.guild_dungeon import GuildDungeonTask
 from src_v2.daily_runner import DailyRunner
 
 
@@ -742,6 +743,7 @@ class TestArenaExecute(unittest.TestCase):
 
     def test_execute_completes_target_fights(self):
         import numpy as np
+        from unittest.mock import Mock
         task = ArenaTask(self.ctx)
         opponents = [{"row": r, "col": c, "power_k": 1000, "confidence": 0.9} for r in range(1, 5) for c in range(1, 3)]
         
@@ -749,6 +751,7 @@ class TestArenaExecute(unittest.TestCase):
              patch.object(task, '_wait_for') as mock_wait_for, \
              patch.object(task, '_tap'), \
              patch('time.sleep'), \
+             patch.object(task, '_get_ocr_reader', return_value=Mock()), \
              patch('src_v2.tasks.arena.extract_arena_powers_easyocr', return_value=opponents), \
              patch.object(task, '_checkbox_state', return_value="checked"), \
              patch.object(task.context.controller, 'screenshot', return_value=np.zeros((10, 10, 3), dtype=np.uint8)), \
@@ -760,6 +763,7 @@ class TestArenaExecute(unittest.TestCase):
 
     def test_execute_raises_when_no_safe_opponents(self):
         import numpy as np
+        from unittest.mock import Mock
         task = ArenaTask(self.ctx)
         opponents = [{"row": r, "col": c, "power_k": 9000, "confidence": 0.9} for r in range(1, 5) for c in range(1, 3)]
         
@@ -767,6 +771,7 @@ class TestArenaExecute(unittest.TestCase):
              patch.object(task, '_wait_for') as mock_wait_for, \
              patch.object(task, '_tap'), \
              patch('time.sleep'), \
+             patch.object(task, '_get_ocr_reader', return_value=Mock()), \
              patch('src_v2.tasks.arena.extract_arena_powers_easyocr', return_value=opponents), \
              patch.object(task, '_checkbox_state', return_value="unchecked"), \
              patch.object(task.context.controller, 'screenshot', return_value=np.zeros((10, 10, 3), dtype=np.uint8)), \
@@ -796,6 +801,250 @@ class TestArenaExecute(unittest.TestCase):
         with patch.object(task, '_checkbox_center', return_value=(15, 15)):
             state = task._checkbox_state(img, 1, 1)
             self.assertEqual(state, "checked")
+
+
+# ---------------------------------------------------------------------------
+# GuildDungeonTask 業務邏輯
+# ---------------------------------------------------------------------------
+
+class TestGuildDungeonExecute(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.ctx = _make_context(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_execute_completes_two_battles(self):
+        task = GuildDungeonTask(self.ctx)
+        with patch.object(task, '_is_plain_map_screen', return_value=False), \
+             patch.object(task, '_is_battle_ready_screen', return_value=False), \
+             patch.object(task, '_match_battle_ready_on_screen', return_value=None), \
+             patch.object(task, '_select_challenge_from_open_outpost', return_value="sword"), \
+             patch.object(task, '_start_battle_from_ready_screen'), \
+             patch.object(task, '_wait_for_battle_continue'), \
+             patch.object(task, '_wait_for_map_screen'), \
+             patch.object(task, '_close_outpost_if_visible', return_value=False):
+            
+            result = task.execute()
+            self.assertIn("completed=2", result)
+
+    def test_execute_stops_when_attempts_exhausted(self):
+        task = GuildDungeonTask(self.ctx)
+        with patch.object(task, '_is_plain_map_screen', return_value=True), \
+             patch.object(task, '_daily_attempts_exhausted', return_value=True):
+            result = task.execute()
+            self.assertIn("exhausted", result)
+
+    def test_pre_return_hook_calls_three_steps(self):
+        task = GuildDungeonTask(self.ctx)
+        with patch.object(task, '_wait_for_returnable_screen_after_battle') as m1, \
+             patch.object(task, '_close_outpost_for_return') as m2, \
+             patch.object(task, '_wait_for_map_or_daily_after_close') as m3:
+            task._pre_return_hook()
+            m1.assert_called_once()
+            m2.assert_called_once()
+            m3.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# HeroContestTask 業務邏輯
+# ---------------------------------------------------------------------------
+
+class TestHeroContestExecute(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.ctx = _make_context(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_execute_wins_target_count(self):
+        from src_v2.tasks.hero_contest import HeroContestTask, HeroContestResult
+        task = HeroContestTask(self.ctx)
+        win_result = HeroContestResult("win", _make_match())
+        with patch.object(task, '_attempts_exhausted', return_value=False), \
+             patch.object(task, '_tap'), \
+             patch.object(task, '_wait_for_result', return_value=win_result), \
+             patch.object(task, '_dismiss_result'), \
+             patch.object(task, '_recover_to_main_screen_after_result', return_value=True):
+            
+            result = task.execute()
+            self.assertIn("wins=4", result)
+
+    def test_execute_refreshes_after_two_consecutive_losses(self):
+        from src_v2.tasks.hero_contest import HeroContestTask, HeroContestResult
+        task = HeroContestTask(self.ctx)
+        loss_result = HeroContestResult("loss", _make_match())
+        win_result = HeroContestResult("win", _make_match())
+        results = [loss_result, loss_result, win_result, win_result, win_result, win_result]
+        
+        def mock_wait_for_result():
+            return results.pop(0)
+            
+        with patch.object(task, '_attempts_exhausted', return_value=False), \
+             patch.object(task, '_tap') as mock_tap, \
+             patch.object(task, '_wait_for_result', side_effect=mock_wait_for_result), \
+             patch.object(task, '_dismiss_result'), \
+             patch.object(task, '_recover_to_main_screen_after_result', return_value=True):
+            
+            task.execute()
+            # check if refresh was tapped
+            refresh_calls = [call for call in mock_tap.call_args_list if "refresh" in call[0][0]]
+            self.assertGreater(len(refresh_calls), 0)
+
+    def test_execute_stops_when_attempts_exhausted(self):
+        from src_v2.tasks.hero_contest import HeroContestTask
+        task = HeroContestTask(self.ctx)
+        with patch.object(task, '_attempts_exhausted', return_value=True):
+            result = task.execute()
+            self.assertIn("exhausted", result)
+
+
+# ---------------------------------------------------------------------------
+# AbyssTask 業務邏輯
+# ---------------------------------------------------------------------------
+
+class TestAbyssExecute(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.ctx = _make_context(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_execute_skips_when_done_zero(self):
+        from src_v2.tasks.abyss import AbyssTask
+        from src.exceptions import TaskSkippedError
+        task = AbyssTask(self.ctx)
+        
+        with patch.object(task, '_is_main_done_zero', return_value=True):
+            with self.assertRaises(TaskSkippedError) as cm:
+                task.execute()
+            self.assertIn("already completed", str(cm.exception))
+
+    def test_execute_returns_completed_when_all_steps_succeed(self):
+        from src_v2.tasks.abyss import AbyssTask, AbyssRentalRow
+        from pathlib import Path
+        
+        task = AbyssTask(self.ctx)
+        # Mock _get_ocr_reader to prevent EasyOCR download
+        task._get_ocr_reader = MagicMock()
+        
+        mock_row = AbyssRentalRow(
+            scan_index=1,
+            row_index=1,
+            row_y=100,
+            power_text="999k",
+            power_k=999,
+            confidence=0.9,
+            rent_available=True,
+            rent_center=(100, 100),
+            rent_confidence=0.9,
+            rent_brightness_ratio=1.0,
+            crop_path=Path("dummy.png")
+        )
+        
+        with patch.object(task, '_is_main_done_zero', return_value=False), \
+             patch.object(task, '_tap_rental_entry'), \
+             patch.object(task, 'probe_rental_scan', return_value=[mock_row]), \
+             patch.object(task, '_find_and_tap_rental_candidate_by_reverse_search'), \
+             patch.object(task, '_close_rental_dialog'), \
+             patch.object(task, '_tap_training_entry'), \
+             patch.object(task, '_ensure_artifact_plan_2'), \
+             patch.object(task, '_tap_rented_hero'), \
+             patch.object(task, '_tap_start_training'), \
+             patch.object(task, '_wait_skip_and_keep_result'):
+            
+            # Should run without raising exception
+            result = task.execute()
+            self.assertIn("abyss one round completed", result)
+
+    def test_execute_and_return_does_not_call_return_to_daily(self):
+        from src_v2.tasks.abyss import AbyssTask
+        from src_v2.task_runner import TaskState
+        task = AbyssTask(self.ctx)
+        
+        with patch.object(task, 'execute', return_value="done"), \
+             patch.object(task, '_return_to_daily') as mock_return:
+            
+            result = task._execute_and_return(0.0)
+            self.assertEqual(result.state, TaskState.COMPLETED)
+            mock_return.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# CallOfTheGaleTask 業務邏輯
+# ---------------------------------------------------------------------------
+
+class TestCallOfTheGaleExecute(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.ctx = _make_context(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_execute_exits_when_scrolls_zero(self):
+        from src_v2.tasks.call_of_the_gale import CallOfTheGaleTask
+        task = CallOfTheGaleTask(self.ctx)
+        task._get_ocr_reader = MagicMock()
+        
+        with patch.object(task, 'get_scroll_count', return_value=0), \
+             patch.object(task, '_wait_and_click') as mock_wait, \
+             patch.object(task.context.controller, 'tap'):
+            
+            result = task.execute()
+            self.assertEqual(result, "call_of_the_gale completed")
+            mock_wait.assert_called_with("return_07_button.png", wait_appear=10, wait_disappear=5)
+
+    def test_execute_runs_one_round_then_exits(self):
+        from src_v2.tasks.call_of_the_gale import CallOfTheGaleTask
+        task = CallOfTheGaleTask(self.ctx)
+        task._get_ocr_reader = MagicMock()
+        
+        scroll_returns = [1, 0]
+        def mock_get_scroll(*args, **kwargs):
+            return scroll_returns.pop(0) if scroll_returns else 0
+            
+        def mock_match(screen, path, *args, **kwargs):
+            if "exit_button.png" in str(path):
+                return _make_match()
+            return None
+            
+        with patch.object(task, 'get_scroll_count', side_effect=mock_get_scroll), \
+             patch.object(task, 'run_single_round', return_value=True), \
+             patch.object(task.context.matcher, 'match_template', side_effect=mock_match), \
+             patch.object(task, '_wait_and_click') as mock_wait, \
+             patch.object(task.context.controller, 'tap'):
+            
+            result = task.execute()
+            self.assertEqual(result, "call_of_the_gale completed")
+            calls = [call[0][0] for call in mock_wait.call_args_list]
+            self.assertIn("exit_button.png", calls)
+            self.assertIn("return_06_button.png", calls)
+            self.assertIn("return_07_button.png", calls)
+
+    def test_execute_and_return_does_not_call_return_to_daily(self):
+        from src_v2.tasks.call_of_the_gale import CallOfTheGaleTask
+        from src_v2.task_runner import TaskState
+        import time
+        task = CallOfTheGaleTask(self.ctx)
+        
+        with patch.object(task, 'execute', return_value="done"), \
+             patch.object(task, '_return_to_daily') as mock_return:
+            
+            result = task._execute_and_return(started=time.time())
+            self.assertEqual(result.state, TaskState.COMPLETED)
+            mock_return.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -839,7 +1088,7 @@ class TestDailyRunner(unittest.TestCase):
     def test_run_all_skips_unported_tasks(self):
         """run_all 碰到未移植的 key → skip，不 crash，results 只含已移植的。"""
         runner = DailyRunner(self.ctx)
-        order = ["arena", "guild_wish"]  # arena 尚未移植
+        order = ["fake_unported_task", "guild_wish"]  # fake_unported_task 尚未移植
         expected = self._result(TaskState.COMPLETED)
         with patch.object(GuildWishTask, 'run', return_value=expected):
             results = runner.run_all(order)

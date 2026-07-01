@@ -41,6 +41,7 @@ class TaskContext:
     navigator: Navigator
     battle: BattleHandler
     logger: DebugLogger
+    blocker: object | None = None
 
 
 @dataclass(frozen=True)

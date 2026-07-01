@@ -1,8 +1,26 @@
-"""
-bounty.py — 懸賞委託（移植計畫）
+from __future__ import annotations
 
-業務邏輯參考 src/tasks/bounty.py。
-目前原版為 stub（尚未實作），src_v2 同樣保持 stub。
-"""
+from src.config import TASK_SPECS
+from src.exceptions import MissingAssetError
+from src_v2.task_runner import BaseTask, TaskSceneAnchor
 
-# TODO: 待原版實作後一併移植
+
+class BountyTask(BaseTask):
+    spec = TASK_SPECS["bounty"]
+    required_assets = (
+        "task_label.png",
+        "bounty_board_anchor.png",
+        "dispatch_button.png",
+        "refresh_button.png",
+    )
+    task_scene_anchors = (
+        TaskSceneAnchor("bounty_board_anchor.png", threshold=0.82),
+    )
+
+    def execute(self) -> str:
+        whitelist_dir = self.spec.asset_dir / "whitelist"
+        if not whitelist_dir.exists() or not list(whitelist_dir.glob("*.png")):
+            raise MissingAssetError(
+                "Bounty whitelist is empty. Add resource templates under assets/tasks/bounty/whitelist/."
+            )
+        return "bounty whitelist framework ready; dispatch logic awaits concrete whitelist rules"

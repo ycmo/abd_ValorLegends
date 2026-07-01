@@ -9,7 +9,7 @@ import numpy as np
 
 from src.config import CAPTURES_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, TaskFailedError, TaskSkippedError
-from src.ocr_utils import extract_arena_powers_easyocr
+from src.ocr_utils import extract_arena_powers_easyocr, extract_arena_powers_easyocr_batch
 from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult, Roi, write_image
@@ -147,8 +147,12 @@ class ArenaTask(BaseTask):
         return selected_count
 
     def _read_opponents(self, screen) -> list[dict]:
-        opponents = extract_arena_powers_easyocr(screen, reader=self._get_ocr_reader())
-        uncertain = [item for item in opponents if not self._is_ocr_power_confident_enough(item)]
+        reader = self._get_ocr_reader()
+        opponents = extract_arena_powers_easyocr_batch(screen, reader=reader)
+        uncertain = self._uncertain_ocr_items(opponents)
+        if uncertain:
+            opponents = extract_arena_powers_easyocr(screen, reader=reader)
+            uncertain = self._uncertain_ocr_items(opponents)
         if uncertain:
             detail = "; ".join(
                 f"row={item['row']} col={item['col']} text={item['power_text']!r} "
@@ -160,6 +164,9 @@ class ArenaTask(BaseTask):
                 f"Arena OCR is uncertain; stopping before selecting opponents: {detail}",
             )
         return opponents
+
+    def _uncertain_ocr_items(self, opponents: list[dict]) -> list[dict]:
+        return [item for item in opponents if not self._is_ocr_power_confident_enough(item)]
 
     def _is_ocr_power_confident_enough(self, item: dict) -> bool:
         power_k = item["power_k"]

@@ -17,17 +17,170 @@ import subprocess
 import task_config
 import os
 import argparse
+from contextlib import contextmanager
 
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
-def main():
-    if os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on"):
-        print(
-            f"[perf pid={os.getpid()}] run_router imports_ready "
-            f"elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s",
-            flush=True,
+
+class _TeeStream:
+    def __init__(self, console_stream, log_stream):
+        self._console_stream = console_stream
+        self._log_stream = log_stream
+        self.encoding = getattr(console_stream, "encoding", "utf-8")
+
+    def write(self, text):
+        self._console_stream.write(text)
+        self._log_stream.write(text)
+        return len(text)
+
+    def flush(self):
+        self._console_stream.flush()
+        self._log_stream.flush()
+
+    def isatty(self):
+        return self._console_stream.isatty()
+
+
+@contextmanager
+def _tee_output(log_file: str | None):
+    if not log_file:
+        yield
+        return
+
+    path = Path(log_file).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    with path.open("w", encoding="utf-8", newline="") as log_stream:
+        sys.stdout = _TeeStream(original_stdout, log_stream)
+        sys.stderr = _TeeStream(original_stderr, log_stream)
+        try:
+            print(f"[Router] log_file={path}")
+            yield
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
+
+def _is_src_main_command(cmd_args: list[str]) -> bool:
+    return len(cmd_args) >= 2 and cmd_args[0] == "-m" and cmd_args[1] == "src.main"
+
+
+def _has_cli_option(args: list[str], option: str) -> bool:
+    prefix = option + "="
+    return any(arg == option or arg.startswith(prefix) for arg in args)
+
+
+def _prepare_src_main_argv(
+    cmd_args: list[str],
+    *,
+    selected_serial: str | None,
+    debug_actions: bool,
+) -> list[str]:
+    argv = list(cmd_args[2:])
+    if selected_serial and not _has_cli_option(argv, "--serial"):
+        argv = ["--serial", selected_serial] + argv
+    if debug_actions and not _has_cli_option(argv, "--debug-actions"):
+        argv = ["--debug-actions"] + argv
+    return argv
+
+
+@contextmanager
+def _temporary_env(updates: dict[str, str]):
+    previous = {key: os.environ.get(key) for key in updates}
+    try:
+        os.environ.update(updates)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _run_src_main_in_process(argv: list[str], *, project_root: Path, env_updates: dict[str, str]) -> int:
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    try:
+        with _temporary_env(env_updates):
+            from src import main as src_main
+
+            return int(src_main.main(argv) or 0)
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        try:
+            return int(code)
+        except (TypeError, ValueError):
+            return 1
+
+
+def _run_subprocess_streamed(full_cmd: list[str], *, project_root: Path, env: dict[str, str]) -> int:
+    process = subprocess.Popen(
+        full_cmd,
+        cwd=str(project_root),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="")
+    return int(process.wait())
+
+
+def run_configured_command(
+    cmd_args: list[str],
+    *,
+    project_root: Path,
+    python_exe: str,
+    selected_serial: str | None,
+    route_debug_label: str,
+    debug_actions: bool,
+    force_subprocess: bool,
+) -> int:
+    full_cmd = [python_exe] + cmd_args
+    print("\n" + "=" * 60)
+    print("🛠️ [Debug] 若腳本卡住，可手動在終端機貼上以下指令重新執行：")
+    print(f">>> {' '.join(full_cmd)}")
+    print("=" * 60)
+
+    env_updates: dict[str, str] = {}
+    if debug_actions:
+        env_updates["VL_DEBUG_ACTIONS"] = "1"
+        env_updates.setdefault("VL_ACTION_DEBUG_LABEL", route_debug_label)
+    if selected_serial:
+        env_updates["VL_ADB_SERIAL"] = selected_serial
+        print(f"[Router] 使用 ADB serial: {selected_serial}")
+
+    if _is_src_main_command(cmd_args) and not force_subprocess:
+        argv = _prepare_src_main_argv(
+            cmd_args,
+            selected_serial=selected_serial,
+            debug_actions=debug_actions,
         )
+        print("[Router] 執行模式: in-process src.main")
+        print("=" * 60 + "\n")
+        return _run_src_main_in_process(argv, project_root=project_root, env_updates=env_updates)
+
+    if force_subprocess and _is_src_main_command(cmd_args):
+        print("[Router] 執行模式: subprocess (--force-subprocess)")
+    else:
+        print("[Router] 執行模式: subprocess")
+    print("=" * 60 + "\n")
+
+    child_env = os.environ.copy()
+    child_env.update(env_updates)
+    return _run_subprocess_streamed(full_cmd, project_root=project_root, env=child_env)
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AFK route runner")
     parser.add_argument("route_name", nargs="?", default="點金手", help="要執行的路由任務名稱")
     parser.add_argument(
@@ -35,7 +188,26 @@ def main():
         action="store_true",
         help="儲存非錯誤 optional miss 與子程序 action debug 截圖",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--force-subprocess",
+        action="store_true",
+        help="強制使用舊的 subprocess 執行模式，不使用 in-process src.main",
+    )
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        help="將 Router 與子任務輸出同步寫入 UTF-8 log 檔案",
+    )
+    return parser
+
+
+def _run(args) -> None:
+    if os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on"):
+        print(
+            f"[perf pid={os.getpid()}] run_router imports_ready "
+            f"elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s",
+            flush=True,
+        )
     route_name = args.route_name
         
     print(f"🚀 開始執行路由任務：{route_name}")
@@ -59,26 +231,21 @@ def main():
             project_root = current_dir.parent.parent
             python_exe = sys.executable
             
-            full_cmd = [python_exe] + cmd_args
-            print("\n" + "=" * 60)
-            print("🛠️ [Debug] 若腳本卡住，可手動在終端機貼上以下指令重新執行：")
-            print(f">>> {' '.join(full_cmd)}")
-            print("=" * 60 + "\n")
-            
             # 加上 try-except 捕捉 subprocess 可能的系統級崩潰
             script_failed = False
             try:
-                child_env = os.environ.copy()
-                if args.debug_actions:
-                    child_env["VL_DEBUG_ACTIONS"] = "1"
-                    child_env.setdefault("VL_ACTION_DEBUG_LABEL", route_debug_label)
                 selected_serial = getattr(navigator.controller, "serial", None)
-                if selected_serial:
-                    child_env["VL_ADB_SERIAL"] = selected_serial
-                    print(f"[Router] 子程序 ADB serial: {selected_serial}")
-                result = subprocess.run(full_cmd, cwd=str(project_root), env=child_env)
-                if result.returncode != 0:
-                    print(f"⚠️ [警告] 外部指令執行結束，但回傳錯誤碼 (returncode={result.returncode})")
+                returncode = run_configured_command(
+                    cmd_args,
+                    project_root=project_root,
+                    python_exe=python_exe,
+                    selected_serial=selected_serial,
+                    route_debug_label=route_debug_label,
+                    debug_actions=args.debug_actions,
+                    force_subprocess=args.force_subprocess,
+                )
+                if returncode != 0:
+                    print(f"⚠️ [警告] 外部指令執行結束，但回傳錯誤碼 (returncode={returncode})")
                     script_failed = True
                 else:
                     print(f"✅ [成功] 外部腳本執行完畢！")
@@ -110,6 +277,12 @@ def main():
     except Exception as e:
         print(f"❌ [錯誤] 發生未預期的例外狀況: {e}")
         sys.exit(1)
+
+def main(argv=None):
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    with _tee_output(args.log_file):
+        _run(args)
 
 if __name__ == "__main__":
     main()

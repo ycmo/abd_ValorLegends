@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Optional, Type
 
 from src.adb_controller import DeviceController
 from src.battle_handler import BattleHandler
+from src.blocker_handler import BlockerHandler
 from src.config import (
     DEFAULT_SERIAL,
     RUN_ALL_GO_FIRST_TASK_ORDER,
@@ -45,6 +46,7 @@ def build_context(
     finder = DailyTaskFinder(controller, matcher, logger=logger)
     navigator = Navigator(controller, matcher, detector, finder, logger=logger)
     battle = BattleHandler(controller, matcher, detector)
+    blocker = BlockerHandler(controller)
     return TaskContext(
         controller=controller,
         matcher=matcher,
@@ -52,6 +54,7 @@ def build_context(
         finder=finder,
         navigator=navigator,
         battle=battle,
+        blocker=blocker,
         logger=logger,
     )
 
@@ -136,7 +139,14 @@ class DailyRunner:
                 force=True,
             )
             try:
-                rows = self.context.finder.scan_current_screen_go_first(task_specs)
+                blocker = getattr(self.context, "blocker", None)
+                if blocker is None:
+                    rows = self.context.finder.scan_current_screen_go_first(task_specs)
+                else:
+                    screen = self.context.controller.screenshot()
+                    if self._handle_known_blocker_before_scan(log_prefix, screen):
+                        continue
+                    rows = self.context.finder.scan_current_screen_go_first(task_specs, screen=screen)
             except Exception as exc:
                 result = self._failed_result_from_exception(log_prefix, exc)
                 results.append(result)
@@ -271,14 +281,38 @@ class DailyRunner:
             return
         self.context.logger.log(f"{log_prefix} action_debug_dir={debug_dir}", force=True)
 
+    def _handle_known_blocker_before_scan(self, log_prefix: str, screen) -> bool:
+        blocker = getattr(self.context, "blocker", None)
+        if blocker is None:
+            return False
+        if not blocker.handle_known_blocker(screen):
+            return False
+        self.context.logger.log(f"{log_prefix} cleared known blocker before scan", force=True)
+        return True
+
     def _swipe_daily_list_or_failed(self, log_prefix: str):
         try:
-            return self.context.finder._swipe_until_changed(
+            changed = self.context.finder._swipe_until_changed(
                 360,
                 430,
                 360,
                 230,
-                duration_ms=420,
+                duration_ms=700,
+                wait_seconds=1.0,
+            )
+            if changed:
+                return True
+
+            self.context.logger.log(
+                f"{log_prefix} daily list swipe had no visible movement; retrying with longer swipe",
+                force=True,
+            )
+            return self.context.finder._swipe_until_changed(
+                360,
+                460,
+                360,
+                180,
+                duration_ms=900,
                 wait_seconds=1.0,
             )
         except Exception as exc:
@@ -340,5 +374,5 @@ class DailyRunner:
             time.sleep(failure_sleep_seconds)
             return True
         else:
-            print(f"[{log_prefix}] task={task_key} failed: {result.message}", flush=True)
-            return False
+            print(f"[{log_prefix}] task={task_key} failed: {result.message}; stopping run-all", flush=True)
+            return True

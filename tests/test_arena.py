@@ -11,7 +11,15 @@ import cv2
 import numpy as np
 
 from src.exceptions import TaskSkippedError
-from src.ocr_utils import extract_arena_powers_easyocr
+from src.ocr_utils import (
+    ARENA_POWER_OCR_GAP,
+    ARENA_POWER_OCR_PAD,
+    ARENA_POWER_OCR_SCALE,
+    ARENA_POWER_COL_X_RANGES,
+    ARENA_POWER_ROW_Y_RANGES,
+    extract_arena_powers_easyocr,
+    extract_arena_powers_easyocr_batch,
+)
 from src.tasks.arena import ArenaTask
 from src.vision_matcher import VisionMatcher, read_image
 
@@ -41,6 +49,42 @@ class FakeArenaReader:
         output = self.outputs[self.calls]
         self.calls += 1
         return output
+
+
+def _arena_batch_box(row: int, col: int, left: int, right: int, top: int = 42, bottom: int = 78):
+    cell_w = (ARENA_POWER_COL_X_RANGES[0][1] - ARENA_POWER_COL_X_RANGES[0][0]) * ARENA_POWER_OCR_SCALE + ARENA_POWER_OCR_PAD * 2
+    cell_h = (ARENA_POWER_ROW_Y_RANGES[0][1] - ARENA_POWER_ROW_Y_RANGES[0][0]) * ARENA_POWER_OCR_SCALE + ARENA_POWER_OCR_PAD * 2
+    slot_left = (col - 1) * (cell_w + ARENA_POWER_OCR_GAP)
+    slot_top = (row - 1) * (cell_h + ARENA_POWER_OCR_GAP)
+    return [
+        [slot_left + left, slot_top + top],
+        [slot_left + right, slot_top + top],
+        [slot_left + right, slot_top + bottom],
+        [slot_left + left, slot_top + bottom],
+    ]
+
+
+class FakeArenaBatchReader:
+    def __init__(self):
+        self.calls = 0
+
+    def readtext(self, _image, detail=1, allowlist=None):
+        self.calls += 1
+        powers = [
+            ((1, 1), "5630k", 1.0),
+            ((1, 2), "9733k", 0.86),
+            ((2, 1), "8127k", 1.0),
+            ((2, 2), "7531k", 1.0),
+            ((3, 1), "2934k", 1.0),
+            ((3, 2), "2730k", 0.82),
+            ((4, 1), "46,585", 1.0),
+            ((4, 2), "11,309", 1.0),
+        ]
+        results = []
+        for (row, col), text, confidence in powers:
+            results.append((_arena_batch_box(row, col, 75, 190), text, confidence))
+            results.append((_arena_batch_box(row, col, 270, 310), "1,", 1.0))
+        return results
 
 
 class FakeArenaReturnController:
@@ -95,6 +139,18 @@ class ArenaOcrTests(TestCase):
         self.assertEqual([item["power_k"] for item in powers[:6]], [5630, 9733, 8127, 7531, 2934, 2730])
         self.assertGreaterEqual(powers[1]["confidence"], 0.86)
 
+    def test_batch_easyocr_arena_power_extraction_filters_score_text(self):
+        screen = read_image(ARENA_DIR / "003_\u9078\u64c7\u5c0d\u624b.png", cv2.IMREAD_COLOR)
+        reader = FakeArenaBatchReader()
+
+        powers = extract_arena_powers_easyocr_batch(screen, reader=reader)
+
+        self.assertEqual(reader.calls, 1)
+        self.assertEqual(
+            [item["power_text"] for item in powers],
+            ["5630k", "9733k", "8127k", "7531k", "2934k", "2730k", "46,585", "11,309"],
+        )
+
     def test_arena_accepts_low_confidence_very_low_power(self):
         task = ArenaTask(context=SimpleNamespace())
         task._get_ocr_reader = lambda: object()
@@ -109,7 +165,7 @@ class ArenaOcrTests(TestCase):
             {"row": 4, "col": 2, "power_text": "6872k", "power_k": 6872, "confidence": 0.99},
         ]
 
-        with patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents):
+        with patch("src.tasks.arena.extract_arena_powers_easyocr_batch", return_value=opponents):
             result = task._read_opponents(np.zeros((540, 960, 3), dtype=np.uint8))
 
         self.assertEqual(result[4]["power_text"], "252k")
@@ -124,7 +180,7 @@ class ArenaOcrTests(TestCase):
         ]
         opponents[5] = {"row": 3, "col": 2, "power_text": "8130k", "power_k": 8130, "confidence": 0.634}
 
-        with patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents):
+        with patch("src.tasks.arena.extract_arena_powers_easyocr_batch", return_value=opponents):
             result = task._read_opponents(np.zeros((540, 960, 3), dtype=np.uint8))
 
         self.assertEqual(result[5]["power_text"], "8130k")
@@ -145,13 +201,14 @@ class ArenaOcrTests(TestCase):
             "has_scale_suffix": False,
         }
 
-        with patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents):
+        with patch("src.tasks.arena.extract_arena_powers_easyocr_batch", return_value=opponents):
             result = task._read_opponents(np.zeros((540, 960, 3), dtype=np.uint8))
 
         self.assertEqual(result[7]["power_text"], "47,7784")
 
     def test_arena_still_rejects_low_confidence_scaled_mid_power(self):
         task = ArenaTask(context=SimpleNamespace())
+        task._get_ocr_reader = lambda: object()
         task._return_from_opponent_list_to_daily_tasks = lambda: None
         opponents = [
             {"row": row, "col": col, "power_text": "3000k", "power_k": 3000, "confidence": 0.99, "has_scale_suffix": True}
@@ -161,6 +218,7 @@ class ArenaOcrTests(TestCase):
         opponents[0] = {"row": 1, "col": 1, "power_text": "3000k", "power_k": 3000, "confidence": 0.40, "has_scale_suffix": True}
 
         with (
+            patch("src.tasks.arena.extract_arena_powers_easyocr_batch", return_value=opponents),
             patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents),
             patch("src.tasks.arena.write_image", side_effect=lambda path, image: path),
         ):
@@ -181,6 +239,7 @@ class ArenaOcrTests(TestCase):
 
         output = StringIO()
         with (
+            patch("src.tasks.arena.extract_arena_powers_easyocr_batch", return_value=opponents),
             patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=opponents),
             patch("src.tasks.arena.write_image", side_effect=lambda path, image: path),
             redirect_stdout(output),
@@ -191,6 +250,30 @@ class ArenaOcrTests(TestCase):
         self.assertTrue(task.returned_to_daily)
         self.assertIn("saved_screenshot=", output.getvalue())
         self.assertIn("saved_screenshot=", str(caught.exception))
+
+    def test_arena_falls_back_to_per_slot_ocr_when_batch_is_uncertain(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task._get_ocr_reader = lambda: object()
+        batch_opponents = [
+            {"row": row, "col": col, "power_text": "", "power_k": -1, "confidence": 0.0, "has_scale_suffix": False}
+            for row in range(1, 5)
+            for col in range(1, 3)
+        ]
+        fallback_opponents = [
+            {"row": row, "col": col, "power_text": "3000k", "power_k": 3000, "confidence": 0.99, "has_scale_suffix": True}
+            for row in range(1, 5)
+            for col in range(1, 3)
+        ]
+
+        with (
+            patch("src.tasks.arena.extract_arena_powers_easyocr_batch", return_value=batch_opponents) as batch,
+            patch("src.tasks.arena.extract_arena_powers_easyocr", return_value=fallback_opponents) as fallback,
+        ):
+            result = task._read_opponents(np.zeros((540, 960, 3), dtype=np.uint8))
+
+        self.assertEqual(result, fallback_opponents)
+        batch.assert_called_once()
+        fallback.assert_called_once()
 
 
 class ArenaVisionTests(TestCase):

@@ -188,8 +188,13 @@ class DailyTaskFinder:
             self._save_go_first_debug(screen, spec, status_roi, best_label_roi, result)
         return result
 
-    def scan_current_screen_go_first(self, specs: dict[str, TaskSpec]) -> list[GoFirstTaskRow]:
-        screen = self.controller.screenshot()
+    def scan_current_screen_go_first(
+        self,
+        specs: dict[str, TaskSpec],
+        screen=None,
+    ) -> list[GoFirstTaskRow]:
+        if screen is None:
+            screen = self.controller.screenshot()
         status_roi = self._status_buttons_roi(screen_width=screen.shape[1], screen_height=screen.shape[0])
         status_matches = self._match_row_status_buttons(screen, status_roi)
         rows: list[GoFirstTaskRow] = []
@@ -260,7 +265,7 @@ class DailyTaskFinder:
 
         last = result
         for _ in range(max_nudge_swipes):
-            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=320, wait_seconds=0.45):
+            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=650, wait_seconds=0.45):
                 return last
             last = self.find_on_current_screen(spec)
             if last.status != TaskSearchStatus.NOT_FOUND:
@@ -287,7 +292,7 @@ class DailyTaskFinder:
                     return last
             if attempt >= max_swipes:
                 break
-            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=420, wait_seconds=TAP_COOLDOWN_SECONDS):
+            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=700, wait_seconds=TAP_COOLDOWN_SECONDS):
                 if weak_done_candidate is not None:
                     return weak_done_candidate
                 if last.label_match is not None:
@@ -315,13 +320,13 @@ class DailyTaskFinder:
                     label_match=last.label_match,
                     reason="go-first: passed contiguous daily task status section",
                 )
-            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=420, wait_seconds=TAP_COOLDOWN_SECONDS):
+            if not self._swipe_until_changed(360, 430, 360, 230, duration_ms=700, wait_seconds=TAP_COOLDOWN_SECONDS):
                 return last
         return last
 
     def _scroll_to_top(self, swipes: int) -> None:
         for _ in range(swipes):
-            if not self._swipe_until_changed(360, 230, 360, 430, duration_ms=350, wait_seconds=0.35):
+            if not self._swipe_until_changed(360, 230, 360, 430, duration_ms=650, wait_seconds=0.35):
                 return
 
     def _swipe_until_changed(

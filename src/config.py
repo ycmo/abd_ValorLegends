@@ -144,6 +144,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             notes="Do not tap 100/200 gem wishes.",
         ),
     ),
+    "hero_contest": TaskSpec(
+        key="hero_contest",
+        display_name="勇者角逐",
+        daily_text="",
+        manual_dir="勇者角逐",
+        kind="independent",
+        policy=ResourcePolicy(
+            allowed_actions=("fight_four_times", "refresh_after_two_consecutive_losses_for_5_gems"),
+            stop_conditions=("expected_screen_not_found",),
+            notes="Run from the event screen for now. Refresh after two consecutive losses costs 5 red gems.",
+        ),
+    ),
     "midas": TaskSpec(
         key="midas",
         display_name="點金手",

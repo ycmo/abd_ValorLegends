@@ -247,7 +247,21 @@ Common commands:
 - Live test on 2026-06-06 exposed the missing reward-overlay dismissal after free wish. The route was updated offline and now has tests for reward-overlay continuation.
 - 2026-06-06 live continuation from the reward overlay completed successfully and returned to Daily Tasks. Screenshot: `captures/after_guild_wish_continue_20260606.png`.
 
+## Hero Contest Notes
+
+- `hero_contest` is an independent debug-stage task for `勇者角逐`, implemented in `src/tasks/hero_contest.py`.
+- First version runs from the already-open event screen, not from Daily Tasks/run-all, because the Daily Tasks row label/template is not available yet.
+- Flow: max 4 fights, first stop if bottom attempt counter matches `attempts_zero_anchor.png`, tap 001 challenge, tap 002 battle challenge, tap 003 skip, dismiss victory/defeat continue, and refresh the opponent after 2 consecutive losses. Refresh costs 5 red gems and the user approved this cost.
+- After dismissing a result, if the main Hero Contest screen is not visible, recovery runs only the AFK route step `02_勇者角逐_swipeV.png` to switch back through the current event menu. It must not run the route `exit` step first.
+- Templates live in `assets/tasks/hero_contest/`; `battle_challenge_button.png` is a dedicated crop from `manual_screenshots/勇者角逐/002.png` because the 001 challenge template does not match the 002 button.
+- `attempts_zero_anchor.png` was cropped from the small blue box in `manual_screenshots/勇者角逐/005_結束.png`; matching is restricted to `HeroContestTask.ATTEMPTS_ZERO_ROI`.
+- Offline tests in `tests/test_hero_contest.py` cover four fights, refresh after two losses, scene detection, and template/ROI matching against manual screenshots.
+
 ## Next Work
 
 1. Live-test Guild Wish from Daily Tasks when its row is ready.
 3. Keep appending unclear requirements to `docs/requirements_QA.md`; stop and notify the user when adding a new QA question.
+
+## 2026-06-30 Daily Task Swipe Note
+
+- Daily-task list swipes are intentionally slower now (`700ms` for normal downward scans). In `run-all`, if the first scan swipe produces no visible list movement, it performs one longer retry (`360,460 -> 360,180`, `900ms`) and only treats the list as not scrollable if that second swipe also has no visible movement. With `--debug-actions`, both swipe attempts save before/after screenshots.

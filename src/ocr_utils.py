@@ -146,6 +146,9 @@ def extract_arena_powers_hash(screen: np.ndarray) -> List[dict]:
 
 ARENA_POWER_COL_X_RANGES = ((200, 350), (580, 730))
 ARENA_POWER_ROW_Y_RANGES = ((140, 180), (218, 258), (296, 336), (374, 414))
+ARENA_POWER_OCR_SCALE = 2
+ARENA_POWER_OCR_PAD = 20
+ARENA_POWER_OCR_GAP = 20
 
 
 def build_easyocr_reader(
@@ -319,6 +322,95 @@ def extract_arena_powers_easyocr(screen: np.ndarray, reader=None) -> List[dict]:
     return results
 
 
+def extract_arena_powers_easyocr_batch(screen: np.ndarray, reader=None) -> List[dict]:
+    """Read all 8 Arena power values with one EasyOCR call.
+
+    The 8 fixed power ROIs are copied into a white composite image, preserving
+    each ROI's local coordinate system. This avoids 8 separate EasyOCR calls
+    while keeping the same score-text filtering used by the per-slot reader.
+    """
+
+    if reader is None:
+        reader = get_cached_easyocr_reader(("en",), download_enabled=False)
+
+    canvas, slots = _build_arena_power_ocr_canvas(screen)
+    try:
+        ocr_results = reader.readtext(canvas, detail=1, allowlist="0123456789kK,")
+    except TypeError:
+        ocr_results = reader.readtext(canvas, allowlist="0123456789kK,")
+
+    grouped = {(row, col): [] for row, col, *_ in slots}
+    for box, text, confidence in ocr_results:
+        xs = _box_x_values(box)
+        ys = _box_y_values(box)
+        if not xs or not ys:
+            continue
+        center_x = sum(xs) / len(xs)
+        center_y = sum(ys) / len(ys)
+        for row, col, left, top, width, height in slots:
+            if left <= center_x <= left + width and top <= center_y <= top + height:
+                local_box = [[point[0] - left, point[1] - top] for point in box]
+                grouped[(row, col)].append((local_box, text, confidence))
+                break
+
+    results = []
+    for row, col, *_ in slots:
+        text, confidence = _combine_arena_power_ocr_results(grouped[(row, col)])
+        results.append(
+            {
+                "row": row,
+                "col": col,
+                "power_text": text,
+                "power_k": parse_power_value(text),
+                "has_scale_suffix": power_has_scale_suffix(text),
+                "confidence": confidence,
+            }
+        )
+    return results
+
+
+def _build_arena_power_ocr_canvas(screen: np.ndarray):
+    sample_y0, sample_y1 = ARENA_POWER_ROW_Y_RANGES[0]
+    sample_x0, sample_x1 = ARENA_POWER_COL_X_RANGES[0]
+    crop_h = (sample_y1 - sample_y0) * ARENA_POWER_OCR_SCALE
+    crop_w = (sample_x1 - sample_x0) * ARENA_POWER_OCR_SCALE
+    cell_h = crop_h + ARENA_POWER_OCR_PAD * 2
+    cell_w = crop_w + ARENA_POWER_OCR_PAD * 2
+    rows = len(ARENA_POWER_ROW_Y_RANGES)
+    cols = len(ARENA_POWER_COL_X_RANGES)
+    canvas_h = rows * cell_h + (rows - 1) * ARENA_POWER_OCR_GAP
+    canvas_w = cols * cell_w + (cols - 1) * ARENA_POWER_OCR_GAP
+    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+    slots = []
+
+    for row_idx, (y0, y1) in enumerate(ARENA_POWER_ROW_Y_RANGES):
+        for col_idx, (x0, x1) in enumerate(ARENA_POWER_COL_X_RANGES):
+            roi = screen[y0:y1, x0:x1]
+            roi_large = cv2.resize(
+                roi,
+                None,
+                fx=ARENA_POWER_OCR_SCALE,
+                fy=ARENA_POWER_OCR_SCALE,
+                interpolation=cv2.INTER_CUBIC,
+            )
+            roi_pad = cv2.copyMakeBorder(
+                roi_large,
+                ARENA_POWER_OCR_PAD,
+                ARENA_POWER_OCR_PAD,
+                ARENA_POWER_OCR_PAD,
+                ARENA_POWER_OCR_PAD,
+                cv2.BORDER_CONSTANT,
+                value=[255, 255, 255],
+            )
+            top = row_idx * (cell_h + ARENA_POWER_OCR_GAP)
+            left = col_idx * (cell_w + ARENA_POWER_OCR_GAP)
+            height, width = roi_pad.shape[:2]
+            canvas[top : top + height, left : left + width] = roi_pad
+            slots.append((row_idx + 1, col_idx + 1, left, top, width, height))
+
+    return canvas, slots
+
+
 def _combine_arena_power_ocr_results(ocr_results) -> tuple[str, float]:
     pieces = []
     for box, text, confidence in ocr_results:
@@ -350,6 +442,16 @@ def _box_x_values(box) -> List[float]:
     for point in box:
         try:
             values.append(float(point[0]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return values
+
+
+def _box_y_values(box) -> List[float]:
+    values = []
+    for point in box:
+        try:
+            values.append(float(point[1]))
         except (TypeError, ValueError, IndexError):
             continue
     return values

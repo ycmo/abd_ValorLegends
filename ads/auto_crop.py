@@ -1,16 +1,20 @@
 import os
 import cv2
-import easyocr
 import numpy as np
+import sys
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 _MANUAL_DIR = os.path.join(_PROJECT_ROOT, "manual_screenshots", "廣告")
 _ASSETS_ENTRY = os.path.join(_THIS_DIR, "assets", "entry")
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from src.ocr_utils import get_cached_easyocr_reader
 
 def main():
     print("Loading EasyOCR...")
-    reader = easyocr.Reader(['ch_tra'], gpu=False)
+    reader = get_cached_easyocr_reader(("ch_tra",), download_enabled=False)
     os.makedirs(_ASSETS_ENTRY, exist_ok=True)
 
     targets = [

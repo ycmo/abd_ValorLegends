@@ -8,7 +8,7 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.ocr_utils import build_easyocr_reader
+from src.ocr_utils import get_cached_easyocr_reader
 from src_v2.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import Roi
 
@@ -172,7 +172,7 @@ class TimeTravelTask(BaseTask):
 
     def _get_cost_ocr_reader(self):
         if self._cost_ocr_reader is None:
-            self._cost_ocr_reader = build_easyocr_reader(["en"], download_enabled=False)
+            self._cost_ocr_reader = get_cached_easyocr_reader(("en",), download_enabled=False)
         return self._cost_ocr_reader
 
     def _dismiss_reward_overlay_if_present(self) -> None:
