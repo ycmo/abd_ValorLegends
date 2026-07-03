@@ -28,6 +28,51 @@ ADB 截圖 -> OpenCV template matching / OCR -> ADB tap/swipe
 pip install -r requirements.txt
 ```
 
+## 新電腦與 BlueStacks 轉移
+
+建議新電腦不要直接搬整個 BlueStacks instance。比較穩的方式是重新安裝 BlueStacks，然後用 GitHub 轉移本專案程式與資產。
+
+BlueStacks 建議設定：
+
+- 安裝 BlueStacks 5。
+- 建立 Pie 64-bit instance。
+- 解析度設定為 `960x540`。
+- 開啟 BlueStacks ADB。
+- 遊戲內語言、畫質、動畫速度盡量和舊電腦一致。
+- 安裝 Valor Legends 並登入帳號。
+
+專案轉移：
+
+```powershell
+git clone https://github.com/ycmo/abd_ValorLegends.git
+cd abd_ValorLegends
+python -m venv .venv-codex
+.\.venv-codex\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+新機驗收指令：
+
+```powershell
+python -m src.main devices
+python -m src.main check-device
+python -m src.main screenshot
+python -m src.main detect-scene
+```
+
+確認能截圖、辨識主畫面後，再跑每日任務：
+
+```powershell
+python -m src.main --debug --debug-actions run-all
+```
+
+注意：
+
+- ADB serial 可能從 `emulator-5554` 變成 `127.0.0.1:5555`，可用 `--serial` 或 `VL_ADB_SERIAL` 覆蓋。
+- `AwayFromKeyboard/state/` 是本機 runtime 狀態，不納入 Git。
+- `switch_account/accounts.json` 已納入 GitHub，換機後 clone 專案即可取得切帳號設定。
+- `log/`、`captures/`、`review/`、debug 截圖與錄影不納入 Git。
+
 ## 常用指令
 
 建議從專案根目錄執行：
