@@ -9,6 +9,9 @@ import numpy as np
 from pathlib import Path
 
 try:
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True, write_through=True)
+    sys.stderr.reconfigure(encoding="utf-8", line_buffering=True, write_through=True)
+except TypeError:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 except AttributeError:

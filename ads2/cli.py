@@ -2,9 +2,13 @@ import argparse
 import sys
 from pathlib import Path
 
-# 強制終端機輸出為 UTF-8，避免 cp950 無法印出 Emoji 報錯
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout.reconfigure(encoding='utf-8')
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.stdio_utils import configure_utf8_stdio
+
+configure_utf8_stdio()
 
 from core.runner import ReactiveRunner
 

@@ -24,9 +24,9 @@ from AwayFromKeyboard.ui_recovery import UIRecovery
 from AwayFromKeyboard.discord_notify import notify_status
 from src.account_state import read_activity_state, write_current_account
 from src.config import LOG_DIR
+from src.stdio_utils import configure_utf8_stdio
 
-# 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
-sys.stdout.reconfigure(encoding='utf-8')
+configure_utf8_stdio()
 
 STATE_DIR = Path(__file__).resolve().parent / "state"
 MIDAS_ACTIVITY_NAME = "midas_auto"

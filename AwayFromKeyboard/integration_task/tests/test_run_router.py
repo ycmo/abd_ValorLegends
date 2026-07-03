@@ -66,6 +66,7 @@ class RunRouterCommandTests(unittest.TestCase):
         old_profile = os.environ.get("VL_PROFILE_LOG_FILE")
         old_pythonioencoding = os.environ.get("PYTHONIOENCODING")
         old_pythonutf8 = os.environ.get("PYTHONUTF8")
+        old_pythonunbuffered = os.environ.get("PYTHONUNBUFFERED")
         observed = {}
 
         def fake_main(_argv):
@@ -75,6 +76,7 @@ class RunRouterCommandTests(unittest.TestCase):
             observed["profile"] = os.environ.get("VL_PROFILE_LOG_FILE")
             observed["pythonioencoding"] = os.environ.get("PYTHONIOENCODING")
             observed["pythonutf8"] = os.environ.get("PYTHONUTF8")
+            observed["pythonunbuffered"] = os.environ.get("PYTHONUNBUFFERED")
             return 0
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -101,6 +103,7 @@ class RunRouterCommandTests(unittest.TestCase):
                 "profile": profile_path,
                 "pythonioencoding": "utf-8",
                 "pythonutf8": "1",
+                "pythonunbuffered": "1",
             },
         )
         self.assertEqual(os.environ.get("VL_ADB_SERIAL"), old_serial)
@@ -109,6 +112,7 @@ class RunRouterCommandTests(unittest.TestCase):
         self.assertEqual(os.environ.get("VL_PROFILE_LOG_FILE"), old_profile)
         self.assertEqual(os.environ.get("PYTHONIOENCODING"), old_pythonioencoding)
         self.assertEqual(os.environ.get("PYTHONUTF8"), old_pythonutf8)
+        self.assertEqual(os.environ.get("PYTHONUNBUFFERED"), old_pythonunbuffered)
 
     def test_force_subprocess_keeps_old_execution_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -148,6 +152,7 @@ class RunRouterCommandTests(unittest.TestCase):
         self.assertEqual(child_env["VL_PROFILE_LOG_FILE"], str(Path(tmpdir) / "route.profile.txt"))
         self.assertEqual(child_env["PYTHONIOENCODING"], "utf-8")
         self.assertEqual(child_env["PYTHONUTF8"], "1")
+        self.assertEqual(child_env["PYTHONUNBUFFERED"], "1")
 
     def test_route_only_task_runs_enter_and_exit_routes(self):
         with patch("run_router.warn_if_midas_activity_active"), \

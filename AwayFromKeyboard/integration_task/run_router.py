@@ -19,10 +19,9 @@ import os
 import argparse
 from contextlib import contextmanager
 from src.account_state import warn_if_midas_activity_active
+from src.stdio_utils import configure_utf8_stdio
 
-# 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
-sys.stdout.reconfigure(encoding='utf-8')
-sys.stderr.reconfigure(encoding='utf-8')
+configure_utf8_stdio()
 
 
 class _TeeStream:
@@ -115,6 +114,7 @@ def _python_utf8_env() -> dict[str, str]:
     return {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
+        "PYTHONUNBUFFERED": "1",
     }
 
 
@@ -141,6 +141,7 @@ def _run_subprocess_streamed(full_cmd: list[str], *, project_root: Path, env: di
         full_cmd,
         cwd=str(project_root),
         env=env,
+        bufsize=1,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
