@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from src.config import CAPTURES_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import LOG_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
 from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
@@ -220,7 +220,7 @@ class GuildDungeonTask(BaseTask):
         )
 
     def probe_target_from_current_map(self, *, tap_challenge: bool = True) -> str:
-        debug_dir = CAPTURES_DIR / "action_debug" / f"guild_dungeon_probe_{time.strftime('%Y%m%d_%H%M%S')}"
+        debug_dir = LOG_DIR / f"guild_dungeon_probe_{time.strftime('%Y%m%d_%H%M%S')}"
         self.last_probe_records = []
         self.last_probe_summary_path = None
         tried_targets: list[tuple[int, int]] = []

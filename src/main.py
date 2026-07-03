@@ -13,10 +13,11 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.adb_controller import AdbControllerError, DeviceController
+from src.account_state import warn_if_midas_activity_active
 from src.config import (
-    CAPTURES_DIR,
     DEFAULT_SERIAL,
     EXPECTED_SCREEN_SIZE,
+    LOG_DIR,
     RUN_ALL_TASKS_CONFIG,
     TASK_ORDER,
     TASK_SPECS,
@@ -26,9 +27,13 @@ from src.config import (
 from src.daily_runner import DailyRunner, build_context
 from src.exceptions import BotError, ConfigurationError
 from src.paint_cropper import run_paint_crop_workflow
+from src.profiler import profile_load
 from src.scene_detector import SceneDetector
 from src.tasks import TASK_CLASSES
 from src.vision_matcher import VisionMatcher
+
+
+ARENA_MODE_CHOICES = ("daily", "tickets_20")
 
 
 def _task_help_text() -> str:
@@ -55,6 +60,14 @@ def _add_task_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_arena_mode_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--arena-mode",
+        choices=ARENA_MODE_CHOICES,
+        help="Override Arena mode for this command. default: config/arena.jsonc",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Valor Legends ADB automation",
@@ -73,7 +86,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--debug-actions",
         action="store_true",
         default=None,
-        help="Save before/after screenshots for every tap, swipe, and keyevent under captures/action_debug/",
+        help="Save before/after screenshots for every tap, swipe, and keyevent under log/<run>/",
     )
     parser.add_argument(
         "--debug",
@@ -85,7 +98,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("devices", help="List connected ADB devices")
     sub.add_parser("check-device", help="Connect and validate screenshot size")
 
-    screenshot = sub.add_parser("screenshot", help="Capture a screenshot into captures/")
+    screenshot = sub.add_parser("screenshot", help="Capture a screenshot into log/")
     screenshot.add_argument("--name", help="Optional output file name")
 
     sub.add_parser("detect-scene", help="Detect current scene from shared anchors")
@@ -127,6 +140,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     _add_task_argument(run_task)
+    _add_arena_mode_argument(run_task)
 
     run_task_go_first = sub.add_parser(
         "run-task-go-first",
@@ -135,6 +149,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     _add_task_argument(run_task_go_first)
+    _add_arena_mode_argument(run_task_go_first)
 
     run_current_task = sub.add_parser(
         "run-current-task",
@@ -143,6 +158,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     _add_task_argument(run_current_task)
+    _add_arena_mode_argument(run_current_task)
 
     run_current_scene_task = sub.add_parser(
         "run-current-scene-task",
@@ -151,9 +167,12 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     _add_task_argument(run_current_scene_task)
+    _add_arena_mode_argument(run_current_scene_task)
 
-    sub.add_parser("run-tested-daily", help="Run only the live-tested daily-task closed loops")
-    sub.add_parser("run-all", help=f"Run configured tasks using Go-first search ({RUN_ALL_TASKS_CONFIG})")
+    run_tested_daily = sub.add_parser("run-tested-daily", help="Run only the live-tested daily-task closed loops")
+    _add_arena_mode_argument(run_tested_daily)
+    run_all = sub.add_parser("run-all", help=f"Run configured tasks using Go-first search ({RUN_ALL_TASKS_CONFIG})")
+    _add_arena_mode_argument(run_all)
     sub.add_parser(
         "probe-guild-dungeon-target",
         help="From the current guild dungeon map, select the preferred outpost/challenge target",
@@ -194,7 +213,7 @@ def cmd_screenshot(serial: str, name: str) -> int:
     controller = _connect_controller(serial)
     if not name:
         name = time.strftime("%Y%m%d_%H%M%S.png")
-    path = CAPTURES_DIR / name
+    path = LOG_DIR / name
     controller.save_screenshot(path)
     print(path)
     saved = run_paint_crop_workflow(path)
@@ -509,14 +528,15 @@ def cmd_run_tested_daily(serial: str, debug_actions: Optional[bool] = None, cons
 
 
 def main(argv: list = None) -> int:
-    if os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on"):
-        print(
-            f"[perf pid={os.getpid()}] src.main imports_ready "
-            f"elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s",
-            flush=True,
-        )
+    profile_load(f"src.main imports_ready elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s")
     parser = _build_parser()
     args = parser.parse_args(argv)
+    warn_if_midas_activity_active(process_name=f"src.main {args.command}")
+    arena_mode = getattr(args, "arena_mode", None)
+    if arena_mode:
+        from src.tasks.arena import set_arena_mode_override
+
+        set_arena_mode_override(arena_mode)
     if args.debug_actions:
         auto_label = _default_debug_label(args)
         if auto_label:

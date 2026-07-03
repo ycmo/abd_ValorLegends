@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from src.exceptions import TaskSkippedError
+from src.exceptions import TaskFailedError, TaskSkippedError
 from src.ocr_utils import (
     ARENA_POWER_OCR_GAP,
     ARENA_POWER_OCR_PAD,
@@ -20,7 +21,7 @@ from src.ocr_utils import (
     extract_arena_powers_easyocr,
     extract_arena_powers_easyocr_batch,
 )
-from src.tasks.arena import ArenaTask
+from src.tasks.arena import ArenaSettings, ArenaTask, load_arena_settings, set_arena_mode_override
 from src.vision_matcher import VisionMatcher, read_image
 
 
@@ -83,7 +84,7 @@ class FakeArenaBatchReader:
         results = []
         for (row, col), text, confidence in powers:
             results.append((_arena_batch_box(row, col, 75, 190), text, confidence))
-            results.append((_arena_batch_box(row, col, 270, 310), "1,", 1.0))
+            results.append((_arena_batch_box(row, col, 214, 220), "1,", 1.0))
         return results
 
 
@@ -302,6 +303,7 @@ class ArenaVisionTests(TestCase):
             ("002_\u9078\u64c7\u6311\u6230.png", "multi_challenge_button.png", ArenaTask.MULTI_CHALLENGE_ROI),
             ("003_\u9078\u64c7\u5c0d\u624b.png", "opponent_list_anchor.png", ArenaTask.OPPONENT_LIST_ROI),
             ("003_\u9078\u64c7\u5c0d\u624b.png", "challenge_button.png", ArenaTask.ACTION_BUTTON_ROI),
+            ("003_\u9078\u64c7\u5c0d\u624b.png", "refresh_button.png", ArenaTask.REFRESH_BUTTON_ROI),
             ("004_\u9ede\u64ca\u7e7c\u7e8c.png", "continue_button.png", ArenaTask.CONTINUE_BUTTON_ROI),
             ("005_\u9000\u51fa\u7af6\u6280\u5834.png", "arena_back_button.png", ArenaTask.BACK_BUTTON_ROI),
         ]
@@ -316,3 +318,291 @@ class ArenaVisionTests(TestCase):
                     roi=roi,
                 )
                 self.assertIsNotNone(match)
+
+    def test_arena_ticket_count_reads_manual_screenshot(self):
+        class Reader:
+            def readtext(self, _image, detail=1, allowlist=None):
+                return [([[20, 10], [80, 10], [80, 40], [20, 40]], "148", 0.99)]
+
+        task = ArenaTask(context=SimpleNamespace())
+        task._get_ocr_reader = lambda: Reader()
+        screen = read_image(ARENA_DIR / "005_\u9000\u51fa\u7af6\u6280\u5834.png", cv2.IMREAD_COLOR)
+
+        value, confidence = task._read_ticket_count(screen)
+
+        self.assertEqual(value, 148)
+        self.assertEqual(confidence, 0.99)
+
+    def test_tickets_20_mode_stops_when_ticket_floor_reached(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task.settings = ArenaSettings(mode="tickets_20", target_fights=None, ticket_floor=20)
+        task._ticket_count_at_or_below_floor = lambda: True
+
+        self.assertFalse(task._should_continue(total_fought=0))
+
+    def test_ticket_count_check_retries_transient_ocr_failure(self):
+        class Controller:
+            def screenshot(self):
+                return object()
+
+        class Matcher:
+            def match_template(self, *_args, **_kwargs):
+                return object()
+
+        task = ArenaTask(context=SimpleNamespace(controller=Controller(), matcher=Matcher()))
+        task.settings = ArenaSettings(mode="tickets_20", ticket_floor=20)
+        task.TICKET_OCR_RETRY_SECONDS = 0
+        reads = [(None, 0.0), (19, 0.99)]
+        task._read_ticket_count = lambda _screen: reads.pop(0)
+
+        self.assertTrue(task._ticket_count_at_or_below_floor())
+
+    def test_ticket_count_check_accepts_low_confidence_when_clearly_above_floor(self):
+        class Controller:
+            def screenshot(self):
+                return object()
+
+        class Matcher:
+            def match_template(self, *_args, **_kwargs):
+                return object()
+
+        task = ArenaTask(context=SimpleNamespace(controller=Controller(), matcher=Matcher()))
+        task.settings = ArenaSettings(mode="tickets_20", ticket_floor=20)
+        task._read_ticket_count = lambda _screen: (453, 0.525)
+
+        self.assertFalse(task._ticket_count_at_or_below_floor())
+
+    def test_ticket_count_check_retries_low_confidence_near_floor(self):
+        class Controller:
+            def screenshot(self):
+                return object()
+
+        class Matcher:
+            def match_template(self, *_args, **_kwargs):
+                return object()
+
+        task = ArenaTask(context=SimpleNamespace(controller=Controller(), matcher=Matcher()))
+        task.settings = ArenaSettings(mode="tickets_20", ticket_floor=20)
+        task.TICKET_OCR_ATTEMPTS = 1
+        task.TICKET_OCR_RETRY_SECONDS = 0
+        task._read_ticket_count = lambda _screen: (19, 0.525)
+        task._save_ticket_ocr_uncertain_debug = lambda _screen, _confidence: "ticket_debug.png"
+
+        with self.assertRaises(TaskFailedError):
+            task._ticket_count_at_or_below_floor()
+
+    def test_ticket_count_check_reports_saved_screenshot_after_retries_fail(self):
+        class Controller:
+            def screenshot(self):
+                return object()
+
+        class Matcher:
+            def match_template(self, *_args, **_kwargs):
+                return object()
+
+        task = ArenaTask(context=SimpleNamespace(controller=Controller(), matcher=Matcher()))
+        task.settings = ArenaSettings(mode="tickets_20", ticket_floor=20)
+        task.TICKET_OCR_ATTEMPTS = 2
+        task.TICKET_OCR_RETRY_SECONDS = 0
+        task._read_ticket_count = lambda _screen: (None, 0.1)
+        task._save_ticket_ocr_uncertain_debug = lambda _screen, _confidence: "ticket_debug.png"
+
+        with self.assertRaises(TaskFailedError) as caught:
+            task._ticket_count_at_or_below_floor()
+
+        self.assertIn("saved_screenshot=ticket_debug.png", str(caught.exception))
+
+    def test_no_safe_opponents_refreshes_when_enabled(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task.settings = ArenaSettings(
+            mode="daily",
+            max_power_k=6500,
+            target_fights=8,
+            ticket_floor=None,
+            refresh_on_no_safe_opponents=True,
+            max_refreshes=2,
+        )
+        task._require_opponent_list_screen = lambda: "screen"
+        task._read_opponents = lambda _screen: [
+            {"row": row, "col": col, "power_text": "9000k", "power_k": 9000, "confidence": 0.99}
+            for row in range(1, 5)
+            for col in range(1, 3)
+        ]
+        task._checkbox_state = lambda _screen, _row, _col: "unchecked"
+        task._count_checked_opponents = lambda _screen: 0
+        task.refreshed = False
+        task._refresh_opponent_list = lambda: setattr(task, "refreshed", True)
+
+        result = task._uncheck_overpowered_and_start(refreshes=0)
+
+        self.assertEqual(result, 0)
+        self.assertTrue(task.refreshed)
+
+    def test_cached_checked_opponents_skip_only_cached_positions(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task._cached_selected_opponents = [(1, 1), (3, 2)]
+        task._require_opponent_list_screen = lambda: "screen"
+        task._checkbox_state = lambda _screen, row, col: (
+            "checked" if (row, col) in task._cached_selected_opponents else "unchecked"
+        )
+        task._read_opponents = lambda _screen: [
+            {"row": 1, "col": 1, "power_text": "9000k", "power_k": 9000, "confidence": 0.99},
+            {"row": 2, "col": 1, "power_text": "9100k", "power_k": 9100, "confidence": 0.99},
+            {"row": 3, "col": 2, "power_text": "9200k", "power_k": 9200, "confidence": 0.99},
+        ]
+        task.started = []
+        task._tap_task_asset = lambda *args, **kwargs: task.started.append((args, kwargs))
+
+        result = task._uncheck_overpowered_and_start(refreshes=0)
+
+        self.assertEqual(result, 2)
+        self.assertEqual(len(task.started), 1)
+        self.assertEqual(task._cached_selected_opponents, [(1, 1), (3, 2)])
+
+    def test_full_cached_checked_page_starts_without_ocr(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task._cached_selected_opponents = [
+            (row, col)
+            for row in range(1, 5)
+            for col in range(1, 3)
+        ]
+        task._require_opponent_list_screen = lambda: "screen"
+        task._read_opponents = lambda _screen: self.fail("full cached page should skip opponent OCR")
+        task._checkbox_state = lambda _screen, _row, _col: self.fail("full cached page should skip checkbox checks")
+        task.started = []
+        task._tap_task_asset = lambda *args, **kwargs: task.started.append((args, kwargs))
+
+        result = task._uncheck_overpowered_and_start(refreshes=0)
+
+        self.assertEqual(result, 8)
+        self.assertEqual(len(task.started), 1)
+
+    def test_cached_checked_opponents_falls_back_when_cache_is_stale(self):
+        task = ArenaTask(context=SimpleNamespace())
+        task.settings = ArenaSettings(max_power_k=6500)
+        task._cached_selected_opponents = [(1, 1)]
+        task._require_opponent_list_screen = lambda: "screen"
+        task._read_opponents_called = False
+        task._read_opponents = lambda _screen: setattr(task, "_read_opponents_called", True) or []
+        task._checked_opponent_positions = lambda _screen: [(2, 1)]
+        task._checkbox_state = lambda _screen, _row, _col: "unchecked"
+        task._tap_task_asset = lambda *args, **kwargs: None
+
+        result = task._uncheck_overpowered_and_start(refreshes=0)
+
+        self.assertEqual(result, 1)
+        self.assertTrue(task._read_opponents_called)
+        self.assertEqual(task._cached_selected_opponents, [(2, 1)])
+
+    def test_ticket_mode_unchecks_overpowered_opponents_before_refresh(self):
+        class Controller:
+            def __init__(self):
+                self.taps = []
+
+            def tap(self, x, y):
+                self.taps.append((x, y))
+
+        task = ArenaTask(context=SimpleNamespace(controller=Controller()))
+        task.settings = ArenaSettings(
+            mode="tickets_20",
+            max_power_k=6500,
+            target_fights=None,
+            ticket_floor=20,
+            refresh_on_no_safe_opponents=True,
+            max_refreshes=2,
+        )
+        screens = ["screen1", "screen2", "screen3"]
+        task._require_opponent_list_screen = lambda: screens.pop(0) if screens else "screen_after_uncheck"
+        task._read_opponents = lambda _screen: [
+            {"row": 1, "col": 1, "power_text": "9000k", "power_k": 9000, "confidence": 0.99},
+            {"row": 1, "col": 2, "power_text": "9100k", "power_k": 9100, "confidence": 0.99},
+        ]
+        checked = {(1, 1), (1, 2)}
+
+        def checkbox_state(_screen, row, col):
+            return "checked" if (row, col) in checked else "unchecked"
+
+        def tap_checkbox(row, col):
+            checked.discard((row, col))
+            return (row, col)
+
+        task._checkbox_state = checkbox_state
+        task._checkbox_center = tap_checkbox
+        task._count_checked_opponents = lambda _screen: len(checked)
+        task.events = []
+        task._refresh_opponent_list = lambda: task.events.append(("refresh", tuple(task.context.controller.taps)))
+
+        result = task._uncheck_overpowered_and_start(refreshes=0)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(task.context.controller.taps, [(1, 1), (1, 2)])
+        self.assertEqual(task.events, [("refresh", ((1, 1), (1, 2)))])
+
+
+class ArenaConfigTests(TestCase):
+    def tearDown(self):
+        set_arena_mode_override(None)
+
+    def test_load_arena_settings_supports_jsonc_modes_and_account_override(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "current_account.json"
+            state.write_text('{"account": "311"}', encoding="utf-8")
+            config = root / "arena.jsonc"
+            config.write_text(
+                """
+                {
+                  "mode": "tickets_20",
+                  "active_account_file": "current_account.json",
+                  "refresh_on_no_safe_opponents": true,
+                  "max_refreshes": 9,
+                  "modes": {
+                    "tickets_20": {
+                      "target_fights": null,
+                      "ticket_floor": 20,
+                      "max_rounds": 33
+                    }
+                  },
+                  "accounts": {
+                    "default": {"max_power_k": 6500},
+                    "311": {"max_power_k": 7200}
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+            with patch("src.tasks.arena.ROOT_DIR", root):
+                settings = load_arena_settings(config)
+
+        self.assertEqual(settings.mode, "tickets_20")
+        self.assertEqual(settings.account, "311")
+        self.assertEqual(settings.max_power_k, 7200)
+        self.assertIsNone(settings.target_fights)
+        self.assertEqual(settings.ticket_floor, 20)
+        self.assertTrue(settings.refresh_on_no_safe_opponents)
+        self.assertEqual(settings.max_refreshes, 9)
+        self.assertEqual(settings.max_rounds, 33)
+
+    def test_arena_mode_override_wins_over_config_mode(self):
+        with TemporaryDirectory() as tmp:
+            config = Path(tmp) / "arena.jsonc"
+            config.write_text(
+                """
+                {
+                  "mode": "daily",
+                  "modes": {
+                    "daily": {"target_fights": 8, "ticket_floor": null},
+                    "tickets_20": {"target_fights": null, "ticket_floor": 20}
+                  },
+                  "accounts": {"default": {"max_power_k": 6500}}
+                }
+                """,
+                encoding="utf-8",
+            )
+            set_arena_mode_override("tickets_20")
+
+            settings = load_arena_settings(config)
+
+        self.assertEqual(settings.mode, "tickets_20")
+        self.assertIsNone(settings.target_fights)
+        self.assertEqual(settings.ticket_floor, 20)

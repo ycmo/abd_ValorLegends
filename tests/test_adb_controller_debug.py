@@ -49,6 +49,18 @@ class AdbControllerDebugAnnotationTests(unittest.TestCase):
         self.assertGreater(np.count_nonzero(annotated), 0)
         self.assertTrue(np.any(np.all(annotated == (0, 0, 255), axis=2)))
 
+    def test_annotate_action_debug_panel_uses_bottom_left(self):
+        image = np.full((220, 260, 3), 80, dtype=np.uint8)
+
+        annotated = DeviceController._annotate_action_debug_image(
+            image,
+            debug_lines=["action=tap_123_456", "daily task: arena"],
+        )
+
+        self.assertTrue(np.array_equal(annotated[8, 8], image[8, 8]))
+        self.assertTrue(np.array_equal(annotated[188, 8], (255, 255, 255)))
+        self.assertTrue(np.array_equal(annotated[190, 10], (0, 0, 0)))
+
     def test_action_debug_lines_names_back_keyevent(self):
         self.assertEqual(DeviceController._action_debug_lines("keyevent_4"), ["action=keyevent BACK"])
         self.assertEqual(DeviceController._tap_point_from_action_name("tap_123_456"), (123, 456))

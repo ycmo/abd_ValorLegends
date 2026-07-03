@@ -55,7 +55,7 @@ tiger -> 14 -> 311 -> em3
 
 - route 圖片：`AwayFromKeyboard/route_screenshots/點金手/`
 - 任務執行：直接呼叫 `MidasTask.execute_auto()`，不讀 `afk_tasks.ini`
-- 偵錯截圖：加 `--debug-actions` 後輸出到 `captures/action_debug/`
+- 偵錯截圖：加 `--debug-actions` 後輸出到 `log/<timestamp>_<pid>_<route>/`
 
 ## loop_afk 每日完成紀錄
 
@@ -63,6 +63,12 @@ tiger -> 14 -> 311 -> em3
 
 ```powershell
 python.exe AwayFromKeyboard\loop_afk.py --debug-actions
+```
+
+需要輸出每個 Router 任務的 UTF-8 文字 log 與載入耗時 profile 時加 `--log`，檔案會放在專案 `log/`：
+
+```powershell
+python.exe AwayFromKeyboard\loop_afk.py --now --log --debug-actions
 ```
 
 指定不同任務設定檔：
@@ -110,7 +116,7 @@ AwayFromKeyboard/state/route_completion_YYYY-MM-DD.json
 python.exe AwayFromKeyboard\loop_afk.py -f --debug-actions
 ```
 
-需要等到早上 8 點後再多等一段時間，例如活動常晚 10 分鐘開：
+需要等到早上 8 點後再多等一段時間，例如活動常晚 10 分鐘開。`--du8` 的基準點是 08:00:30，避開剛好 08:00:00 進場的時間差：
 
 ```powershell
 python.exe AwayFromKeyboard\loop_afk.py --du8 --delay 00:10:00 --debug-actions

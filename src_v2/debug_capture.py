@@ -8,7 +8,7 @@ Phase 1 輕量版：
   - cv2 ROI annotation：Phase 2 補
 
 Session 目錄結構：
-  captures/
+  log/
     sessions/
       20260615_084500_pid1234/
         guild_wish/
@@ -107,7 +107,7 @@ class DebugCapture:
     @staticmethod
     def cleanup(captures_dir: Path, keep_sessions: int = 5) -> int:
         """
-        刪除 captures/sessions/ 下最舊的 session，保留最新 keep_sessions 個。
+        刪除 log/sessions/ 下最舊的 session，保留最新 keep_sessions 個。
         回傳實際刪除的 session 數量。
         """
         sessions_dir = captures_dir / "sessions"
@@ -135,7 +135,7 @@ class DebugCapture:
     @classmethod
     def create(cls, captures_dir: Path, enabled: bool = True) -> "DebugCapture":
         """
-        建立一個新 session 目錄，並更新 captures/sessions/latest junction。
+        建立一個新 session 目錄，並更新 log/sessions/latest junction。
         session 目錄名：YYYYMMDD_HHMMSS_pid{PID}
         """
         timestamp = time.strftime("%Y%m%d_%H%M%S")

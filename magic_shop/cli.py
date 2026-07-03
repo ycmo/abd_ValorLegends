@@ -25,7 +25,7 @@ def main():
 
     if args.debug:
         os.environ["VL_DEBUG_ACTIONS"] = "1"
-        print("🛠️ 已啟用 Debug 模式：動作截圖將存放在 captures/action_debug/ 目錄下")
+        print("🛠️ 已啟用 Debug 模式：動作截圖將存放在 log/<timestamp>_<pid>_<label>/ 目錄下")
 
     print("=======================================")
     print("  魔法商店自動化 - 獨立測試腳本")

@@ -303,7 +303,7 @@ class GuildDungeonTaskTests(unittest.TestCase):
 
     def test_outpost_close_matches_latest_debug_capture(self):
         path = Path(
-            "captures/action_debug/20260629_113036_113104_route_每日任務/"
+            "log/20260629_113036_113104_route_每日任務/"
             "000121_20260629_113847_before_swipe_360_430_360_230_420.png"
         )
         if not path.exists():

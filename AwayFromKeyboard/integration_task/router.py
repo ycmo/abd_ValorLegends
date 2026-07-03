@@ -354,7 +354,7 @@ class RouteNavigator:
                     if not has_swipe:
                         time.sleep(0.3)
                         
-            if not success and is_optional:
+            if not success and is_optional and not has_swipe:
                 failed_name = best_overall_img.name if best_overall_img else prefix
                 if self.debug_actions:
                     debug_img_path = self._save_match_failure_debug(
@@ -489,6 +489,21 @@ class RouteNavigator:
                     if success:
                         break
                         
+            if not success and is_optional:
+                failed_name = best_overall_img.name if best_overall_img else prefix
+                if self.debug_actions:
+                    debug_img_path = self._save_match_failure_debug(
+                        screen,
+                        failed_name,
+                        best_overall_roi,
+                        best_overall_loc,
+                        best_overall_w,
+                        best_overall_h,
+                    )
+                    print(f"[Router] optional miss debug saved: {debug_img_path}")
+                print(f"[Router] optional step group {prefix} was not found; skipping.")
+                continue
+
             if not success:
                 failed_name = best_overall_img.name if best_overall_img else prefix
 

@@ -8,7 +8,7 @@ from typing import Optional
 
 import cv2
 
-from src.config import CAPTURES_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import LOG_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSkippedError
 from src.ocr_utils import get_cached_easyocr_reader, parse_power_value
 from src.task_runner import BaseTask, TaskRunResult, TaskSceneAnchor, TaskState
@@ -241,7 +241,7 @@ class AbyssTask(BaseTask):
         if tap_forest:
             self._tap_forest_if_visible()
 
-        debug_dir = CAPTURES_DIR / "action_debug" / f"abyss_rental_scan_{time.strftime('%Y%m%d_%H%M%S')}"
+        debug_dir = LOG_DIR / f"abyss_rental_scan_{time.strftime('%Y%m%d_%H%M%S')}"
         self._last_rental_scan_active_count = 0
         self._last_rental_scan_rented_count = 0
         self._last_rental_scan_dragon_count = 0
@@ -488,7 +488,7 @@ class AbyssTask(BaseTask):
         return None
 
     def _rental_rescan_debug_dir(self) -> Path:
-        return CAPTURES_DIR / "action_debug" / f"abyss_rental_rescan_{time.strftime('%Y%m%d_%H%M%S')}"
+        return LOG_DIR / f"abyss_rental_rescan_{time.strftime('%Y%m%d_%H%M%S')}"
 
     def _tap_rental_candidate(self, row: AbyssRentalRow) -> None:
         if row.rent_center is None:

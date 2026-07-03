@@ -239,7 +239,7 @@ class HeroContestTask(BaseTask):
 
         self._log("Hero contest main screen not visible after result; recovering through AFK route step 02")
         self._execute_afk_route_step("02")
-        return self._is_main_screen_visible(timeout_seconds=8.0)
+        return self._is_main_screen_visible(timeout_seconds=8.0, save_debug_on_failure=True)
 
     def _execute_afk_route_step(self, prefix: str) -> None:
         from AwayFromKeyboard.integration_task.router import RouteNavigator
@@ -251,13 +251,22 @@ class HeroContestTask(BaseTask):
         )
         route.execute_route(phase="enter", only_prefixes=(prefix,))
 
-    def _is_main_screen_visible(self, timeout_seconds: float = 0.8) -> bool:
+    def _is_main_screen_visible(
+        self,
+        timeout_seconds: float = 0.8,
+        *,
+        save_debug_on_failure: bool = False,
+    ) -> bool:
         deadline = time.time() + timeout_seconds
+        last_screen = None
         while time.time() <= deadline:
             screen = self.context.controller.screenshot()
+            last_screen = screen
             if self._find_main_screen_on_screen(screen) is not None:
                 return True
             time.sleep(0.25)
+        if save_debug_on_failure and last_screen is not None:
+            self._save_main_screen_probe_debug(last_screen)
         return False
 
     def _save_result_still_visible_debug(self, result: HeroContestResult) -> None:
@@ -282,23 +291,51 @@ class HeroContestTask(BaseTask):
             roi=self.HERO_TAB_ROI,
             threshold=0.86,
         )
-        if tab is None:
-            return None
-
         challenge = self._match_asset_on_screen(
             screen,
             "challenge_button.png",
             roi=self.MAIN_CHALLENGE_ROI,
             threshold=0.86,
         )
-        if challenge is not None:
-            return challenge
-        return self._match_asset_on_screen(
+        refresh = self._match_asset_on_screen(
             screen,
             "refresh_button.png",
             roi=self.REFRESH_ROI,
             threshold=0.86,
         )
+
+        if challenge is not None and refresh is not None:
+            return challenge
+        if tab is not None and challenge is not None:
+            return challenge
+        if tab is not None and refresh is not None:
+            return refresh
+        return None
+
+    def _save_main_screen_probe_debug(self, screen) -> None:
+        probes = [
+            ("hero_tab_anchor.png", self.HERO_TAB_ROI, 0.86),
+            ("challenge_button.png", self.MAIN_CHALLENGE_ROI, 0.86),
+            ("refresh_button.png", self.REFRESH_ROI, 0.86),
+        ]
+        lines = ["Hero contest main screen probe"]
+        boxes = []
+        for asset_name, roi, threshold in probes:
+            best = self.context.matcher.best_template_match(screen, self.asset_path(asset_name), roi=roi)
+            confidence = 0.0 if best is None else best.confidence
+            lines.append(f"{asset_name} confidence={confidence:.4f} threshold={threshold:.4f}")
+            boxes.append((*roi, "roi"))
+            if best is not None:
+                boxes.append((*best.bbox, "go" if confidence >= threshold else "status_roi"))
+
+        self.context.controller.save_annotated_debug(
+            "hero_contest_main_screen_probe",
+            screen,
+            lines=lines,
+            boxes=boxes,
+            panel_position="right",
+        )
+        self._log("; ".join(lines))
 
     def _find_result_on_screen(self, screen) -> Optional[HeroContestResult]:
         victory = self._match_asset_on_screen(

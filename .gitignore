@@ -3,7 +3,10 @@
 __pycache__/
 *.pyc
 debug/
+log/
+review/
 scratch/
+.bluestacks_cmd.txt
 .idea/
 .vscode/
 *.log
@@ -29,6 +32,13 @@ magic_shop/debug_output/*
 magic_shop/temp_captures/
 screenshot.png
 debug_screen.png
+manual_screenshots/**/crop_*_preview.png
+AwayFromKeyboard/state/
+switch_account/debug_logs/
+switch_account/error_debug*.png
+Screw/*.mp4
+Screw/frames/
+Screw/debug_cv/
 
 # Ignore sensitive account credentials
 switch_account/accounts.json

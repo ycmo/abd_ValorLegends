@@ -5,10 +5,12 @@ from typing import Dict, Type
 from src.config import TASK_ORDER
 from src.task_runner import BaseTask
 from src.tasks.abyss import AbyssTask
+from src.tasks.advanced_arena import AdvancedArenaTask
 from src.tasks.arena import ArenaTask
 from src.tasks.bounty import BountyTask
 from src.tasks.campaign import CampaignTask
 from src.tasks.endless_trial import EndlessTrialTask
+from src.tasks.equipment_enhance import EquipmentEnhanceTask
 from src.tasks.guild_dungeon import GuildDungeonTask
 from src.tasks.guild_wish import GuildWishTask
 from src.tasks.hero_contest import HeroContestTask
@@ -21,10 +23,12 @@ from src.tasks.time_travel import TimeTravelTask
 
 TASK_CLASSES: Dict[str, Type[BaseTask]] = {
     "abyss": AbyssTask,
+    "advanced_arena": AdvancedArenaTask,
     "arena": ArenaTask,
     "bounty": BountyTask,
     "campaign": CampaignTask,
     "endless_trial": EndlessTrialTask,
+    "equipment_enhance": EquipmentEnhanceTask,
     "guild_dungeon": GuildDungeonTask,
     "guild_wish": GuildWishTask,
     "hero_contest": HeroContestTask,

@@ -7,6 +7,7 @@ from AwayFromKeyboard.loop_toggle_midas import (
     AUTO_WAKEUP_BUFFER_SECONDS,
     build_auto_account_order,
     build_sweep_first_order,
+    main,
     process_auto_account,
     run_auto_initial_round,
     run_auto_loop,
@@ -19,6 +20,19 @@ from src.tasks.midas import MidasAutoResult
 
 
 class AutoMidasLoopTests(unittest.TestCase):
+    def setUp(self):
+        self.write_patcher = patch("AwayFromKeyboard.loop_toggle_midas.write_current_account")
+        self.mock_write_current_account = self.write_patcher.start()
+        self.activity_patcher = patch("AwayFromKeyboard.loop_toggle_midas.write_activity_state")
+        self.mock_write_activity_state = self.activity_patcher.start()
+        self.clear_activity_patcher = patch("AwayFromKeyboard.loop_toggle_midas.clear_activity_state")
+        self.mock_clear_activity_state = self.clear_activity_patcher.start()
+
+    def tearDown(self):
+        self.clear_activity_patcher.stop()
+        self.activity_patcher.stop()
+        self.write_patcher.stop()
+
     @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
     @patch("AwayFromKeyboard.loop_toggle_midas.MidasTask")
     @patch("AwayFromKeyboard.loop_toggle_midas.RouteNavigator")
@@ -185,6 +199,11 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 2)
         recovery.handle_wakeup_exceptions.assert_called_once()
         mock_recover.assert_called_once_with(recovery)
+        self.mock_write_activity_state.assert_called_with(
+            "midas_auto",
+            active=True,
+            source="midas.auto.short_cooldown_sleep",
+        )
 
     @patch("AwayFromKeyboard.loop_toggle_midas.run_midas_auto_once")
     def test_long_cooldown_moves_to_next_account(self, mock_run):
@@ -342,6 +361,15 @@ class AutoMidasLoopTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             run_auto_loop(object(), object(), use_all=False)
 
+        self.mock_write_activity_state.assert_called_once_with(
+            "midas_auto",
+            active=True,
+            source="midas.auto.initial.start",
+        )
+        clear_call = self.mock_clear_activity_state.call_args
+        self.assertEqual(clear_call.args, ("midas_auto",))
+        self.assertEqual(clear_call.kwargs["source"], "midas.auto.big_sleep")
+        self.assertIn("wake_at", clear_call.kwargs["extra"])
         mock_initial.assert_called_once()
         mock_sleep.assert_called_once_with(123)
         mock_round.assert_not_called()
@@ -362,10 +390,38 @@ class AutoMidasLoopTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             run_auto_loop(object(), object(), use_all=False, sweep_first=True)
 
+        self.mock_write_activity_state.assert_called_once_with(
+            "midas_auto",
+            active=True,
+            source="midas.auto.initial.start",
+        )
+        clear_call = self.mock_clear_activity_state.call_args
+        self.assertEqual(clear_call.args, ("midas_auto",))
+        self.assertEqual(clear_call.kwargs["source"], "midas.auto.big_sleep")
+        self.assertIn("wake_at", clear_call.kwargs["extra"])
         mock_sweep.assert_called_once()
         mock_initial.assert_not_called()
         mock_sleep.assert_called_once_with(234)
         mock_round.assert_not_called()
+
+    @patch("AwayFromKeyboard.loop_toggle_midas.sys.argv", ["loop_toggle_midas.py"])
+    @patch("AwayFromKeyboard.loop_toggle_midas.build_context")
+    @patch("AwayFromKeyboard.loop_toggle_midas.UIRecovery")
+    @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_loop", side_effect=KeyboardInterrupt)
+    def test_main_clears_midas_activity_on_ctrl_c(self, mock_loop, mock_recovery, mock_build_context):
+        context = SimpleNamespace(controller=MagicMock(), matcher=object(), detector=object())
+        context.controller.connect.return_value = True
+        mock_build_context.return_value = context
+
+        with self.assertRaises(SystemExit) as raised:
+            main()
+
+        self.assertEqual(raised.exception.code, 0)
+        self.mock_clear_activity_state.assert_called_once_with(
+            "midas_auto",
+            source="midas.auto.ctrl_c",
+        )
+        mock_loop.assert_called_once()
 
 
 if __name__ == "__main__":

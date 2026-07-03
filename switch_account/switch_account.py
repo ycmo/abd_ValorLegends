@@ -11,6 +11,7 @@ import subprocess
 # Add project root to sys.path to import src modules
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.adb_controller import DeviceController
+from src.account_state import write_current_account
 from src.vision_matcher import VisionMatcher
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -452,8 +453,9 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
         "next": resolve_next_target,
     }
 
-    if account_name not in MACRO_RESOLVERS and account_name not in ACCOUNTS:
-        print(f"錯誤：找不到帳號 '{account_name}'。支援的帳號有：{', '.join(list(ACCOUNTS.keys()) + list(MACRO_RESOLVERS.keys()))}")
+    special_commands = ["detect"]
+    if account_name not in special_commands and account_name not in MACRO_RESOLVERS and account_name not in ACCOUNTS:
+        print(f"錯誤：找不到帳號 '{account_name}'。支援的帳號有：{', '.join(list(ACCOUNTS.keys()) + list(MACRO_RESOLVERS.keys()) + special_commands)}")
         return False
     
     # 自動偵測已連線的 ADB 設備
@@ -473,6 +475,15 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
     matcher = VisionMatcher(debug_mode=debug_mode)
 
     current_acc_name = detect_current_account(controller, matcher)
+    if current_acc_name:
+        write_current_account(current_acc_name, source="switch_account.detect")
+
+    if account_name == "detect":
+        if not current_acc_name:
+            print("錯誤：無法辨識目前帳號，未更新 current_account.json。")
+            return False
+        print(f"✅ 已更新目前帳號狀態：{current_acc_name}")
+        return True
         
     if account_name in MACRO_RESOLVERS:
         target = MACRO_RESOLVERS[account_name](current_acc_name)
@@ -484,6 +495,7 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
 
     if current_acc_name == account_name:
         print(f"ℹ️ 目標帳號 '{account_name}' 已是目前登入帳號，無需切換。")
+        write_current_account(account_name, source="switch_account.current")
         return True
             
     # 這裡才重新載入真正要切換的帳號資訊
@@ -524,12 +536,15 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
     else:
         print("步驟 4/4: 進入主畫面載入流程...")
         
-    return wait_for_game_entry(controller, matcher)
+    success = wait_for_game_entry(controller, matcher)
+    if success:
+        write_current_account(account_name, source="switch_account.switched")
+    return success
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="切換遊戲帳號的小工具")
-    parser.add_argument("account", choices=list(ACCOUNTS.keys()) + ["toggle", "next"], help="要切換的帳號 (對應設定檔名稱, toggle, 或 next)")
+    parser.add_argument("account", choices=list(ACCOUNTS.keys()) + ["toggle", "next", "detect"], help="要切換的帳號 (對應設定檔名稱, toggle, next, 或 detect)")
     parser.add_argument("--debug", action="store_true", help="開啟 Debug 模式")
     args = parser.parse_args()
 

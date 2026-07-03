@@ -85,7 +85,7 @@ class MagicShopScanTests(unittest.TestCase):
 
     def test_480k_price_only_fallback_handles_edge_clipped_icon(self):
         screenshot = Path(
-            "captures/action_debug/20260627_094341_11636_run_all/"
+            "log/20260627_094341_11636_run_all/"
             "000156_20260627_095212_before_tap_500_387.png"
         )
         if not screenshot.exists():

@@ -16,7 +16,8 @@ ADB 截圖 -> OpenCV template matching / OCR -> ADB tap/swipe
 - 待使用者確認的需求問題記錄在 `docs/requirements_QA.md`。
 - 初期只支援 960x540 截圖解析度；不符合就停止。
 - `manual_screenshots/` 是使用者提供的真相來源，不覆蓋。
-- Codex 自行截圖放 `captures/` 或 `assets/raw_captures/`。
+- 程式執行時的 log、profile 與診斷截圖放 `log/`；`debug/` 保留給對話中的臨時分析資料。
+- Codex 擷取作為素材來源的原始圖放 `assets/raw_captures/`。
 - 舊架構已封存到 `legacy/20260604_pre_rewrite/`。
 - 看廣告相關內容放 `ads/`，不混進每日任務主線。
 - 第一版不自動點每日任務「領取」。
@@ -73,6 +74,7 @@ assets/
   tasks/<task_key>/       任務專用 template
   raw_captures/           Codex 擷取的原始素材
 
+log/                      執行中的文字 log、profile 與診斷截圖，不納入 git
 ads/                      Antigravity 看廣告工作區
 legacy/                   舊檔封存，本地保留、不納入 git
 ```

@@ -4,6 +4,7 @@
     // "bounty",      // 懸賞委託
     // "campaign",    // 戰役關卡
     // "endless_trial", // 無盡試煉
+    "equipment_enhance", // 強化裝備
     "guild_dungeon",  // 公會副本
     "guild_wish",     // 公會祈願
     "midas",          // 點金手

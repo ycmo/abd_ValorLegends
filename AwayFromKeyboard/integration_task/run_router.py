@@ -18,6 +18,7 @@ import task_config
 import os
 import argparse
 from contextlib import contextmanager
+from src.account_state import warn_if_midas_activity_active
 
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
@@ -33,6 +34,8 @@ class _TeeStream:
     def write(self, text):
         self._console_stream.write(text)
         self._log_stream.write(text)
+        if "\n" in text:
+            self.flush()
         return len(text)
 
     def flush(self):
@@ -62,6 +65,13 @@ def _tee_output(log_file: str | None):
         finally:
             sys.stdout = original_stdout
             sys.stderr = original_stderr
+
+
+def _profile_log_file_for_route_log(log_file: str | None) -> str | None:
+    if not log_file:
+        return None
+    path = Path(log_file).expanduser()
+    return str(path.with_name(f"{path.stem}.profile.txt"))
 
 
 def _is_src_main_command(cmd_args: list[str]) -> bool:
@@ -99,6 +109,13 @@ def _temporary_env(updates: dict[str, str]):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def _python_utf8_env() -> dict[str, str]:
+    return {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+    }
 
 
 def _run_src_main_in_process(argv: list[str], *, project_root: Path, env_updates: dict[str, str]) -> int:
@@ -145,6 +162,7 @@ def run_configured_command(
     route_debug_label: str,
     debug_actions: bool,
     force_subprocess: bool,
+    profile_log_file: str | None = None,
 ) -> int:
     full_cmd = [python_exe] + cmd_args
     print("\n" + "=" * 60)
@@ -152,13 +170,16 @@ def run_configured_command(
     print(f">>> {' '.join(full_cmd)}")
     print("=" * 60)
 
-    env_updates: dict[str, str] = {}
+    env_updates: dict[str, str] = _python_utf8_env()
     if debug_actions:
         env_updates["VL_DEBUG_ACTIONS"] = "1"
         env_updates.setdefault("VL_ACTION_DEBUG_LABEL", route_debug_label)
     if selected_serial:
         env_updates["VL_ADB_SERIAL"] = selected_serial
         print(f"[Router] 使用 ADB serial: {selected_serial}")
+    if profile_log_file:
+        env_updates["VL_PROFILE_LOG_FILE"] = profile_log_file
+        print(f"[Router] profile_log_file={profile_log_file}")
 
     if _is_src_main_command(cmd_args) and not force_subprocess:
         argv = _prepare_src_main_argv(
@@ -202,7 +223,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run(args) -> None:
-    if os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on"):
+    profile_log_file = _profile_log_file_for_route_log(args.log_file)
+    if profile_log_file:
         print(
             f"[perf pid={os.getpid()}] run_router imports_ready "
             f"elapsed={time.perf_counter() - _MODULE_LOAD_STARTED:.3f}s",
@@ -243,6 +265,7 @@ def _run(args) -> None:
                     route_debug_label=route_debug_label,
                     debug_actions=args.debug_actions,
                     force_subprocess=args.force_subprocess,
+                    profile_log_file=profile_log_file,
                 )
                 if returncode != 0:
                     print(f"⚠️ [警告] 外部指令執行結束，但回傳錯誤碼 (returncode={returncode})")
@@ -263,7 +286,10 @@ def _run(args) -> None:
                 print("❌ [錯誤] 由於外部腳本執行失敗，結束路由任務並拋出錯誤碼以觸發 Fail-Fast。")
                 sys.exit(1)
         else:
-            print(f"⚠️ [提示] 找不到 '{route_name}' 對應的外部指令配置，不執行額外動作。")
+            print(f"ℹ️ [提示] 找不到 '{route_name}' 對應的外部指令配置，改以純路由任務執行。")
+            print(f"\n[Router] 純路由任務完成，檢查是否有離場路由...")
+            navigator.execute_route(phase="exit")
+            print(f"✅ [成功] 離場路由執行完畢！")
             
     except ImportError as e:
         print(f"❌ [錯誤] 無法載入必要的模組 (ImportError): {e}")
@@ -281,6 +307,7 @@ def _run(args) -> None:
 def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
+    warn_if_midas_activity_active(process_name=f"run_router {args.route_name}")
     with _tee_output(args.log_file):
         _run(args)
 

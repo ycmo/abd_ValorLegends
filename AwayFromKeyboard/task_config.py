@@ -64,9 +64,8 @@ def get_tasks_to_run() -> list[str]:
         if enable_val in ("Y", "O", "1", "TRUE"):
             command_val = config.get(section, "command", fallback="").strip()
             if not command_val:
-                print(f"⚠️ [警告] 任務 '{section}' 已啟用但未設定 command，將予以略過。")
-            else:
-                tasks_to_run.append(section)
+                print(f"ℹ️ [提示] 任務 '{section}' 已啟用但未設定 command，將以純路由任務執行。")
+            tasks_to_run.append(section)
                 
     return tasks_to_run
 

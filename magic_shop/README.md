@@ -57,4 +57,4 @@ python magic_shop/cli.py --dry-run
 ```powershell
 python magic_shop/cli.py --debug
 ```
-> 在背景記錄程式「點了哪裡、滑了哪裡」，會將操作截圖存在 `captures/action_debug/`。
+> 在背景記錄程式「點了哪裡、滑了哪裡」，會將操作截圖存在 `log/<timestamp>_<pid>_<label>/`。

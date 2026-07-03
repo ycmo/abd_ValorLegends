@@ -36,7 +36,45 @@ class SecretRealmTask(BaseTask):
 
     def execute(self) -> str:
         self._ensure_lost_forest_selected()
-        self._open_purchase_dialog()
+        bought_attempts = self._try_buy_lost_forest_attempts()
+        self._tap_task_asset(
+            "sweep all",
+            "sweep_all_button.png",
+            roi=self.SWEEP_ALL_ROI,
+            threshold=0.82,
+            wait_after_seconds=TRANSITION_WAIT_SECONDS,
+        )
+        self._dismiss_possible_reward_overlay()
+        if not self.context.navigator.return_to_daily_tasks_from_known_route(
+            back_asset=self.asset_path("secret_realm_back_button.png")
+        ):
+            raise TaskFailedError("Secret Realm finished, but could not return to Daily Tasks safely")
+        if bought_attempts:
+            return "bought Lost Forest twice and tapped sweep all"
+        return "Lost Forest purchase unavailable; tapped sweep all"
+
+    def _ensure_lost_forest_selected(self) -> None:
+        if self._match_task_asset(
+            "lost_forest_selected_tab.png",
+            roi=self.LEFT_TAB_ROI,
+            threshold=0.78,
+            timeout_seconds=1.0,
+        ):
+            return
+
+        tab = self._require_task_asset(
+            "Lost Forest tab",
+            "lost_forest_tab.png",
+            roi=self.LEFT_TAB_ROI,
+            threshold=0.78,
+        )
+        self.context.controller.tap(*tab.center)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+        self._wait_for_realm_screen("after selecting Lost Forest")
+
+    def _try_buy_lost_forest_attempts(self) -> bool:
+        if not self._open_purchase_dialog():
+            return False
         self._validate_purchase_dialog()
         self._tap_task_asset(
             "set purchase quantity to 2",
@@ -58,40 +96,9 @@ class SecretRealmTask(BaseTask):
             wait_after_seconds=TRANSITION_WAIT_SECONDS,
         )
         self._wait_for_realm_screen("after purchase")
-        self._tap_task_asset(
-            "sweep all",
-            "sweep_all_button.png",
-            roi=self.SWEEP_ALL_ROI,
-            threshold=0.82,
-            wait_after_seconds=TRANSITION_WAIT_SECONDS,
-        )
-        self._dismiss_possible_reward_overlay()
-        if not self.context.navigator.return_to_daily_tasks_from_known_route(
-            back_asset=self.asset_path("secret_realm_back_button.png")
-        ):
-            raise TaskFailedError("Secret Realm finished, but could not return to Daily Tasks safely")
-        return "bought Lost Forest twice and tapped sweep all"
+        return True
 
-    def _ensure_lost_forest_selected(self) -> None:
-        if self._match_task_asset(
-            "lost_forest_selected_tab.png",
-            roi=self.LEFT_TAB_ROI,
-            threshold=0.78,
-            timeout_seconds=1.0,
-        ):
-            return
-
-        tab = self._require_task_asset(
-            "Lost Forest tab",
-            "lost_forest_tab.png",
-            roi=self.LEFT_TAB_ROI,
-            threshold=0.78,
-        )
-        self.context.controller.tap(*tab.center)
-        time.sleep(TRANSITION_WAIT_SECONDS)
-        self._wait_for_realm_screen("after selecting Lost Forest")
-
-    def _open_purchase_dialog(self) -> None:
+    def _open_purchase_dialog(self) -> bool:
         self._tap_task_asset(
             "open purchase dialog",
             "realm_attempt_entry_plus_button.png",
@@ -99,12 +106,18 @@ class SecretRealmTask(BaseTask):
             threshold=0.78,
             wait_after_seconds=TRANSITION_WAIT_SECONDS,
         )
-        self._require_task_asset(
+        match = self._match_task_asset(
             "purchase dialog title",
             "purchase_dialog_title.png",
             roi=self.PURCHASE_DIALOG_ROI,
             threshold=0.82,
+            timeout_seconds=3.0,
         )
+        if match is not None:
+            return True
+        self._wait_for_realm_screen("after purchase dialog did not open")
+        self._log("Secret Realm purchase dialog did not open; continuing with available attempts")
+        return False
 
     def _validate_purchase_dialog(self) -> None:
         self._require_task_asset(
@@ -159,12 +172,18 @@ class SecretRealmTask(BaseTask):
 
     def _match_task_asset(
         self,
-        asset_name: str,
-        *,
+        *asset_args: str,
         roi: Optional[Roi] = None,
         threshold: float = 0.82,
         timeout_seconds: float = 3.0,
     ) -> Optional[MatchResult]:
+        if len(asset_args) == 1:
+            asset_name = asset_args[0]
+        elif len(asset_args) == 2:
+            _label, asset_name = asset_args
+        else:
+            raise TypeError("_match_task_asset expects asset_name or label, asset_name")
+
         path = self.asset_path(asset_name)
         deadline = time.time() + timeout_seconds
         while time.time() <= deadline:

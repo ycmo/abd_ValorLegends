@@ -9,7 +9,7 @@ main.py — src_v2 CLI 入口
 改善（相較於 src/main.py）：
   - 提取 _prepare_context() 封裝 build_context + connect + ensure_screen_size，
     取代 8 個 cmd_ 函式中重複的相同三行
-  - 新增 cleanup-captures 子命令
+  - 新增 cleanup-captures 子命令（legacy name，實際清理 log/sessions）
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--debug-actions",
         action="store_true",
         default=None,
-        help="Save before/after screenshots for every tap under captures/sessions/<session>/",
+        help="Save before/after screenshots for every tap under log/sessions/<session>/",
     )
     parser.add_argument(
         "--debug",
@@ -68,7 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("devices", help="List connected ADB devices")
     sub.add_parser("check-device", help="Connect and validate screenshot size")
 
-    screenshot = sub.add_parser("screenshot", help="Capture a screenshot into captures/")
+    screenshot = sub.add_parser("screenshot", help="Capture a screenshot into log/")
     screenshot.add_argument("--name", help="Optional output file name")
 
     sub.add_parser("detect-scene", help="Detect current scene")

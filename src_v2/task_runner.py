@@ -293,10 +293,10 @@ class BaseTask:
             last_path = self.context.debug_capture.last_failure_path
             if last_path:
                 try:
-                    # 嘗試擷取 captures/... 之後的部分
+                    # 嘗試擷取 log/... 之後的部分
                     parts = last_path.parts
-                    if "captures" in parts:
-                        idx = parts.index("captures")
+                    if "log" in parts:
+                        idx = parts.index("log")
                         # 替換實際 session id 為 latest
                         rel_parts = list(parts[idx:])
                         if len(rel_parts) > 2 and rel_parts[1] == "sessions":

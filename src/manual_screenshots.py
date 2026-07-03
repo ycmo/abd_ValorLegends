@@ -17,23 +17,53 @@ from src.paint_cropper import run_paint_crop_workflow
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Capture a manual reference screenshot")
     parser.add_argument("--task", required=True, help="Task folder name, e.g. 無盡試煉")
-    parser.add_argument("--index", required=True, help="Screenshot index, e.g. 1 or 001")
+    parser.add_argument("--index", help="Screenshot index, e.g. 1 or 001. Omit to auto-increment.")
     parser.add_argument("--scene", help="Scene name, e.g. 每日任務")
     parser.add_argument("--serial", default=DEFAULT_SERIAL, help=f"ADB serial, default: {DEFAULT_SERIAL}")
     parser.add_argument("--no-open-paint", action="store_true", help="Do not open saved image in mspaint")
     return parser
 
 
+def _parse_existing_index(path: Path) -> int | None:
+    prefix = path.name.split("_", 1)[0].split(".", 1)[0]
+    if not prefix.isdigit():
+        return None
+    try:
+        return int(prefix)
+    except ValueError:
+        return None
+
+
+def _next_index(task_dir: Path) -> str:
+    indexes = [
+        parsed
+        for path in task_dir.glob("*.png")
+        if (parsed := _parse_existing_index(path)) is not None
+    ]
+    next_value = max(indexes, default=-1) + 1
+    return f"{next_value:03d}"
+
+
+def _resolve_index(args: argparse.Namespace, task_dir: Path) -> str:
+    if args.index is None:
+        return _next_index(task_dir)
+    try:
+        return f"{int(args.index):03d}"
+    except ValueError as exc:
+        raise ValueError(f"--index must be an integer: {args.index}") from exc
+
+
 def main(argv: list = None) -> int:
     args = _build_parser().parse_args(argv)
+    task_dir = MANUAL_SCREENSHOTS_DIR / args.task
     try:
-        index = f"{int(args.index):03d}"
-    except ValueError:
-        print(f"ERROR: --index must be an integer: {args.index}", file=sys.stderr)
+        index = _resolve_index(args, task_dir)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
     filename = f"{index}_{args.scene}.png" if args.scene else f"{index}.png"
-    output_path = MANUAL_SCREENSHOTS_DIR / args.task / filename
+    output_path = task_dir / filename
     if output_path.exists():
         print(f"ERROR: file already exists, refusing to overwrite: {output_path}", file=sys.stderr)
         return 1

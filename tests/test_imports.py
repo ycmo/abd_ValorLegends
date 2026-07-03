@@ -26,7 +26,7 @@ class ImportTests(unittest.TestCase):
 
         independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
         self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES) - independent)
-        self.assertEqual(independent, {"abyss", "hero_contest"})
+        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest"})
 
     def test_task_specs_are_configured(self):
         from src.config import (
@@ -39,7 +39,7 @@ class ImportTests(unittest.TestCase):
 
         independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
         self.assertEqual(set(TASK_ORDER), set(TASK_SPECS) - independent)
-        self.assertEqual(independent, {"abyss", "hero_contest"})
+        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest"})
         self.assertLessEqual(set(RUN_ALL_TASK_ORDER), set(TASK_ORDER))
         self.assertLessEqual(set(RUN_ALL_GO_FIRST_TASK_ORDER), set(TASK_ORDER))
         self.assertNotIn("endless_trial", RUN_ALL_TASK_ORDER)
@@ -86,6 +86,17 @@ class ImportTests(unittest.TestCase):
             path.write_text('{"tasks": ["midas", "midas"]}', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "duplicate task"):
                 load_run_all_task_order(path)
+
+    def test_arena_mode_argument_is_available_on_run_commands(self):
+        from src.main import _build_parser
+
+        parser = _build_parser()
+
+        args = parser.parse_args(["run-task", "arena", "--arena-mode", "tickets_20"])
+        self.assertEqual(args.arena_mode, "tickets_20")
+
+        args = parser.parse_args(["run-all", "--arena-mode", "tickets_20"])
+        self.assertEqual(args.arena_mode, "tickets_20")
 
 
 if __name__ == "__main__":

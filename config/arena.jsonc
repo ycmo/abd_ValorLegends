@@ -1,0 +1,45 @@
+{
+  // Active mode. Override per command with --arena-mode if needed.
+  "mode": "daily",
+
+  // Future account-aware tuning. AFK/switch_account can write this file later.
+  "active_account_file": "AwayFromKeyboard/state/current_account.json",
+
+  // Shared opponent-list behavior for all Arena modes.
+  "refresh_on_no_safe_opponents": true,
+  "max_refreshes": 10,
+
+  "modes": {
+    "daily": {
+      // Current daily behavior: stop after selecting at least 8 opponents.
+      "target_fights": 8,
+      "ticket_floor": null,
+      "max_rounds": 8
+    },
+    "tickets_20": {
+      // Long-run mode: keep fighting until Arena tickets are down to 20.
+      "target_fights": null,
+      "ticket_floor": 20,
+      "max_rounds": 100
+    }
+  },
+
+  "accounts": {
+    "default": {
+      // Opponents above this power are unchecked.
+      "max_power_k": 6000
+    },
+    "em3": {
+      "max_power_k": 6500
+    },
+    "311": {
+      "max_power_k": 7000
+    },
+    "tiger": {
+      "max_power_k": 8000
+    },
+    "14": {
+      "max_power_k": 7500
+    }
+  }
+}

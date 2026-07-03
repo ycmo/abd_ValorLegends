@@ -2,9 +2,11 @@ import unittest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 import sys
+import importlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import switch_account
+switch_account = importlib.import_module("switch_account.switch_account")
+sys.modules["switch_account"] = switch_account
 
 class DummyMatchResult:
     def __init__(self, name, confidence, center):
@@ -13,6 +15,13 @@ class DummyMatchResult:
         self.center = center
 
 class TestSwitchAccount(unittest.TestCase):
+    def setUp(self):
+        self.write_patcher = patch("switch_account.write_current_account")
+        self.mock_write_current_account = self.write_patcher.start()
+
+    def tearDown(self):
+        self.write_patcher.stop()
+
     @patch("switch_account.detect_current_account", return_value="311")
     @patch("switch_account.DeviceController")
     @patch("switch_account.VisionMatcher")
@@ -38,6 +47,8 @@ class TestSwitchAccount(unittest.TestCase):
         self.assertTrue(result)
         mock_print.assert_any_call("ℹ️ 目標帳號 '311' 已是目前登入帳號，無需切換。")
         mock_wait_and_tap.assert_not_called()
+        self.mock_write_current_account.assert_any_call("311", source="switch_account.detect")
+        self.mock_write_current_account.assert_any_call("311", source="switch_account.current")
 
     @patch("switch_account.DeviceController")
     @patch("switch_account.VisionMatcher")
@@ -186,6 +197,30 @@ class TestSwitchAccount(unittest.TestCase):
         
         self.assertFalse(result)
         mock_print.assert_any_call("錯誤：無法解析 toggle 模式下的目標帳號！(可能無法辨識當前畫面)")
+
+    @patch("switch_account.detect_current_account", return_value="em3")
+    @patch("switch_account.DeviceController")
+    @patch("switch_account.VisionMatcher")
+    @patch("builtins.print")
+    def test_detect_command_updates_state_without_switching(
+        self,
+        mock_print,
+        MockVisionMatcher,
+        MockDeviceController,
+        mock_detect_current_account,
+    ):
+        switch_account.ACCOUNTS = {
+            "311": {"type": "google", "server": "311"},
+            "em3": {"type": "google", "server": "em3"},
+        }
+        MockDeviceController.list_devices.return_value = ["emulator-5554"]
+        MockDeviceController.return_value.connect.return_value = True
+
+        result = switch_account.switch_account("detect")
+
+        self.assertTrue(result)
+        self.mock_write_current_account.assert_called_once_with("em3", source="switch_account.detect")
+        mock_print.assert_any_call("✅ 已更新目前帳號狀態：em3")
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

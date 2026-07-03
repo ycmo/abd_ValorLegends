@@ -15,6 +15,7 @@ from src.blocker_handler import GIFT_PACK_CLOSE_POINT
 class FakeDeviceController:
     def __init__(self, screen_image=None, screen_images=None):
         self.taps = []
+        self.swipes = []
         self.tap_annotations = []
         self.screen_image = screen_image
         self.screen_images = list(screen_images or [])
@@ -22,6 +23,9 @@ class FakeDeviceController:
 
     def tap(self, x, y):
         self.taps.append((x, y))
+
+    def swipe(self, x1, y1, x2, y2, duration_ms=0):
+        self.swipes.append((x1, y1, x2, y2, duration_ms))
 
     def annotate_next_tap_debug(self, *, lines=(), boxes=()):
         self.tap_annotations.append((list(lines), list(boxes)))
@@ -430,6 +434,38 @@ class TestRouter(unittest.TestCase):
         self.assertFalse(debug_img_path.exists())
         self.assertEqual(controller.taps, [])
         self.assertEqual(controller.screenshot_count, 12)
+
+    def test_optional_swipe_searches_before_skip(self):
+        (self.route_dir / "01_item_swipeV_optional.png").write_text("fake")
+
+        original_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        original_img[40:60, 40:60] = 128
+        original_img[45:55, 45:55] = 255
+        mock_results = {
+            "01_item_swipeV_optional.png": ((50, 50), (40, 40, 20, 20), original_img)
+        }
+
+        blank_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        matched_screen = np.zeros((200, 200, 3), dtype=np.uint8)
+        matched_screen[80:100, 50:70] = 128
+        matched_screen[85:95, 55:65] = 255
+
+        controller = FakeDeviceController(
+            screen_images=[blank_screen] * 12 + [matched_screen]
+        )
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(mock_results),
+            base_dir=self.temp_dir,
+            debug_actions=False,
+        )
+
+        with patch("router.time.sleep"):
+            navigator.execute_route()
+
+        self.assertGreaterEqual(len(controller.swipes), 1)
+        self.assertEqual(controller.taps, [(60, 90)])
 
     def test_optional_miss_saves_debug_when_debug_actions_enabled(self):
         (self.route_dir / "01_optional.png").write_text("fake")

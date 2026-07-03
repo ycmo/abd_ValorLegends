@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import threading
 import time
@@ -11,17 +10,14 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from src.profiler import profile_enabled, profile_load
 
-PROFILE_LOADS_ENABLED = os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on")
-_PROCESS_TIMER_STARTED = time.perf_counter()
 _EASYOCR_READER_CACHE = {}
 _EASYOCR_READER_CACHE_LOCK = threading.RLock()
 
 
 def _profile_load(message: str) -> None:
-    if PROFILE_LOADS_ENABLED:
-        uptime = time.perf_counter() - _PROCESS_TIMER_STARTED
-        print(f"[perf pid={os.getpid()} uptime={uptime:.3f}s] {message}", flush=True)
+    profile_load(message)
 
 
 class _ProfiledEasyOCRReader:
@@ -33,7 +29,7 @@ class _ProfiledEasyOCRReader:
         return getattr(self._reader, name)
 
     def readtext(self, *args, **kwargs):
-        if not PROFILE_LOADS_ENABLED:
+        if not profile_enabled():
             return self._reader.readtext(*args, **kwargs)
         started = time.perf_counter()
         try:
@@ -144,7 +140,7 @@ def extract_arena_powers_hash(screen: np.ndarray) -> List[dict]:
     return results
 
 
-ARENA_POWER_COL_X_RANGES = ((200, 350), (580, 730))
+ARENA_POWER_COL_X_RANGES = ((214, 300), (592, 675))
 ARENA_POWER_ROW_Y_RANGES = ((140, 180), (218, 258), (296, 336), (374, 414))
 ARENA_POWER_OCR_SCALE = 2
 ARENA_POWER_OCR_PAD = 20

@@ -160,6 +160,21 @@ class HeroContestTests(unittest.TestCase):
 
         self.assertTrue(task.is_task_scene("screen"))
 
+    def test_main_screen_detection_accepts_challenge_and_refresh_without_tab(self):
+        task = HeroContestTask(
+            SimpleNamespace(
+                controller=FakeController(),
+                matcher=FakeMatcher(
+                    matches={
+                        "challenge_button.png": _match("challenge_button.png", 580, 465),
+                        "refresh_button.png": _match("refresh_button.png", 580, 380),
+                    }
+                ),
+            )
+        )
+
+        self.assertIsNotNone(task._find_main_screen_on_screen("screen"))
+
     def test_execute_stops_when_attempts_are_zero(self):
         controller = FakeController()
         task = HeroContestTask(
@@ -236,6 +251,24 @@ class HeroContestTests(unittest.TestCase):
             self.assertTrue(task._recover_to_main_screen_after_result())
 
         self.assertEqual(calls, ["02"])
+
+    def test_recover_to_main_saves_probe_debug_when_route_step_still_not_visible(self):
+        controller = FakeController()
+        task = HeroContestTask(
+            SimpleNamespace(
+                controller=controller,
+                matcher=FakeMatcher(),
+                logger=FakeLogger(),
+            )
+        )
+
+        with patch.object(task, "_execute_afk_route_step"), \
+             patch("src.tasks.hero_contest.time.sleep"), \
+             patch("src.tasks.hero_contest.time.time", side_effect=[0, 1, 2, 10, 10.1, 19]):
+            self.assertFalse(task._recover_to_main_screen_after_result())
+
+        labels = [args[0] for args, _kwargs in controller.debug_saves]
+        self.assertIn("hero_contest_main_screen_probe", labels)
 
     def test_templates_match_manual_screenshots(self):
         matcher = VisionMatcher()

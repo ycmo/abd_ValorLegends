@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -11,19 +10,16 @@ import cv2
 import numpy as np
 
 from src.config import MATCH_THRESHOLD
+from src.profiler import profile_load
 
 Roi = Tuple[int, int, int, int]  # x, y, width, height
 
-PROFILE_LOADS_ENABLED = os.environ.get("VL_PROFILE_LOADS", "").lower() in ("1", "true", "yes", "on")
-_PROCESS_TIMER_STARTED = time.perf_counter()
 _TEMPLATE_CACHE_LOCK = threading.RLock()
 _TEMPLATE_CACHE = {}
 
 
 def _profile_load(message: str) -> None:
-    if PROFILE_LOADS_ENABLED:
-        uptime = time.perf_counter() - _PROCESS_TIMER_STARTED
-        print(f"[perf pid={os.getpid()} uptime={uptime:.3f}s] {message}", flush=True)
+    profile_load(message)
 
 
 @dataclass(frozen=True)

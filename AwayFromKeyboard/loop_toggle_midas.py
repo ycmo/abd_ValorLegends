@@ -16,6 +16,7 @@ if str(project_root) not in sys.path:
 from switch_account.switch_account import detect_current_account, switch_account, load_accounts
 from src.daily_runner import build_context
 from src.exceptions import TaskFailedError
+from src.account_state import TAIPEI_TZ, clear_activity_state, write_activity_state, write_current_account
 from src.tasks.midas import MidasAutoResult, MidasTask
 from src.vision_matcher import write_image
 from AwayFromKeyboard.ui_recovery import UIRecovery
@@ -28,6 +29,7 @@ AUTO_WAKEUP_BUFFER_SECONDS = 4 * 60
 AUTO_ALL_ACCOUNT_ORDER = ("em3", "311", "tiger", "14")
 MIDAS_POPUP_RECOVERY_ATTEMPTS = 3
 MIDAS_TITLE_ROI = MidasTask.TITLE_ROI
+MIDAS_ACTIVITY_NAME = "midas_auto"
 
 def build_auto_account_order(
     accounts: dict,
@@ -104,6 +106,32 @@ def _recover_or_restart(recovery: UIRecovery) -> None:
 
     if not reenter_game(recovery.controller, recovery.matcher):
         raise RuntimeError("重啟後仍無法成功進入主城")
+
+
+def _record_current_account(account: str | None, source: str) -> None:
+    if account:
+        write_current_account(account, source=source)
+
+
+def _set_midas_activity_active(source: str) -> None:
+    write_activity_state(MIDAS_ACTIVITY_NAME, active=True, source=source)
+
+
+def _refresh_midas_activity(source: str) -> None:
+    _set_midas_activity_active(source)
+
+
+def _clear_midas_activity_active(source: str, *, wake_at: datetime | None = None) -> None:
+    if wake_at is not None:
+        if wake_at.tzinfo is None:
+            wake_at = wake_at.replace(tzinfo=TAIPEI_TZ)
+        clear_activity_state(
+            MIDAS_ACTIVITY_NAME,
+            source=source,
+            extra={"wake_at": wake_at.astimezone(TAIPEI_TZ).isoformat(timespec="seconds")},
+        )
+        return
+    clear_activity_state(MIDAS_ACTIVITY_NAME, source=source)
 
 
 def _save_midas_popup_recovery_debug(context, screen, attempt: int) -> None:
@@ -255,6 +283,7 @@ def process_auto_account(context, recovery: UIRecovery, account: str, *, notify_
             detail=f"{_format_seconds(wait_seconds)}; wake={wake_time.strftime('%Y-%m-%d %H:%M:%S')}",
             enabled=notify_enabled,
         )
+        _refresh_midas_activity("midas.auto.short_cooldown_sleep")
         time.sleep(wait_seconds)
         print("🌅 [Auto] 短冷卻結束，檢查異地登入與登入畫面...")
         if recovery.handle_wakeup_exceptions():
@@ -302,6 +331,7 @@ def run_auto_initial_round(context, recovery: UIRecovery, *, notify_enabled: boo
     _recover_or_restart(recovery)
 
     current_account = detect_current_account(context.controller, context.matcher)
+    _record_current_account(current_account, "afk.midas.detect.initial")
     current_label = current_account or "目前帳號"
     print(
         "\n▶️ [Auto] 初始輪：先執行當前畫面帳號點金，"
@@ -312,8 +342,10 @@ def run_auto_initial_round(context, recovery: UIRecovery, *, notify_enabled: boo
     if current_account != "em3":
         print("🔄 [Auto] 初始輪返回起點帳號 【em3】")
         notify_status("Midas", "切換帳號開始", account="em3", enabled=notify_enabled)
+        _refresh_midas_activity("midas.auto.before_switch")
         if not switch_account("em3"):
             raise RuntimeError("初始輪返回 em3 失敗")
+        _record_current_account("em3", "afk.midas.switch")
         notify_status("Midas", "切換帳號完成", account="em3", enabled=notify_enabled)
 
     return _read_em3_sleep_seconds(context, recovery, notify_enabled=notify_enabled)
@@ -333,6 +365,7 @@ def run_auto_sweep_first_round(
     _recover_or_restart(recovery)
 
     current_account = detect_current_account(context.controller, context.matcher)
+    _record_current_account(current_account, "afk.midas.detect.sweep_first")
     order = build_sweep_first_order(current_account, accounts, use_all)
     process_order = order[:-1]
     final_account = order[-1]
@@ -343,17 +376,21 @@ def run_auto_sweep_first_round(
         if active_account != account:
             print(f"🔄 [Auto] 切換至帳號 【{account}】")
             notify_status("Midas", "切換帳號開始", account=account, enabled=notify_enabled)
+            _refresh_midas_activity("midas.auto.before_switch")
             if not switch_account(account):
                 raise RuntimeError(f"sweep-first 切換至帳號 {account} 失敗")
             active_account = account
+            _record_current_account(account, "afk.midas.switch")
             notify_status("Midas", "切換帳號完成", account=account, enabled=notify_enabled)
         process_auto_account(context, recovery, account, notify_enabled=notify_enabled)
 
     if active_account != final_account:
         print(f"🔄 [Auto] sweep-first 返回起點帳號 【{final_account}】")
         notify_status("Midas", "切換帳號開始", account=final_account, enabled=notify_enabled)
+        _refresh_midas_activity("midas.auto.before_switch")
         if not switch_account(final_account):
             raise RuntimeError(f"sweep-first 返回 {final_account} 失敗")
+        _record_current_account(final_account, "afk.midas.switch")
         notify_status("Midas", "切換帳號完成", account=final_account, enabled=notify_enabled)
 
     return _read_em3_sleep_seconds(context, recovery, notify_enabled=notify_enabled)
@@ -373,6 +410,7 @@ def run_auto_round(
     _recover_or_restart(recovery)
 
     current_account = detect_current_account(context.controller, context.matcher)
+    _record_current_account(current_account, "afk.midas.detect.round")
     order = build_auto_account_order(accounts, use_all)
     displayed_order = order if order[-1] == "em3" else order + ["em3"]
     print(f"🔄 [Auto] 本輪帳號順序: {' -> '.join(displayed_order)}")
@@ -382,17 +420,21 @@ def run_auto_round(
         if active_account != account:
             print(f"🔄 [Auto] 切換至帳號 【{account}】")
             notify_status("Midas", "切換帳號開始", account=account, enabled=notify_enabled)
+            _refresh_midas_activity("midas.auto.before_switch")
             if not switch_account(account):
                 raise RuntimeError(f"切換至帳號 {account} 失敗")
             active_account = account
+            _record_current_account(account, "afk.midas.switch")
             notify_status("Midas", "切換帳號完成", account=account, enabled=notify_enabled)
         process_auto_account(context, recovery, account, notify_enabled=notify_enabled)
 
     if active_account != "em3":
         print("🔄 [Auto] 返回起點帳號 【em3】")
         notify_status("Midas", "切換帳號開始", account="em3", enabled=notify_enabled)
+        _refresh_midas_activity("midas.auto.before_switch")
         if not switch_account("em3"):
             raise RuntimeError("返回 em3 失敗")
+        _record_current_account("em3", "afk.midas.switch")
         notify_status("Midas", "切換帳號完成", account="em3", enabled=notify_enabled)
 
     return _read_em3_sleep_seconds(context, recovery, notify_enabled=notify_enabled)
@@ -413,6 +455,7 @@ def run_auto_loop(
         detail=f"accounts={'all' if use_all else 'em3/311'}, sweep_first={sweep_first}",
         enabled=notify_enabled,
     )
+    _set_midas_activity_active("midas.auto.initial.start")
     if sweep_first:
         sleep_seconds = run_auto_sweep_first_round(
             context,
@@ -423,14 +466,16 @@ def run_auto_loop(
         )
     else:
         sleep_seconds = run_auto_initial_round(context, recovery, notify_enabled=notify_enabled)
-    next_time = datetime.now() + timedelta(seconds=sleep_seconds)
+    next_time = datetime.now(TAIPEI_TZ) + timedelta(seconds=sleep_seconds)
     print(
         f"💤 [Auto] 初始輪結束，休眠 {_format_seconds(sleep_seconds)}；"
         f"預計 {next_time.strftime('%Y-%m-%d %H:%M:%S')} 喚醒後進入第一輪。"
     )
+    _clear_midas_activity_active("midas.auto.big_sleep", wake_at=next_time)
     time.sleep(sleep_seconds)
 
     while True:
+        _set_midas_activity_active("midas.auto.round.start")
         sleep_seconds = run_auto_round(
             context,
             recovery,
@@ -438,11 +483,12 @@ def run_auto_loop(
             use_all=use_all,
             notify_enabled=notify_enabled,
         )
-        next_time = datetime.now() + timedelta(seconds=sleep_seconds)
+        next_time = datetime.now(TAIPEI_TZ) + timedelta(seconds=sleep_seconds)
         print(
             f"💤 [Auto] 本輪結束，休眠 {_format_seconds(sleep_seconds)}；"
             f"預計 {next_time.strftime('%Y-%m-%d %H:%M:%S')} 喚醒。"
         )
+        _clear_midas_activity_active("midas.auto.big_sleep", wake_at=next_time)
         time.sleep(sleep_seconds)
 
 def main():
@@ -499,9 +545,11 @@ def main():
         )
             
     except KeyboardInterrupt:
+        _clear_midas_activity_active("midas.auto.ctrl_c")
         print("\n🛑 [中止] 接收到手動中斷指令 (Ctrl+C)，已安全退出掛機腳本。")
         sys.exit(0)
     except Exception as e:
+        _clear_midas_activity_active("midas.auto.exception")
         notify_status(
             "Midas",
             "崩潰",

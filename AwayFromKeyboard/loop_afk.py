@@ -5,6 +5,8 @@ import traceback
 import subprocess
 import json
 import os
+import shutil
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -20,11 +22,18 @@ from src.vision_matcher import VisionMatcher
 from src.scene_detector import SceneDetector
 from AwayFromKeyboard.ui_recovery import UIRecovery
 from AwayFromKeyboard.discord_notify import notify_status
+from src.account_state import read_activity_state, write_current_account
+from src.config import LOG_DIR
 
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
 
 STATE_DIR = Path(__file__).resolve().parent / "state"
+MIDAS_ACTIVITY_NAME = "midas_auto"
+MIDAS_ACTIVITY_POLL_SECONDS = 5 * 60
+MIDAS_ACTIVE_STALE_SECONDS = 10 * 60
+MIDAS_WAKE_GUARD_SECONDS = 20 * 60
+MIDAS_WAKE_GRACE_SECONDS = 2 * 60 * 60
 try:
     TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 except ZoneInfoNotFoundError:
@@ -55,7 +64,7 @@ def parse_time_of_day(time_str: str) -> tuple[int, int, int]:
     return hour, minute, second
 
 def seconds_until_next_8am(now: datetime) -> tuple[float, datetime]:
-    wake_time = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    wake_time = now.replace(hour=8, minute=0, second=30, microsecond=0)
     if wake_time < now:
         wake_time += timedelta(days=1)
     return (wake_time - now).total_seconds(), wake_time
@@ -77,7 +86,7 @@ def resolve_start_delay(
         base_delay, wake_time = seconds_until_next_8am(current)
         total_delay = base_delay + extra_delay
         final_wake_time = wake_time + timedelta(seconds=extra_delay)
-        label = "到上午 08:00:00"
+        label = "到上午 08:00:30"
         if delay:
             label += f" 後再延遲 {delay}"
         return total_delay, final_wake_time, label
@@ -138,6 +147,10 @@ def mark_route_completed(state: dict, account: str, route_name: str) -> None:
     account_state = completed.setdefault(account, {})
     account_state[route_name] = datetime.now(TAIPEI_TZ).isoformat(timespec="seconds")
     save_completion_state(state)
+
+def record_current_account(account: str | None, source: str) -> None:
+    if account:
+        write_current_account(account, source=source)
 
 def pending_tasks_for_account(
     state: dict,
@@ -206,16 +219,182 @@ def sanitize_log_name(value: str) -> str:
     safe = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in str(value))
     return safe.strip("_") or "route"
 
-def build_route_log_file(log_dir: str | None, *, account_name: str, task_name: str, now: datetime | None = None) -> Path | None:
-    if not log_dir:
+def build_route_log_file(enabled: bool, *, account_name: str, task_name: str, now: datetime | None = None) -> Path | None:
+    if not enabled:
         return None
-    directory = Path(log_dir).expanduser()
-    if not directory.is_absolute():
-        directory = PROJECT_ROOT / directory
     current = now or datetime.now(TAIPEI_TZ)
     timestamp = current.strftime("%Y%m%d_%H%M%S")
     filename = f"afk_{timestamp}_{sanitize_log_name(account_name)}_{sanitize_log_name(task_name)}.txt"
-    return directory / filename
+    return LOG_DIR / filename
+
+def build_router_argv(
+    task_name: str,
+    *,
+    debug_actions: bool,
+    force_subprocess: bool,
+    route_log_file: Path | None,
+) -> list[str]:
+    argv = [task_name]
+    if debug_actions:
+        argv.append("--debug-actions")
+    if force_subprocess:
+        argv.append("--force-subprocess")
+    if route_log_file is not None:
+        argv.extend(["--log-file", str(route_log_file)])
+    return argv
+
+def run_router_task_in_process(argv: list[str]) -> int:
+    from AwayFromKeyboard.integration_task import run_router
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(PROJECT_ROOT)
+        run_router.main(argv)
+        return 0
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        try:
+            return int(code)
+        except (TypeError, ValueError):
+            return 1
+    finally:
+        os.chdir(original_cwd)
+
+def run_router_task(
+    *,
+    task_cmd: list[str],
+    router_argv: list[str],
+    force_subprocess: bool,
+) -> int:
+    if force_subprocess:
+        child_env = os.environ.copy()
+        child_env.setdefault("PYTHONIOENCODING", "utf-8")
+        child_env.setdefault("PYTHONUTF8", "1")
+        result = subprocess.run(task_cmd, cwd=str(PROJECT_ROOT), env=child_env)
+        return int(result.returncode)
+
+    print("[AFK] Router 執行模式: in-process")
+    return run_router_task_in_process(router_argv)
+
+def previous_log_date_prefix(now: datetime | None = None) -> str:
+    current = now or datetime.now(TAIPEI_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=TAIPEI_TZ)
+    taipei_now = current.astimezone(TAIPEI_TZ)
+    return (taipei_now.date() - timedelta(days=1)).strftime("%Y%m%d")
+
+def is_log_from_date(path: Path, date_prefix: str) -> bool:
+    name = path.name
+    return name.startswith(f"{date_prefix}_") or name.startswith(f"afk_{date_prefix}_")
+
+def cleanup_previous_day_logs(log_dir: Path = LOG_DIR, now: datetime | None = None) -> int:
+    if not log_dir.exists():
+        return 0
+    date_prefix = previous_log_date_prefix(now)
+    removed = 0
+    for path in list(log_dir.iterdir()):
+        if not is_log_from_date(path, date_prefix):
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed += 1
+    return removed
+
+def start_previous_day_log_cleanup(log_dir: Path = LOG_DIR, now: datetime | None = None) -> threading.Thread:
+    def worker() -> None:
+        try:
+            removed = cleanup_previous_day_logs(log_dir, now)
+            if removed:
+                print(f"🧹 已清除前一天 log：{removed} 個項目")
+        except Exception as exc:
+            print(f"⚠️ 清理前一天 log 失敗：{exc}")
+
+    thread = threading.Thread(target=worker, name="afk-log-cleanup", daemon=True)
+    thread.start()
+    return thread
+
+def _parse_activity_time(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=TAIPEI_TZ)
+    return parsed.astimezone(TAIPEI_TZ)
+
+def _taipei_now(now: datetime | None = None) -> datetime:
+    current = now or datetime.now(TAIPEI_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=TAIPEI_TZ)
+    return current.astimezone(TAIPEI_TZ)
+
+def is_midas_activity_stale(activity: dict, now: datetime | None = None) -> bool:
+    updated_at = _parse_activity_time(activity.get("updated_at"))
+    if updated_at is None:
+        return False
+    return (_taipei_now(now) - updated_at).total_seconds() > MIDAS_ACTIVE_STALE_SECONDS
+
+def midas_activity_wait_reason(activity: dict, now: datetime | None = None) -> str | None:
+    if activity.get("activity") != MIDAS_ACTIVITY_NAME:
+        return None
+    if bool(activity.get("active")):
+        if is_midas_activity_stale(activity, now):
+            return "stale_active"
+        return "active"
+
+    wake_at = _parse_activity_time(activity.get("wake_at"))
+    if wake_at is None:
+        return None
+    current = _taipei_now(now)
+
+    wait_start = wake_at - timedelta(seconds=MIDAS_WAKE_GUARD_SECONDS)
+    wait_end = wake_at + timedelta(seconds=MIDAS_WAKE_GRACE_SECONDS)
+    if wait_start <= current <= wait_end:
+        return "wake_soon"
+    return None
+
+def is_midas_activity_active() -> bool:
+    return midas_activity_wait_reason(read_activity_state()) is not None
+
+def wait_for_midas_activity_clearance(recovery: UIRecovery | None, *, notify_enabled: bool) -> None:
+    notified_reason = None
+    while True:
+        activity = read_activity_state()
+        reason = midas_activity_wait_reason(activity)
+        if reason is None:
+            return
+        if reason == "stale_active":
+            print(
+                "⚠️ 偵測到點金手 active lock 已超過 10 分鐘，視為殘留狀態並繼續 AFK。"
+                "請確認 AwayFromKeyboard/state/activity.json，必要時把 active 改成 false 或刪除該檔。"
+            )
+            notify_status(
+                "AFK",
+                "忽略殘留點金鎖",
+                detail="midas_auto active updated_at older than 10 minutes",
+                enabled=notify_enabled,
+            )
+            return
+
+        wake_at = activity.get("wake_at")
+        if reason != notified_reason:
+            if reason == "active":
+                detail = "點金手掛機活動中，每 5 分鐘重新檢查。"
+            else:
+                detail = f"點金手接近喚醒時間 wake_at={wake_at}，先在主畫面等待。"
+            print(f"⏸️  {detail}")
+            notify_status("AFK", "等待點金手", detail=detail, enabled=notify_enabled)
+            notified_reason = reason
+
+        if recovery is not None:
+            recovery.recover_to_main()
+        time.sleep(MIDAS_ACTIVITY_POLL_SECONDS)
 
 def main():
     print("==================================================")
@@ -234,10 +413,10 @@ def main():
     parser.add_argument("--config", "--ini", dest="config_path", default=None, help="指定 afk tasks ini 檔案路徑")
     parser.add_argument("--debug-actions", action="store_true", help="儲存 Router 與任務每次操作前後的偵錯截圖")
     parser.add_argument("--force-subprocess", action="store_true", help="Router 任務強制使用舊的 subprocess 執行模式")
-    parser.add_argument("--log-dir", default=None, help="每個 Router 任務各自輸出一份 UTF-8 log 到指定目錄")
+    parser.add_argument("--log", action="store_true", help="每個 Router 任務各自輸出 UTF-8 log 與 profile 到 log/")
     parser.add_argument("--no-discord", action="store_true", help="關閉 Discord 狀態通知")
     parser.add_argument("--delay", type=str, default=None, help="首次啟動前的額外延遲等待時間 (hh:mm:ss)")
-    parser.add_argument("--delay-until-8", "--du8", action="store_true", help="先延遲到下一個上午 08:00:00；可再搭配 --delay 額外等待")
+    parser.add_argument("--delay-until-8", "--du8", action="store_true", help="先延遲到下一個上午 08:00:30；可再搭配 --delay 額外等待")
     parser.add_argument("--now", action="store_true", help="忽略 ini 的 start_time，立刻執行")
     args = parser.parse_args()
 
@@ -299,6 +478,10 @@ def main():
             )
             time.sleep(delay_seconds)
 
+        wait_for_midas_activity_clearance(recovery, notify_enabled=notify_enabled)
+
+        start_previous_day_log_cleanup(LOG_DIR)
+
         configured_tasks, date_key, completion_state = load_runtime_task_state()
 
         if not configured_tasks:
@@ -327,6 +510,7 @@ def main():
                 sys.exit(1)
 
         current_account = detect_current_account(controller, matcher)
+        record_current_account(current_account, "afk.loop.detect")
         account_order = build_account_execution_order(
             ACCOUNTS,
             current_account,
@@ -399,6 +583,7 @@ def main():
                         )
                         sys.exit(1)
                     current_account = account_name
+                    record_current_account(account_name, "afk.loop.switch")
                     print("🎉 帳號切換成功！")
                     notify_status(
                         "AFK",
@@ -409,6 +594,7 @@ def main():
 
                 # 1. 執行掛機任務
                 for task_name in pending_tasks:
+                    wait_for_midas_activity_clearance(recovery, notify_enabled=notify_enabled)
                     notify_status(
                         "AFK",
                         "開始",
@@ -416,34 +602,37 @@ def main():
                         route=task_name,
                         enabled=notify_enabled,
                     )
-                    task_cmd = [python_exe, str(run_router_script), task_name]
-                    if args.debug_actions:
-                        task_cmd.append("--debug-actions")
-                    if args.force_subprocess:
-                        task_cmd.append("--force-subprocess")
                     route_log_file = build_route_log_file(
-                        args.log_dir,
+                        args.log,
                         account_name=account_name,
                         task_name=task_name,
                     )
-                    if route_log_file is not None:
-                        task_cmd.extend(["--log-file", str(route_log_file)])
+                    router_argv = build_router_argv(
+                        task_name,
+                        debug_actions=args.debug_actions,
+                        force_subprocess=args.force_subprocess,
+                        route_log_file=route_log_file,
+                    )
+                    task_cmd = [python_exe, str(run_router_script)] + router_argv
                     print("\n" + "-" * 50)
                     print("🛠️ [Debug] 若此 Router 任務卡住，可複製以下指令單獨測試：")
                     print(f">>> {' '.join(task_cmd)}")
                     print("-" * 50 + "\n")
                     
-                    child_env = os.environ.copy()
-                    result = subprocess.run(task_cmd, cwd=str(PROJECT_ROOT), env=child_env)
-                    if result.returncode != 0:
-                        print(f"\n❌ [錯誤] 帳號 【{account_name}】 的任務 【{task_name}】 回傳了非零錯誤碼 ({result.returncode})！")
+                    returncode = run_router_task(
+                        task_cmd=task_cmd,
+                        router_argv=router_argv,
+                        force_subprocess=args.force_subprocess,
+                    )
+                    if returncode != 0:
+                        print(f"\n❌ [錯誤] 帳號 【{account_name}】 的任務 【{task_name}】 回傳了非零錯誤碼 ({returncode})！")
                         print("⚠️ [Fail-Fast] 發生異常，立刻終止整支程式，不切換帳號以保留現場。")
                         notify_status(
                             "AFK",
                             "失敗",
                             account=account_name,
                             route=task_name,
-                            detail=f"returncode={result.returncode}",
+                            detail=f"returncode={returncode}",
                             enabled=notify_enabled,
                         )
                         sys.exit(1)

@@ -5,7 +5,6 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.ocr_utils import read_texts_easyocr
 from src.scene_detector import Scene
 from src.task_runner import BaseTask
 from src.vision_matcher import MatchResult, Roi
@@ -26,17 +25,15 @@ class SummonTask(BaseTask):
     CONFIRM_BUTTON_ROI: Roi = (500, 420, 230, 80)
     FIVE_STAR_RESULT_ROI: Roi = (0, 0, 300, 120)
     LEAVE_BUTTON_ROI: Roi = (0, 0, 110, 90)
-    PAGE_LOAD_TIMEOUT_SECONDS = 45.0
+    PAGE_LOAD_TIMEOUT_SECONDS = 10.0
     RESULT_TIMEOUT_SECONDS = 35.0
     FREE_BUTTON_THRESHOLD = 0.80
     RESULT_DETAIL_TAP_POINT = (80, 500)
     RESULT_DETAIL_TAP_INTERVAL_SECONDS = 1.2
     RESULT_DETAIL_GRACE_SECONDS = 10.0
-    OCR_FALLBACK_DELAY_SECONDS = 5.0
 
     def __init__(self, context):
         super().__init__(context)
-        self._ocr_reader = None
 
     def is_task_scene(self, screen) -> bool:
         path = self.asset_path("advanced_contract_label.png")
@@ -189,7 +186,7 @@ class SummonTask(BaseTask):
         self.context.controller.tap(80, 500)
         time.sleep(TAP_COOLDOWN_SECONDS)
         self.dismiss_reward_overlay_by_blank_taps(
-            is_closed=lambda: self._is_summon_page_visible(timeout_seconds=0.8),
+            is_closed=lambda: self._is_summon_page_visible(timeout_seconds=2.0),
             max_taps=1,
             failure_message="Summon post-confirm reward overlay did not close after two blank-area taps",
         )
@@ -223,8 +220,7 @@ class SummonTask(BaseTask):
             raise TaskFailedError("Summon expected screen element not found: advanced contract summon page")
 
     def _is_summon_page_visible(self, timeout_seconds: float) -> bool:
-        started = time.time()
-        deadline = started + timeout_seconds
+        deadline = time.time() + timeout_seconds
         while time.time() <= deadline:
             match = self._match_task_asset(
                 "advanced_contract_label.png",
@@ -234,37 +230,11 @@ class SummonTask(BaseTask):
             )
             if match is not None:
                 return True
-            screen = self.context.controller.screenshot()
-            if (
-                time.time() - started >= self.OCR_FALLBACK_DELAY_SECONDS
-                and self._screen_ocr_indicates_advanced_contract(screen)
-            ):
-                return True
-            time.sleep(0.5)
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            time.sleep(min(1.0, remaining))
         return False
-
-    def _screen_ocr_indicates_advanced_contract(self, screen) -> bool:
-        try:
-            fragments = read_texts_easyocr(
-                screen,
-                roi=self.PAGE_LABEL_ROI,
-                reader=self._get_ocr_reader(),
-                languages=["ch_tra", "en"],
-                download_enabled=False,
-            )
-        except Exception:
-            return False
-
-        text = "".join(fragment["text"] for fragment in fragments)
-        normalized = "".join(char for char in text if char.isalnum() or "\u4e00" <= char <= "\u9fff")
-        return "高" in normalized and "契" in normalized and "約" in normalized
-
-    def _get_ocr_reader(self):
-        if self._ocr_reader is None:
-            from src.ocr_utils import get_cached_easyocr_reader
-
-            self._ocr_reader = get_cached_easyocr_reader(("ch_tra", "en"), download_enabled=False)
-        return self._ocr_reader
 
     def _tap_task_asset(
         self,

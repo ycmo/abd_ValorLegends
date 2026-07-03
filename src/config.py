@@ -12,8 +12,9 @@ ASSETS_DIR = ROOT_DIR / "assets"
 SHARED_ASSETS_DIR = ASSETS_DIR / "shared"
 TASK_ASSETS_DIR = ASSETS_DIR / "tasks"
 RAW_CAPTURES_DIR = ASSETS_DIR / "raw_captures"
-CAPTURES_DIR = ROOT_DIR / "captures"
-ACTION_DEBUG_DIR = CAPTURES_DIR / "action_debug"
+LOG_DIR = ROOT_DIR / "log"
+CAPTURES_DIR = LOG_DIR
+ACTION_DEBUG_DIR = LOG_DIR
 MANUAL_SCREENSHOTS_DIR = ROOT_DIR / "manual_screenshots"
 USER_CONFIG_DIR = ROOT_DIR / "config"
 RUN_ALL_TASKS_CONFIG = USER_CONFIG_DIR / "run_all_tasks.jsonc"
@@ -72,6 +73,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             notes="Independent task. It is not opened from daily tasks and is not part of run-all.",
         ),
     ),
+    "advanced_arena": TaskSpec(
+        key="advanced_arena",
+        display_name="高階競技場",
+        daily_text="",
+        manual_dir="高階競技場",
+        kind="independent",
+        policy=ResourcePolicy(
+            allowed_actions=("use_free_tickets_only",),
+            stop_conditions=("season_last_day", "free_tickets_exhausted", "season_countdown_unreadable"),
+            notes="Independent task. Starts from the Advanced Arena screen and consumes only free challenge tickets.",
+        ),
+    ),
     "arena": TaskSpec(
         key="arena",
         display_name="競技場",
@@ -118,6 +131,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             allowed_actions=("fight_first_team_once", "confirm_abandon_on_exit"),
             stop_conditions=("cannot_start_battle",),
             notes="Every 5 stages may show multi-team UI. Fight first team once, then exit.",
+        ),
+    ),
+    "equipment_enhance": TaskSpec(
+        key="equipment_enhance",
+        display_name="強化裝備",
+        daily_text="強化任意裝備1次",
+        manual_dir="強化裝備",
+        kind="collect",
+        policy=ResourcePolicy(
+            allowed_actions=("enhance_any_equipment_once",),
+            stop_conditions=("target_hero_not_found", "no_enhance_materials", "cannot_return_to_daily_tasks"),
+            notes="Open a target hero, auto-add materials, enhance one equipment once, then return.",
         ),
     ),
     "guild_dungeon": TaskSpec(
@@ -223,6 +248,7 @@ TASK_ORDER: Tuple[str, ...] = (
     "bounty",
     "campaign",
     "endless_trial",
+    "equipment_enhance",
     "guild_dungeon",
     "guild_wish",
     "midas",

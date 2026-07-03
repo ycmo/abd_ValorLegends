@@ -523,26 +523,38 @@ class DeviceController:
             lines.insert(0, f"swipe {start[0]},{start[1]} -> {end[0]},{end[1]}")
         if lines:
             line_height = 20
-            panel_height = 12 + line_height * len(lines)
-            panel_width = 612
+            text_scale = 0.48
+            text_thickness = 1
+            padding_x = 8
+            padding_top = 8
+            padding_bottom = 7
+            margin = 8
+            truncated_lines = [line[:92] for line in lines]
+            max_text_width = max(
+                cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness)[0][0]
+                for line in truncated_lines
+            )
+            panel_height = padding_top + padding_bottom + line_height * len(truncated_lines)
+            panel_width = max_text_width + padding_x * 2
             if debug_panel_position == "right":
-                panel_x1 = max(8, annotated.shape[1] - panel_width - 8)
-                text_x = panel_x1 + 8
+                panel_x1 = max(margin, annotated.shape[1] - panel_width - margin)
             else:
-                panel_x1 = 8
-                text_x = 16
-            panel_x2 = min(annotated.shape[1] - 8, panel_x1 + panel_width)
-            cv2.rectangle(annotated, (panel_x1, 8), (panel_x2, 8 + panel_height), (0, 0, 0), -1)
-            cv2.rectangle(annotated, (panel_x1, 8), (panel_x2, 8 + panel_height), (255, 255, 255), 1)
-            for index, line in enumerate(lines):
+                panel_x1 = margin
+            panel_x2 = min(annotated.shape[1] - margin, panel_x1 + panel_width)
+            panel_y2 = annotated.shape[0] - margin
+            panel_y1 = max(margin, panel_y2 - panel_height)
+            text_x = panel_x1 + padding_x
+            cv2.rectangle(annotated, (panel_x1, panel_y1), (panel_x2, panel_y2), (0, 0, 0), -1)
+            cv2.rectangle(annotated, (panel_x1, panel_y1), (panel_x2, panel_y2), (255, 255, 255), 1)
+            for index, line in enumerate(truncated_lines):
                 cv2.putText(
                     annotated,
-                    line[:92],
-                    (text_x, 30 + index * line_height),
+                    line,
+                    (text_x, panel_y1 + padding_top + 13 + index * line_height),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.48,
+                    text_scale,
                     (255, 255, 255),
-                    1,
+                    text_thickness,
                     cv2.LINE_AA,
                 )
         return annotated

@@ -171,13 +171,13 @@ class DailyRunnerRunAllTests(unittest.TestCase):
         context = FakeContext()
         context.finder = Finder()
         context.navigator = Navigator()
-        context.controller = SimpleNamespace(debug_actions=True, debug_dir=Path("captures/action_debug/run123"))
+        context.controller = SimpleNamespace(debug_actions=True, debug_dir=Path("log/run123"))
         runner = DailyRunner(context=context)
 
         runner.run_all_go_first(["midas"], log_prefix="run-all", failure_sleep_seconds=0.1)
 
         messages = [message for message, _force in context.logger.messages]
-        self.assertIn("run-all action_debug_dir=captures\\action_debug\\run123", messages)
+        self.assertIn("run-all action_debug_dir=log\\run123", messages)
         self.assertIn("run-all scan=01/30 handled=", messages)
 
     def test_run_all_go_first_clears_known_blocker_before_scan(self):
