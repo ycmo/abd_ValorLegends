@@ -10,10 +10,12 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from src.config import ROOT_DIR
 from src.profiler import profile_enabled, profile_load
 
 _EASYOCR_READER_CACHE = {}
 _EASYOCR_READER_CACHE_LOCK = threading.RLock()
+EASYOCR_MODEL_DIR = ROOT_DIR / ".easyocr" / "model"
 
 
 def _profile_load(message: str) -> None:
@@ -161,11 +163,13 @@ def build_easyocr_reader(
     )
 
     reader_started = time.perf_counter()
+    EASYOCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
     reader = easyocr.Reader(
         list(normalized_languages),
         gpu=False,
         verbose=False,
         download_enabled=download_enabled,
+        model_storage_directory=str(EASYOCR_MODEL_DIR),
     )
     _profile_load(
         f"easyocr reader initialized languages={','.join(normalized_languages)} "

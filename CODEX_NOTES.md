@@ -16,8 +16,8 @@
 - Old code/assets/tools were archived under `legacy/20260604_pre_rewrite/`.
 - `legacy/` is ignored by git.
 - New mainline lives under `src/`.
-- Ads work belongs under `ads/`; do not mix ad-watching implementation into daily-task routes.
-- User plans to create `ads2/` later for a cleaner ad-blocking/ad-closing rewrite. Current `ads/` is usable but layered; do not expand it into a larger refactor unless explicitly asked.
+- Legacy `ads/` was removed; ad-watching work belongs under `ads2/`.
+- Do not mix ad-watching implementation into daily-task routes.
 - `call_of_the_gale/` is the independent AGY/Codex workspace for `王國冒險 -> 疾風的呼喚`; do not mix it into daily-task routes until the mini-game flow is understood and approved.
 - `magic_shop/` is the independent AGY workspace for `魔法商店`; AGY may read/import shared `src/` tools but must not modify files outside `magic_shop/` until integration is explicitly approved.
 - 2026-06-08: user approved Magic Shop integration into the daily-task mainline for debug/optimization. `magic_shop` is now registered in `TASK_SPECS`/`TASK_CLASSES`; task label asset is `assets/tasks/magic_shop/task_label.png`, copied from `manual_screenshots/魔法商店/001_每日任務.png`.

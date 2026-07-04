@@ -7,7 +7,7 @@
 
 - This folder is independent from daily-task automation.
 - Do not add Call of the Gale logic to `src/tasks/` until the mini-game flow is understood and user-approved.
-- Do not mix this work into `ads/`; AGY ad-watching work stays there.
+- Do not mix this work into ad-watching flows; ad-watching work belongs under `ads2/`.
 - Shared ADB assumptions remain the same as the main project: `emulator-5554`, 960x540 screenshot, density 240.
 
 ## Golden Rule

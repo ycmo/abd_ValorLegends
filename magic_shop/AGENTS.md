@@ -5,7 +5,7 @@ This directory is the isolated workspace for the Valor Legends Magic Shop task.
 ## Hard Boundary
 
 - You may create, edit, and delete files only under `magic_shop/`.
-- Do not modify files outside `magic_shop/`, including `src/`, `assets/`, `tests/`, `docs/`, `ads/`, `ads2/`, `manual_screenshots/`, and project root files.
+- Do not modify files outside `magic_shop/`, including `src/`, `assets/`, `tests/`, `docs/`, `ads2/`, `manual_screenshots/`, and project root files.
 - You may read files outside this directory for reference.
 - You may import or call shared project tools from `src/` at runtime.
 - If shared code needs a change, do not patch it. Write the requested change or blocker in `magic_shop/QA.md` and stop.

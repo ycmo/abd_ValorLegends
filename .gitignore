@@ -1,5 +1,7 @@
 .venv/
 .venv-codex/
+.python311/
+.easyocr/
 __pycache__/
 *.pyc
 debug/
