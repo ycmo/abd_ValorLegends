@@ -5,11 +5,20 @@ import traceback
 import subprocess
 import json
 import os
+import re
 import shutil
 import threading
+import cv2
+import numpy as np
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+try:
+    from AwayFromKeyboard.time_utils import smart_sleep
+except ModuleNotFoundError:
+    from time_utils import smart_sleep
 
 # 加入專案目錄以利匯入 switch_account
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -29,15 +38,32 @@ from src.stdio_utils import configure_utf8_stdio
 configure_utf8_stdio()
 
 STATE_DIR = Path(__file__).resolve().parent / "state"
+GAME_PACKAGE = "com.ageofeternity.global"
 MIDAS_ACTIVITY_NAME = "midas_auto"
 MIDAS_ACTIVITY_POLL_SECONDS = 5 * 60
 MIDAS_ACTIVE_STALE_SECONDS = 10 * 60
 MIDAS_WAKE_GUARD_SECONDS = 20 * 60
 MIDAS_WAKE_GRACE_SECONDS = 2 * 60 * 60
+DEFAULT_TASK_TIMEOUT_SECONDS = 10 * 60
+DEFAULT_TASK_HARD_TIMEOUT_SECONDS = 20 * 60
+DEFAULT_STUCK_PROBE_SECONDS = 60
+DEFAULT_STUCK_PROBE_INTERVAL_SECONDS = 10
+STATIC_SCREEN_DIFF_THRESHOLD = 2.0
+ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE = 20
+MAX_ACTION_DEBUG_LABEL_LENGTH = 80
 try:
     TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 except ZoneInfoNotFoundError:
     TAIPEI_TZ = timezone(timedelta(hours=8), name="Asia/Taipei")
+
+@dataclass(frozen=True)
+class TaskWatchdogConfig:
+    enabled: bool
+    task_timeout_seconds: float
+    hard_timeout_seconds: float
+    stuck_probe_seconds: float
+    stuck_probe_interval_seconds: float
+    debug_label: str | None = None
 
 def parse_delay_to_seconds(delay_str: str) -> float:
     parts = delay_str.split(':')
@@ -47,6 +73,19 @@ def parse_delay_to_seconds(delay_str: str) -> float:
     if h < 0 or not 0 <= m < 60 or not 0 <= s < 60:
         raise ValueError(f"時間格式錯誤 '{delay_str}'，請使用 hh:mm:ss")
     return h * 3600 + m * 60 + s
+
+def parse_duration_to_seconds(value: str | None) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if ":" in text:
+        return parse_delay_to_seconds(text)
+    seconds = float(text)
+    if seconds < 0:
+        raise ValueError(f"duration must be non-negative: {value!r}")
+    return seconds
 
 def parse_time_of_day(time_str: str) -> tuple[int, int, int]:
     parts = time_str.split(':')
@@ -148,6 +187,25 @@ def mark_route_completed(state: dict, account: str, route_name: str) -> None:
     account_state[route_name] = datetime.now(TAIPEI_TZ).isoformat(timespec="seconds")
     save_completion_state(state)
 
+def clear_failed_this_round(state: dict) -> bool:
+    if "failed_this_round" not in state:
+        return False
+    state.pop("failed_this_round", None)
+    save_completion_state(state)
+    return True
+
+def mark_route_failed_this_round(state: dict, account: str, route_name: str, detail: str) -> None:
+    failed = state.setdefault("failed_this_round", {})
+    account_state = failed.setdefault(account, {})
+    account_state[route_name] = {
+        "detail": detail,
+        "updated_at": datetime.now(TAIPEI_TZ).isoformat(timespec="seconds"),
+    }
+    save_completion_state(state)
+
+def is_route_failed_this_round(state: dict, account: str, route_name: str) -> bool:
+    return bool(state.get("failed_this_round", {}).get(account, {}).get(route_name))
+
 def record_current_account(account: str | None, source: str) -> None:
     if account:
         write_current_account(account, source=source)
@@ -165,6 +223,7 @@ def pending_tasks_for_account(
         task_name
         for task_name in configured_tasks
         if not is_route_completed(state, account, task_name)
+        and not is_route_failed_this_round(state, account, task_name)
     ]
 
 def build_account_rotation(accounts: list[str], current_account: str | None) -> list[str]:
@@ -243,6 +302,249 @@ def build_router_argv(
         argv.extend(["--log-file", str(route_log_file)])
     return argv
 
+def build_action_debug_label(account_name: str, task_name: str, now: datetime | None = None) -> str:
+    current = now or datetime.now(TAIPEI_TZ)
+    raw = f"afk_{current.strftime('%Y%m%d_%H%M%S')}_{account_name}_{task_name}"
+    return re.sub(r"[^\w.-]+", "_", raw, flags=re.UNICODE).strip("._-")[:80]
+
+def build_stage_action_debug_label(base_label: str | None, stage: str) -> str | None:
+    if not base_label:
+        return None
+    suffix = f"_{stage}"
+    if len(base_label) + len(suffix) <= MAX_ACTION_DEBUG_LABEL_LENGTH:
+        return f"{base_label}{suffix}"
+    return f"{base_label[:MAX_ACTION_DEBUG_LABEL_LENGTH - len(suffix)]}{suffix}"
+
+def is_route_exit_after_command_success(returncode: int) -> bool:
+    return int(returncode) == ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE
+
+def _reduced_screen_signature(screen: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(gray, (64, 36), interpolation=cv2.INTER_AREA)
+
+def _screen_diff_score(previous: np.ndarray, current: np.ndarray) -> float:
+    diff = cv2.absdiff(previous, current)
+    return float(np.mean(diff))
+
+def terminate_process_tree(process: subprocess.Popen, *, timeout_seconds: float = 30.0) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=timeout_seconds)
+
+def rename_action_debug_dirs_for_failure(debug_label: str | None, reason: str) -> list[Path]:
+    if not debug_label or not LOG_DIR.exists():
+        return []
+    safe_reason = re.sub(r"[^A-Za-z0-9_.-]+", "_", reason).strip("_")[:80] or "failure"
+    renamed: list[Path] = []
+    for path in list(LOG_DIR.iterdir()):
+        if not path.is_dir() or debug_label not in path.name or "_fail_" in path.name:
+            continue
+        target = path.with_name(f"{path.name}_fail_{safe_reason}")
+        suffix = 1
+        while target.exists():
+            target = path.with_name(f"{path.name}_fail_{safe_reason}_{suffix}")
+            suffix += 1
+        try:
+            path.rename(target)
+            renamed.append(target)
+        except OSError as exc:
+            print(f"[AFK recovery] failed to rename debug dir {path}: {exc}")
+    return renamed
+
+def rename_latest_stage_action_debug_dir_for_failure(debug_label: str | None, reason: str) -> list[Path]:
+    if not debug_label or not LOG_DIR.exists():
+        return []
+    candidates: list[Path] = []
+    for stage in ("route_enter", "task", "route_exit"):
+        stage_label = build_stage_action_debug_label(debug_label, stage)
+        if not stage_label:
+            continue
+        candidates.extend(
+            path
+            for path in LOG_DIR.iterdir()
+            if path.is_dir() and stage_label in path.name and "_fail_" not in path.name
+        )
+    if not candidates:
+        return rename_action_debug_dirs_for_failure(debug_label, reason)
+    latest = max(candidates, key=lambda path: path.stat().st_mtime)
+    return rename_action_debug_dirs_for_failure(latest.name, reason)
+
+def rename_router_debug_dirs_for_failure(debug_label: str | None, reason: str, returncode: int) -> list[Path]:
+    if is_route_exit_after_command_success(returncode):
+        return rename_action_debug_dirs_for_failure(
+            build_stage_action_debug_label(debug_label, "route_exit"),
+            reason,
+        )
+    if reason in ("stuck_static", "hard_timeout"):
+        return rename_latest_stage_action_debug_dir_for_failure(debug_label, reason)
+    return rename_action_debug_dirs_for_failure(
+        build_stage_action_debug_label(debug_label, "task"),
+        reason,
+    )
+
+def run_router_task_subprocess_watchdog(
+    *,
+    task_cmd: list[str],
+    env: dict[str, str],
+    watchdog: TaskWatchdogConfig,
+    recovery: UIRecovery,
+) -> tuple[int, str]:
+    process = subprocess.Popen(task_cmd, cwd=str(PROJECT_ROOT), env=env)
+    started = time.time()
+    monitor_started = False
+    last_signature: np.ndarray | None = None
+    static_elapsed = 0.0
+    last_probe_at = 0.0
+
+    while True:
+        returncode = process.poll()
+        if returncode is not None:
+            code = int(returncode)
+            if is_route_exit_after_command_success(code):
+                return code, "route_exit_after_task_success"
+            return code, "success" if code == 0 else f"returncode_{code}"
+
+        elapsed = time.time() - started
+        if elapsed >= watchdog.hard_timeout_seconds:
+            print(f"[AFK watchdog] hard timeout after {elapsed:.1f}s; terminating router")
+            terminate_process_tree(process)
+            return 124, "hard_timeout"
+
+        if elapsed < watchdog.task_timeout_seconds:
+            time.sleep(1)
+            continue
+
+        if not monitor_started:
+            monitor_started = True
+            print(
+                "[AFK watchdog] task timeout reached; starting stuck probe "
+                f"interval={watchdog.stuck_probe_interval_seconds:.0f}s "
+                f"window={watchdog.stuck_probe_seconds:.0f}s"
+            )
+
+        now = time.time()
+        if now - last_probe_at < watchdog.stuck_probe_interval_seconds:
+            time.sleep(1)
+            continue
+        last_probe_at = now
+
+        try:
+            signature = _reduced_screen_signature(recovery.controller.screenshot())
+        except Exception as exc:
+            print(f"[AFK watchdog] screenshot probe failed: {exc}")
+            last_signature = None
+            static_elapsed = 0.0
+            continue
+
+        if last_signature is None:
+            last_signature = signature
+            static_elapsed = 0.0
+            continue
+
+        score = _screen_diff_score(last_signature, signature)
+        last_signature = signature
+        if score <= STATIC_SCREEN_DIFF_THRESHOLD:
+            static_elapsed += watchdog.stuck_probe_interval_seconds
+            print(
+                f"[AFK watchdog] static screen diff={score:.3f}; "
+                f"static={static_elapsed:.0f}/{watchdog.stuck_probe_seconds:.0f}s"
+            )
+        else:
+            print(f"[AFK watchdog] screen changed diff={score:.3f}; continuing")
+            static_elapsed = 0.0
+
+        if static_elapsed >= watchdog.stuck_probe_seconds:
+            print("[AFK watchdog] stuck static screen detected; terminating router")
+            terminate_process_tree(process)
+            return 124, "stuck_static"
+
+def run_command_subprocess_watchdog(
+    *,
+    cmd: list[str],
+    env: dict[str, str],
+    watchdog: TaskWatchdogConfig,
+    recovery: UIRecovery,
+) -> tuple[int, str]:
+    process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), env=env)
+    started = time.time()
+    monitor_started = False
+    last_signature: np.ndarray | None = None
+    static_elapsed = 0.0
+    last_probe_at = 0.0
+
+    while True:
+        returncode = process.poll()
+        if returncode is not None:
+            code = int(returncode)
+            return code, "success" if code == 0 else f"returncode_{code}"
+
+        elapsed = time.time() - started
+        if elapsed >= watchdog.hard_timeout_seconds:
+            print(f"[AFK watchdog] hard timeout after {elapsed:.1f}s; terminating subprocess")
+            terminate_process_tree(process)
+            return 124, "hard_timeout"
+
+        if elapsed < watchdog.task_timeout_seconds:
+            time.sleep(1)
+            continue
+
+        if not monitor_started:
+            monitor_started = True
+            print(
+                "[AFK watchdog] switch timeout reached; starting stuck probe "
+                f"interval={watchdog.stuck_probe_interval_seconds:.0f}s "
+                f"window={watchdog.stuck_probe_seconds:.0f}s"
+            )
+
+        now = time.time()
+        if now - last_probe_at < watchdog.stuck_probe_interval_seconds:
+            time.sleep(1)
+            continue
+        last_probe_at = now
+
+        try:
+            signature = _reduced_screen_signature(recovery.controller.screenshot())
+        except Exception as exc:
+            print(f"[AFK watchdog] screenshot probe failed: {exc}")
+            last_signature = None
+            static_elapsed = 0.0
+            continue
+
+        if last_signature is None:
+            last_signature = signature
+            static_elapsed = 0.0
+            continue
+
+        score = _screen_diff_score(last_signature, signature)
+        last_signature = signature
+        if score <= STATIC_SCREEN_DIFF_THRESHOLD:
+            static_elapsed += watchdog.stuck_probe_interval_seconds
+            print(
+                f"[AFK watchdog] static screen diff={score:.3f}; "
+                f"static={static_elapsed:.0f}/{watchdog.stuck_probe_seconds:.0f}s"
+            )
+        else:
+            print(f"[AFK watchdog] screen changed diff={score:.3f}; continuing")
+            static_elapsed = 0.0
+
+        if static_elapsed >= watchdog.stuck_probe_seconds:
+            print("[AFK watchdog] stuck static screen detected; terminating subprocess")
+            terminate_process_tree(process)
+            return 124, "stuck_static"
+
 def run_router_task_in_process(argv: list[str]) -> int:
     from AwayFromKeyboard.integration_task import run_router
 
@@ -267,16 +569,260 @@ def run_router_task(
     task_cmd: list[str],
     router_argv: list[str],
     force_subprocess: bool,
+    watchdog: TaskWatchdogConfig | None = None,
+    recovery: UIRecovery | None = None,
 ) -> int:
-    if force_subprocess:
+    if force_subprocess or (watchdog is not None and watchdog.enabled):
         child_env = os.environ.copy()
         child_env.setdefault("PYTHONIOENCODING", "utf-8")
         child_env.setdefault("PYTHONUTF8", "1")
+        if watchdog is not None and watchdog.debug_label:
+            child_env["VL_ACTION_DEBUG_LABEL"] = watchdog.debug_label
+        if watchdog is not None and watchdog.enabled:
+            if recovery is None:
+                raise ValueError("recovery is required when watchdog is enabled")
+            returncode, reason = run_router_task_subprocess_watchdog(
+                task_cmd=task_cmd,
+                env=child_env,
+                watchdog=watchdog,
+                recovery=recovery,
+            )
+            if returncode != 0:
+                rename_router_debug_dirs_for_failure(watchdog.debug_label, reason, returncode)
+            return returncode
         result = subprocess.run(task_cmd, cwd=str(PROJECT_ROOT), env=child_env)
+        if result.returncode != 0 and watchdog is not None:
+            rename_router_debug_dirs_for_failure(
+                watchdog.debug_label,
+                f"returncode_{result.returncode}",
+                int(result.returncode),
+            )
         return int(result.returncode)
 
     print("[AFK] Router 執行模式: in-process")
     return run_router_task_in_process(router_argv)
+
+def reenter_game_from_current_app(recovery: UIRecovery) -> bool:
+    from src.game_entry import reenter_game
+
+    return bool(reenter_game(recovery.controller, recovery.matcher))
+
+def restart_game_app_and_reenter(
+    recovery: UIRecovery,
+    *,
+    launch_wait_seconds: float = 10.0,
+) -> bool:
+    try:
+        print(f"[AFK recovery] force-stop app: {GAME_PACKAGE}")
+        recovery.controller.shell(["am", "force-stop", GAME_PACKAGE])
+        time.sleep(3)
+        print(f"[AFK recovery] launch app: {GAME_PACKAGE}")
+        recovery.controller.shell(
+            ["monkey", "-p", GAME_PACKAGE, "-c", "android.intent.category.LAUNCHER", "1"]
+        )
+        time.sleep(launch_wait_seconds)
+        return reenter_game_from_current_app(recovery)
+    except Exception as exc:
+        print(f"[AFK recovery] app restart failed: {exc}")
+        return False
+
+def restart_bluestacks_and_reenter(
+    recovery: UIRecovery,
+    *,
+    boot_wait_seconds: float,
+) -> bool:
+    try:
+        from restart_bluestacks import restart_bluestacks
+
+        print("[AFK recovery] restart BlueStacks")
+        if restart_bluestacks(boot_wait_seconds=boot_wait_seconds) != 0:
+            return False
+        if not recovery.controller.connect():
+            print("[AFK recovery] ADB reconnect failed after BlueStacks restart")
+            return False
+        return reenter_game_from_current_app(recovery)
+    except Exception as exc:
+        print(f"[AFK recovery] BlueStacks restart failed: {exc}")
+        return False
+
+def run_switch_account_command(
+    *,
+    switch_cmd: list[str],
+    watchdog: TaskWatchdogConfig,
+    recovery: UIRecovery,
+) -> tuple[bool, str]:
+    child_env = os.environ.copy()
+    child_env.setdefault("PYTHONIOENCODING", "utf-8")
+    child_env.setdefault("PYTHONUTF8", "1")
+    returncode, reason = run_command_subprocess_watchdog(
+        cmd=switch_cmd,
+        env=child_env,
+        watchdog=watchdog,
+        recovery=recovery,
+    )
+    return returncode == 0, reason if returncode != 0 else "success"
+
+def switch_account_with_recovery(
+    *,
+    account_name: str,
+    switch_cmd: list[str],
+    recovery: UIRecovery,
+    enabled: bool,
+    bluestacks_boot_wait_seconds: float,
+    watchdog: TaskWatchdogConfig,
+) -> tuple[bool, str]:
+    if not enabled:
+        return bool(switch_account(account_name)), "initial"
+
+    success, reason = run_switch_account_command(
+        switch_cmd=switch_cmd,
+        watchdog=watchdog,
+        recovery=recovery,
+    )
+    if success:
+        return True, "initial"
+
+    print(f"[AFK recovery] switch account failed ({reason}); restarting app")
+    if restart_game_app_and_reenter(recovery):
+        success, reason = run_switch_account_command(
+            switch_cmd=switch_cmd,
+            watchdog=watchdog,
+            recovery=recovery,
+        )
+        if success:
+            return True, "app_restart_retry"
+    else:
+        print("[AFK recovery] app restart did not reenter game before switch retry")
+
+    print("[AFK recovery] switch account still failed; restarting BlueStacks")
+    if restart_bluestacks_and_reenter(
+        recovery,
+        boot_wait_seconds=bluestacks_boot_wait_seconds,
+    ):
+        success, reason = run_switch_account_command(
+            switch_cmd=switch_cmd,
+            watchdog=watchdog,
+            recovery=recovery,
+        )
+        if success:
+            return True, "bluestacks_restart_retry"
+    else:
+        print("[AFK recovery] BlueStacks restart did not reenter game before switch retry")
+
+    return False, reason
+
+def run_router_task_with_recovery(
+    *,
+    task_cmd: list[str],
+    router_argv: list[str],
+    force_subprocess: bool,
+    recovery: UIRecovery,
+    enabled: bool,
+    bluestacks_boot_wait_seconds: float,
+    watchdog: TaskWatchdogConfig | None = None,
+) -> tuple[int, str]:
+    returncode = run_router_task(
+        task_cmd=task_cmd,
+        router_argv=router_argv,
+        force_subprocess=force_subprocess or enabled,
+        watchdog=watchdog,
+        recovery=recovery,
+    )
+    if is_route_exit_after_command_success(returncode):
+        if not enabled:
+            return returncode, "route_exit_after_task_success"
+        print("[AFK recovery] route exit failed after task success; recovering UI without rerunning task")
+        if recovery.recover_to_main():
+            return 0, "route_exit_recovered"
+        print("[AFK recovery] route exit recovery did not reach main; restarting app")
+        if restart_game_app_and_reenter(recovery):
+            return 0, "route_exit_app_restart_recovered"
+        print("[AFK recovery] route exit app recovery failed; restarting BlueStacks")
+        if restart_bluestacks_and_reenter(
+            recovery,
+            boot_wait_seconds=bluestacks_boot_wait_seconds,
+        ):
+            return 0, "route_exit_bluestacks_restart_recovered"
+        return returncode, "route_exit_recovery_failed_after_task_success"
+    if returncode == 0 or not enabled:
+        return returncode, "initial"
+
+    print(f"[AFK recovery] task failed returncode={returncode}; retrying once without restart")
+    returncode = run_router_task(
+        task_cmd=task_cmd,
+        router_argv=router_argv,
+        force_subprocess=force_subprocess or enabled,
+        watchdog=watchdog,
+        recovery=recovery,
+    )
+    if returncode == 0:
+        return 0, "direct_retry"
+
+    print(f"[AFK recovery] direct retry failed returncode={returncode}; restarting app")
+    if restart_game_app_and_reenter(recovery):
+        returncode = run_router_task(
+            task_cmd=task_cmd,
+            router_argv=router_argv,
+            force_subprocess=force_subprocess or enabled,
+            watchdog=watchdog,
+            recovery=recovery,
+        )
+        if returncode == 0:
+            return 0, "app_restart_retry"
+    else:
+        print("[AFK recovery] app restart did not reenter game")
+
+    print("[AFK recovery] app recovery failed; restarting BlueStacks")
+    if restart_bluestacks_and_reenter(
+        recovery,
+        boot_wait_seconds=bluestacks_boot_wait_seconds,
+    ):
+        returncode = run_router_task(
+            task_cmd=task_cmd,
+            router_argv=router_argv,
+            force_subprocess=force_subprocess or enabled,
+            watchdog=watchdog,
+            recovery=recovery,
+        )
+        if returncode == 0:
+            return 0, "bluestacks_restart_retry"
+    else:
+        print("[AFK recovery] BlueStacks restart did not reenter game")
+
+    return returncode, "failed_after_recovery"
+
+def resolve_task_watchdog_config(
+    *,
+    enabled: bool,
+    account_name: str,
+    task_name: str,
+    cli_task_timeout_seconds: float,
+    cli_hard_timeout_seconds: float,
+    stuck_probe_seconds: float,
+    stuck_probe_interval_seconds: float,
+    ini_timeout: str | None,
+    ini_hard_timeout: str | None,
+) -> TaskWatchdogConfig:
+    task_timeout = parse_duration_to_seconds(ini_timeout)
+    if task_timeout is None:
+        task_timeout = cli_task_timeout_seconds
+
+    hard_timeout = parse_duration_to_seconds(ini_hard_timeout)
+    if hard_timeout is None:
+        if ini_timeout:
+            hard_timeout = task_timeout * 2
+        else:
+            hard_timeout = cli_hard_timeout_seconds
+
+    hard_timeout = max(hard_timeout, task_timeout + stuck_probe_interval_seconds)
+    return TaskWatchdogConfig(
+        enabled=enabled,
+        task_timeout_seconds=task_timeout,
+        hard_timeout_seconds=hard_timeout,
+        stuck_probe_seconds=stuck_probe_seconds,
+        stuck_probe_interval_seconds=stuck_probe_interval_seconds,
+        debug_label=build_action_debug_label(account_name, task_name) if enabled else None,
+    )
 
 def previous_log_date_prefix(now: datetime | None = None) -> str:
     current = now or datetime.now(TAIPEI_TZ)
@@ -394,7 +940,7 @@ def wait_for_midas_activity_clearance(recovery: UIRecovery | None, *, notify_ena
 
         if recovery is not None:
             recovery.recover_to_main()
-        time.sleep(MIDAS_ACTIVITY_POLL_SECONDS)
+        smart_sleep(MIDAS_ACTIVITY_POLL_SECONDS)
 
 def main():
     print("==================================================")
@@ -418,6 +964,18 @@ def main():
     parser.add_argument("--delay", type=str, default=None, help="首次啟動前的額外延遲等待時間 (hh:mm:ss)")
     parser.add_argument("--delay-until-8", "--du8", action="store_true", help="先延遲到下一個上午 08:00:30；可再搭配 --delay 額外等待")
     parser.add_argument("--now", action="store_true", help="忽略 ini 的 start_time，立刻執行")
+    parser.add_argument(
+        "--no-recover-task-failure",
+        dest="recover_task_failure",
+        action="store_false",
+        help="disable failed-route recovery",
+    )
+    parser.set_defaults(recover_task_failure=True)
+    parser.add_argument("--recovery-bluestacks-boot-wait", type=float, default=180.0, help="seconds to wait after BlueStacks restart during task recovery")
+    parser.add_argument("--task-timeout", default=str(DEFAULT_TASK_TIMEOUT_SECONDS), help="seconds or hh:mm:ss before stuck monitor starts")
+    parser.add_argument("--task-hard-timeout", default=str(DEFAULT_TASK_HARD_TIMEOUT_SECONDS), help="seconds or hh:mm:ss before the route subprocess is killed")
+    parser.add_argument("--stuck-probe-seconds", type=float, default=DEFAULT_STUCK_PROBE_SECONDS, help="static-screen seconds required to classify a route as stuck")
+    parser.add_argument("--stuck-probe-interval", type=float, default=DEFAULT_STUCK_PROBE_INTERVAL_SECONDS, help="seconds between stuck monitor screenshots")
     args = parser.parse_args()
 
     if args.config_path:
@@ -436,6 +994,10 @@ def main():
             config_start_time=config_start_time,
             run_now=args.now,
         )
+        cli_task_timeout_seconds = parse_duration_to_seconds(args.task_timeout)
+        cli_hard_timeout_seconds = parse_duration_to_seconds(args.task_hard_timeout)
+        if cli_task_timeout_seconds is None or cli_hard_timeout_seconds is None:
+            raise ValueError("task timeout values cannot be empty")
     except ValueError as e:
         print(f"❌ [錯誤] {e}")
         sys.exit(1)
@@ -476,13 +1038,15 @@ def main():
                 detail=f"{delay_label}; wake={wake_time.strftime('%Y-%m-%d %H:%M:%S')}",
                 enabled=notify_enabled,
             )
-            time.sleep(delay_seconds)
+            smart_sleep(delay_seconds)
 
         wait_for_midas_activity_clearance(recovery, notify_enabled=notify_enabled)
 
         start_previous_day_log_cleanup(LOG_DIR)
 
         configured_tasks, date_key, completion_state = load_runtime_task_state()
+        if args.force:
+            clear_failed_this_round(completion_state)
 
         if not configured_tasks:
             print("⚠️ [提示] afk_tasks.ini 目前沒有任何 enable=Y 的任務，直接結束。")
@@ -571,7 +1135,24 @@ def main():
                     print(f">>> {' '.join(switch_cmd)}")
                     print("-" * 50 + "\n")
 
-                    success = switch_account(account_name)
+                    switch_watchdog = TaskWatchdogConfig(
+                        enabled=args.recover_task_failure,
+                        task_timeout_seconds=cli_task_timeout_seconds,
+                        hard_timeout_seconds=cli_hard_timeout_seconds,
+                        stuck_probe_seconds=args.stuck_probe_seconds,
+                        stuck_probe_interval_seconds=args.stuck_probe_interval,
+                        debug_label=build_action_debug_label(account_name, "switch_account")
+                        if args.recover_task_failure
+                        else None,
+                    )
+                    success, switch_stage = switch_account_with_recovery(
+                        account_name=account_name,
+                        switch_cmd=switch_cmd,
+                        recovery=recovery,
+                        enabled=args.recover_task_failure,
+                        bluestacks_boot_wait_seconds=args.recovery_bluestacks_boot_wait,
+                        watchdog=switch_watchdog,
+                    )
                     if not success:
                         print(f"\n❌ [錯誤] 切換至帳號 【{account_name}】 失敗！")
                         print("⚠️ [Fail-Fast] 切換失敗，立刻終止整支程式。")
@@ -613,18 +1194,52 @@ def main():
                         force_subprocess=args.force_subprocess,
                         route_log_file=route_log_file,
                     )
+                    try:
+                        watchdog = resolve_task_watchdog_config(
+                            enabled=args.recover_task_failure,
+                            account_name=account_name,
+                            task_name=task_name,
+                            cli_task_timeout_seconds=cli_task_timeout_seconds,
+                            cli_hard_timeout_seconds=cli_hard_timeout_seconds,
+                            stuck_probe_seconds=args.stuck_probe_seconds,
+                            stuck_probe_interval_seconds=args.stuck_probe_interval,
+                            ini_timeout=task_config.get_task_timeout(task_name),
+                            ini_hard_timeout=task_config.get_task_hard_timeout(task_name),
+                        )
+                    except ValueError as e:
+                        print(f"??[?航炊] route timeout 設定錯誤: {e}")
+                        sys.exit(1)
                     task_cmd = [python_exe, str(run_router_script)] + router_argv
                     print("\n" + "-" * 50)
                     print("🛠️ [Debug] 若此 Router 任務卡住，可複製以下指令單獨測試：")
                     print(f">>> {' '.join(task_cmd)}")
                     print("-" * 50 + "\n")
                     
-                    returncode = run_router_task(
+                    returncode, recovery_stage = run_router_task_with_recovery(
                         task_cmd=task_cmd,
                         router_argv=router_argv,
                         force_subprocess=args.force_subprocess,
+                        recovery=recovery,
+                        enabled=args.recover_task_failure,
+                        bluestacks_boot_wait_seconds=args.recovery_bluestacks_boot_wait,
+                        watchdog=watchdog,
                     )
                     if returncode != 0:
+                        if is_route_exit_after_command_success(returncode):
+                            mark_route_completed(completion_state, account_name, task_name)
+                            print(
+                                "[AFK recovery] task command already succeeded; "
+                                "marked route completed even though route exit failed"
+                            )
+                            notify_status(
+                                "AFK",
+                                "route exit failed after task success",
+                                account=account_name,
+                                route=task_name,
+                                detail=f"returncode={returncode}; stage={recovery_stage}",
+                                enabled=notify_enabled,
+                            )
+                            sys.exit(1)
                         print(f"\n❌ [錯誤] 帳號 【{account_name}】 的任務 【{task_name}】 回傳了非零錯誤碼 ({returncode})！")
                         print("⚠️ [Fail-Fast] 發生異常，立刻終止整支程式，不切換帳號以保留現場。")
                         notify_status(
@@ -632,9 +1247,18 @@ def main():
                             "失敗",
                             account=account_name,
                             route=task_name,
-                            detail=f"returncode={returncode}",
+                            detail=f"returncode={returncode}; stage={recovery_stage}",
                             enabled=notify_enabled,
                         )
+                        if args.recover_task_failure:
+                            mark_route_failed_this_round(
+                                completion_state,
+                                account_name,
+                                task_name,
+                                f"returncode={returncode}; stage={recovery_stage}",
+                            )
+                            print("[AFK recovery] marked failed_this_round and continuing to next route")
+                            continue
                         sys.exit(1)
                     else:
                         mark_route_completed(completion_state, account_name, task_name)

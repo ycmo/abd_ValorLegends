@@ -23,6 +23,16 @@ from src.stdio_utils import configure_utf8_stdio
 
 configure_utf8_stdio()
 
+ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE = 20
+MAX_DEBUG_LABEL_LENGTH = 80
+
+
+def _stage_debug_label(base_label: str, stage: str) -> str:
+    suffix = f"_{stage}"
+    if len(base_label) + len(suffix) <= MAX_DEBUG_LABEL_LENGTH:
+        return f"{base_label}{suffix}"
+    return f"{base_label[:MAX_DEBUG_LABEL_LENGTH - len(suffix)]}{suffix}"
+
 
 class _TeeStream:
     def __init__(self, console_stream, log_stream):
@@ -237,11 +247,14 @@ def _run(args) -> None:
     print("-" * 40)
     
     try:
-        route_debug_label = f"route_{route_name}"
+        base_debug_label = os.environ.get("VL_ACTION_DEBUG_LABEL") or f"route_{route_name}"
+        enter_debug_label = _stage_debug_label(base_debug_label, "route_enter")
+        task_debug_label = _stage_debug_label(base_debug_label, "task")
+        exit_debug_label = _stage_debug_label(base_debug_label, "route_exit")
         navigator = RouteNavigator(
             route_name=route_name,
             debug_actions=args.debug_actions,
-            debug_label=route_debug_label,
+            debug_label=enter_debug_label,
         )
         print(f"[Router] 開始執行進場路由...")
         navigator.execute_route(phase="enter")
@@ -263,7 +276,7 @@ def _run(args) -> None:
                     project_root=project_root,
                     python_exe=python_exe,
                     selected_serial=selected_serial,
-                    route_debug_label=route_debug_label,
+                    route_debug_label=task_debug_label,
                     debug_actions=args.debug_actions,
                     force_subprocess=args.force_subprocess,
                     profile_log_file=profile_log_file,
@@ -278,7 +291,18 @@ def _run(args) -> None:
                 script_failed = True
                 
             print(f"\n[Router] 外部腳本執行完畢，檢查是否有離場路由...")
-            navigator.execute_route(phase="exit")
+            exit_navigator = RouteNavigator(
+                route_name=route_name,
+                debug_actions=args.debug_actions,
+                debug_label=exit_debug_label,
+            )
+            try:
+                exit_navigator.execute_route(phase="exit")
+            except Exception as e:
+                print(f"[Router] route exit failed after command: {e}")
+                if not script_failed:
+                    sys.exit(ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE)
+                raise
             print(f"✅ [成功] 離場路由執行完畢！")
             
 
@@ -289,7 +313,12 @@ def _run(args) -> None:
         else:
             print(f"ℹ️ [提示] 找不到 '{route_name}' 對應的外部指令配置，改以純路由任務執行。")
             print(f"\n[Router] 純路由任務完成，檢查是否有離場路由...")
-            navigator.execute_route(phase="exit")
+            exit_navigator = RouteNavigator(
+                route_name=route_name,
+                debug_actions=args.debug_actions,
+                debug_label=exit_debug_label,
+            )
+            exit_navigator.execute_route(phase="exit")
             print(f"✅ [成功] 離場路由執行完畢！")
             
     except ImportError as e:

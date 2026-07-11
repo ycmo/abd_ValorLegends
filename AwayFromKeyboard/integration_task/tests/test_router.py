@@ -78,6 +78,27 @@ class TestRouter(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
 
+    def _write_shared_navigation_assets(self):
+        assets_dir = self.temp_dir / "shared_assets"
+        assets_dir.mkdir()
+
+        back = np.zeros((20, 20, 3), dtype=np.uint8)
+        back[2:18, 2:6] = (20, 180, 240)
+        back[7:13, 5:18] = (20, 180, 240)
+        back[4:16, 4:10] = (10, 120, 220)
+        cv2.imwrite(str(assets_dir / "back_button.png"), back)
+
+        back2 = np.zeros((20, 20, 3), dtype=np.uint8)
+        back2[3:17, 3:8] = (30, 160, 220)
+        back2[8:12, 8:18] = (30, 160, 220)
+        cv2.imwrite(str(assets_dir / "back_button2.png"), back2)
+
+        main = np.zeros((18, 34, 3), dtype=np.uint8)
+        main[2:16, 3:31] = (70, 120, 210)
+        main[6:12, 8:26] = (230, 230, 40)
+        cv2.imwrite(str(assets_dir / "main_lobby_anchor.png"), main)
+        return assets_dir, back, main
+
     def test_execute_route_match_success(self):
         # 建立假圖片檔案
         (self.route_dir / "01_first.png").write_text("fake")
@@ -157,6 +178,73 @@ class TestRouter(unittest.TestCase):
         self.assertEqual(controller.taps, [(80, 90)])
         lines, _boxes = controller.tap_annotations[0]
         self.assertIn("template=02_second.png confidence=1.000", lines)
+
+    def test_text_route_step_auto_returns_to_main_with_shared_back(self):
+        (self.route_dir / "r01_shared_back.txt").write_text("shared_back\n", encoding="utf-8")
+        assets_dir, back_template, main_anchor = self._write_shared_navigation_assets()
+
+        back_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        back_screen[10:30, 15:35] = back_template
+        main_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        main_screen[45:63, 70:104] = main_anchor
+
+        controller = FakeDeviceController(screen_images=[back_screen, main_screen])
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.SHARED_ASSETS_DIR", assets_dir), patch("router.time.sleep"):
+            navigator.execute_route(phase="exit")
+
+        self.assertEqual(controller.taps, [(25, 20)])
+        self.assertEqual(controller.screenshot_count, 2)
+        lines, boxes = controller.tap_annotations[0]
+        self.assertIn("router route=test_route phase=exit", lines)
+        self.assertIn("template=back_button.png confidence=1.000", lines)
+        self.assertEqual(boxes, [(15, 10, 20, 20, "route_match")])
+
+    def test_text_route_step_waits_through_transition_without_back_button(self):
+        (self.route_dir / "r01_shared_back.txt").write_text("shared_back\n", encoding="utf-8")
+        assets_dir, back_template, main_anchor = self._write_shared_navigation_assets()
+
+        back_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        back_screen[10:30, 15:35] = back_template
+        transition_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        main_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        main_screen[45:63, 70:104] = main_anchor
+
+        controller = FakeDeviceController(screen_images=[back_screen, transition_screen, main_screen])
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.SHARED_ASSETS_DIR", assets_dir), patch("router.time.sleep") as sleep_mock:
+            navigator.execute_route(phase="exit")
+
+        self.assertEqual(controller.taps, [(25, 20)])
+        self.assertEqual(controller.screenshot_count, 3)
+        self.assertGreaterEqual(sleep_mock.call_count, 2)
+
+    def test_text_route_step_cannot_share_prefix_with_png_step(self):
+        (self.route_dir / "r01_shared_back.txt").write_text("shared_back\n", encoding="utf-8")
+        (self.route_dir / "r01_back.png").write_text("fake")
+
+        controller = FakeDeviceController(screen_image=np.zeros((120, 160, 3), dtype=np.uint8))
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+
+        with self.assertRaisesRegex(ValueError, "mixes .txt commands and .png templates"):
+            navigator.execute_route(phase="exit")
 
     def test_execute_route_fallback(self):
         # 建立假圖片檔案

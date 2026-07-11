@@ -252,6 +252,14 @@ def cmd_list_tasks() -> int:
         spec = TASK_SPECS[key]
         print(f"{key}: {spec.display_name} [{spec.kind}]")
         print(f"  policy: {spec.policy.notes}")
+    independent_keys = [key for key in sorted(TASK_CLASSES) if key not in TASK_ORDER]
+    if independent_keys:
+        print("")
+        print("Independent tasks:")
+        for key in independent_keys:
+            spec = TASK_SPECS[key]
+            print(f"{key}: {spec.display_name} [{spec.kind}]")
+            print(f"  policy: {spec.policy.notes}")
     return 0
 
 

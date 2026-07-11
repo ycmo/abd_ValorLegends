@@ -7,7 +7,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from src.config import ROOT_DIR
+from src.config import ROOT_DIR, SHARED_ASSETS_DIR
 
 
 GIFT_PACK_LABEL_TEMPLATE = (
@@ -21,6 +21,12 @@ GIFT_PACK_LABEL_TEMPLATE = (
 GIFT_PACK_LABEL_ROI = (340, 150, 320, 130)
 GIFT_PACK_LABEL_THRESHOLD = 0.82
 GIFT_PACK_CLOSE_POINT = (660, 22)
+REWARD_ACQUIRED_TITLE_TEMPLATE = SHARED_ASSETS_DIR / "reward_acquired_title.png"
+REWARD_ACQUIRED_TITLE_ROI = (330, 110, 330, 100)
+REWARD_ACQUIRED_TITLE_THRESHOLD = 0.74
+REWARD_ACQUIRED_CYAN_ROI = (330, 120, 330, 100)
+REWARD_ACQUIRED_CYAN_THRESHOLD = 0.10
+REWARD_ACQUIRED_MAX_TAPS = 3
 BLOCKER_TEMPLATE_SPECS = (
     ("gift_pack_label.png", GIFT_PACK_LABEL_ROI, GIFT_PACK_LABEL_THRESHOLD),
     ("equipment_pack_label.png", (520, 0, 380, 150), 0.82),
@@ -38,6 +44,10 @@ class BlockerHandler:
     def handle_known_blocker(self, screen: np.ndarray | None = None) -> bool:
         if screen is None:
             screen = self._screenshot()
+        reward_match = self.match_reward_acquired(screen)
+        if reward_match is not None:
+            return self._dismiss_reward_acquired(reward_match)
+
         match = self.match_gift_pack(screen)
         if match is None:
             return False
@@ -60,6 +70,59 @@ class BlockerHandler:
             if match is not None:
                 return match
         return None
+
+    def match_reward_acquired(self, screen: np.ndarray | None) -> Optional[tuple[str, float, tuple[int, int]]]:
+        if screen is None:
+            return None
+        match = self._match_template(
+            screen,
+            REWARD_ACQUIRED_TITLE_TEMPLATE,
+            REWARD_ACQUIRED_TITLE_ROI,
+            REWARD_ACQUIRED_TITLE_THRESHOLD,
+        )
+        if match is not None:
+            return match
+        return self._match_reward_acquired_by_color(screen)
+
+    def _match_reward_acquired_by_color(self, screen: np.ndarray) -> Optional[tuple[str, float, tuple[int, int]]]:
+        x, y, w, h = REWARD_ACQUIRED_CYAN_ROI
+        sh, sw = screen.shape[:2]
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(sw, x + w)
+        y2 = min(sh, y + h)
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        crop = screen[y1:y2, x1:x2]
+        blue, green, red = cv2.split(crop)
+        cyan_mask = (blue > 150) & (green > 110) & (red < 130)
+        ratio = float(np.count_nonzero(cyan_mask)) / float(cyan_mask.size)
+        if ratio < REWARD_ACQUIRED_CYAN_THRESHOLD:
+            return None
+        return "reward_acquired_cyan", ratio, (x1 + (x2 - x1) // 2, y1 + (y2 - y1) // 2)
+
+    def _dismiss_reward_acquired(self, match: tuple[str, float, tuple[int, int]]) -> bool:
+        current_match = match
+        for attempt in range(1, REWARD_ACQUIRED_MAX_TAPS + 1):
+            template_name, confidence, center = current_match
+            print(
+                f"[Blocker] reward acquired overlay "
+                f"({template_name} confidence={confidence:.2f}, center={center}); "
+                f"tapping overlay {attempt}/{REWARD_ACQUIRED_MAX_TAPS}."
+            )
+            self.controller.tap(*center)
+            time.sleep(1.0)
+
+            screen = self._screenshot()
+            if screen is None:
+                return True
+            next_match = self.match_reward_acquired(screen)
+            if next_match is None:
+                return True
+            current_match = next_match
+
+        return True
 
     def _template_specs(self):
         specs = []

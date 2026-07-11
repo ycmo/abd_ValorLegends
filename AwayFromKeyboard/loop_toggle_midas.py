@@ -4,6 +4,11 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
 
+try:
+    from AwayFromKeyboard.time_utils import smart_sleep
+except ModuleNotFoundError:
+    from time_utils import smart_sleep
+
 # 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -22,6 +27,16 @@ from src.vision_matcher import write_image
 from AwayFromKeyboard.ui_recovery import UIRecovery
 from AwayFromKeyboard.integration_task.router import RouteNavigator
 from AwayFromKeyboard.discord_notify import notify_status
+from AwayFromKeyboard.loop_afk import (
+    DEFAULT_STUCK_PROBE_INTERVAL_SECONDS,
+    DEFAULT_STUCK_PROBE_SECONDS,
+    DEFAULT_TASK_HARD_TIMEOUT_SECONDS,
+    DEFAULT_TASK_TIMEOUT_SECONDS,
+    TaskWatchdogConfig,
+    build_action_debug_label,
+    parse_duration_to_seconds,
+    switch_account_with_recovery,
+)
 
 AUTO_SHORT_COOLDOWN_SECONDS = 5 * 60
 AUTO_OCR_FAILURE_SLEEP_SECONDS = 2 * 60 * 60
@@ -30,6 +45,7 @@ AUTO_ALL_ACCOUNT_ORDER = ("em3", "311", "tiger", "14")
 MIDAS_POPUP_RECOVERY_ATTEMPTS = 3
 MIDAS_TITLE_ROI = MidasTask.TITLE_ROI
 MIDAS_ACTIVITY_NAME = "midas_auto"
+DEFAULT_RECOVERY_BLUESTACKS_BOOT_WAIT_SECONDS = 180.0
 
 def build_auto_account_order(
     accounts: dict,
@@ -179,14 +195,39 @@ def _execute_midas_with_popup_recovery(context, recovery: UIRecovery, route, act
                 f"恢復主城並重新進入點金手 ({attempt}/{MIDAS_POPUP_RECOVERY_ATTEMPTS})。"
             )
             _recover_or_restart(recovery)
+            _execute_route_enter_with_recovery(context, recovery, route)
+
+    raise AssertionError("unreachable")
+
+
+def _execute_route_enter_with_recovery(context, recovery: UIRecovery, route) -> None:
+    for recovery_count in range(MIDAS_POPUP_RECOVERY_ATTEMPTS + 1):
+        try:
             route.execute_route(phase="enter")
+            return
+        except Exception:
+            if recovery_count >= MIDAS_POPUP_RECOVERY_ATTEMPTS:
+                raise
+            attempt = recovery_count + 1
+            try:
+                screen = context.controller.screenshot()
+                _save_midas_popup_recovery_debug(context, screen, attempt)
+                route.handle_blocking_popup(screen)
+            except Exception as exc:
+                print(f"?? [Midas] route enter recovery screenshot/popup handling failed: {exc}")
+
+            print(
+                f"?? [Midas] route enter failed; restarting/recovering before retry "
+                f"({attempt}/{MIDAS_POPUP_RECOVERY_ATTEMPTS})"
+            )
+            _recover_or_restart(recovery)
 
     raise AssertionError("unreachable")
 
 
 def run_midas_auto_once(context, recovery: UIRecovery, *, require_cooldown: bool) -> MidasAutoResult:
     route = RouteNavigator(route_name="點金手", controller=context.controller)
-    route.execute_route(phase="enter")
+    _execute_route_enter_with_recovery(context, recovery, route)
     try:
         return _execute_midas_with_popup_recovery(
             context,
@@ -205,7 +246,7 @@ def run_midas_auto_once(context, recovery: UIRecovery, *, require_cooldown: bool
 
 def run_midas_once(context, recovery: UIRecovery) -> str:
     route = RouteNavigator(route_name="點金手", controller=context.controller)
-    route.execute_route(phase="enter")
+    _execute_route_enter_with_recovery(context, recovery, route)
     try:
         result = _execute_midas_with_popup_recovery(
             context,
@@ -284,7 +325,7 @@ def process_auto_account(context, recovery: UIRecovery, account: str, *, notify_
             enabled=notify_enabled,
         )
         _refresh_midas_activity("midas.auto.short_cooldown_sleep")
-        time.sleep(wait_seconds)
+        smart_sleep(wait_seconds)
         print("🌅 [Auto] 短冷卻結束，檢查異地登入與登入畫面...")
         if recovery.handle_wakeup_exceptions():
             print("✅ [Auto] 短冷卻喚醒異常狀態已排除。")
@@ -324,7 +365,70 @@ def _read_em3_sleep_seconds(context, recovery: UIRecovery, *, notify_enabled: bo
     return sleep_seconds
 
 
-def run_auto_initial_round(context, recovery: UIRecovery, *, notify_enabled: bool = False) -> int:
+def robust_switch_account(
+    account_name: str,
+    recovery: UIRecovery,
+    max_retries: int = 2,
+    *,
+    recover_account_switch: bool = False,
+    task_timeout_seconds: float = DEFAULT_TASK_TIMEOUT_SECONDS,
+    hard_timeout_seconds: float = DEFAULT_TASK_HARD_TIMEOUT_SECONDS,
+    stuck_probe_seconds: float = DEFAULT_STUCK_PROBE_SECONDS,
+    stuck_probe_interval_seconds: float = DEFAULT_STUCK_PROBE_INTERVAL_SECONDS,
+    bluestacks_boot_wait_seconds: float = DEFAULT_RECOVERY_BLUESTACKS_BOOT_WAIT_SECONDS,
+) -> bool:
+    """
+    附帶崩潰重啟機制的帳號切換包裝函數。
+    如果切換時卡死或失敗，將自動重啟遊戲並回到主城後再重試。
+    """
+    if recover_account_switch:
+        watchdog = TaskWatchdogConfig(
+            enabled=True,
+            task_timeout_seconds=task_timeout_seconds,
+            hard_timeout_seconds=hard_timeout_seconds,
+            stuck_probe_seconds=stuck_probe_seconds,
+            stuck_probe_interval_seconds=stuck_probe_interval_seconds,
+            debug_label=build_action_debug_label(account_name, "midas_switch_account"),
+        )
+        success, stage = switch_account_with_recovery(
+            account_name=account_name,
+            switch_cmd=[sys.executable, "-m", "switch_account.switch_account", account_name],
+            recovery=recovery,
+            enabled=True,
+            bluestacks_boot_wait_seconds=bluestacks_boot_wait_seconds,
+            watchdog=watchdog,
+        )
+        if not success:
+            print(f"?? [Auto] ??撣唾? {account_name} recovery 憭望?: {stage}")
+        return success
+
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                print(f"🔄 [Auto] 嘗試切換帳號 {account_name} (第 {attempt + 1}/{max_retries} 次)...")
+            if switch_account(account_name):
+                return True
+            print(f"⚠️ [Auto] 切換帳號 {account_name} 回傳 False。")
+        except Exception as e:
+            print(f"⚠️ [Auto] 切換帳號 {account_name} 時發生異常: {e}")
+            
+        if attempt < max_retries - 1:
+            print("🔄 [Auto] 準備強制重啟遊戲並重新嘗試切換...")
+            if recovery.restart_game_app_and_reenter():
+                print("✅ [Auto] 遊戲重啟成功，回到主畫面，準備重試帳號切換。")
+            else:
+                print("❌ [Auto] 遊戲重啟失敗！")
+                
+    return False
+
+
+def run_auto_initial_round(
+    context,
+    recovery: UIRecovery,
+    *,
+    notify_enabled: bool = False,
+    switch_recovery_options: dict | None = None,
+) -> int:
     print("\n🌅 [Auto] 初始輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
         print("✅ [Auto] 初始輪喚醒異常狀態已排除。")
@@ -343,7 +447,7 @@ def run_auto_initial_round(context, recovery: UIRecovery, *, notify_enabled: boo
         print("🔄 [Auto] 初始輪返回起點帳號 【em3】")
         notify_status("Midas", "切換帳號開始", account="em3", enabled=notify_enabled)
         _refresh_midas_activity("midas.auto.before_switch")
-        if not switch_account("em3"):
+        if not robust_switch_account("em3", recovery, **(switch_recovery_options or {})):
             raise RuntimeError("初始輪返回 em3 失敗")
         _record_current_account("em3", "afk.midas.switch")
         notify_status("Midas", "切換帳號完成", account="em3", enabled=notify_enabled)
@@ -358,6 +462,7 @@ def run_auto_sweep_first_round(
     accounts: dict,
     use_all: bool,
     notify_enabled: bool = False,
+    switch_recovery_options: dict | None = None,
 ) -> int:
     print("\n🌅 [Auto] sweep-first 初始輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
@@ -377,7 +482,7 @@ def run_auto_sweep_first_round(
             print(f"🔄 [Auto] 切換至帳號 【{account}】")
             notify_status("Midas", "切換帳號開始", account=account, enabled=notify_enabled)
             _refresh_midas_activity("midas.auto.before_switch")
-            if not switch_account(account):
+            if not robust_switch_account(account, recovery, **(switch_recovery_options or {})):
                 raise RuntimeError(f"sweep-first 切換至帳號 {account} 失敗")
             active_account = account
             _record_current_account(account, "afk.midas.switch")
@@ -388,7 +493,7 @@ def run_auto_sweep_first_round(
         print(f"🔄 [Auto] sweep-first 返回起點帳號 【{final_account}】")
         notify_status("Midas", "切換帳號開始", account=final_account, enabled=notify_enabled)
         _refresh_midas_activity("midas.auto.before_switch")
-        if not switch_account(final_account):
+        if not robust_switch_account(final_account, recovery, **(switch_recovery_options or {})):
             raise RuntimeError(f"sweep-first 返回 {final_account} 失敗")
         _record_current_account(final_account, "afk.midas.switch")
         notify_status("Midas", "切換帳號完成", account=final_account, enabled=notify_enabled)
@@ -403,6 +508,7 @@ def run_auto_round(
     accounts: dict,
     use_all: bool,
     notify_enabled: bool = False,
+    switch_recovery_options: dict | None = None,
 ) -> int:
     print("\n🌅 [Auto] 新一輪啟動，先檢查異地登入與登入畫面...")
     if recovery.handle_wakeup_exceptions():
@@ -421,7 +527,7 @@ def run_auto_round(
             print(f"🔄 [Auto] 切換至帳號 【{account}】")
             notify_status("Midas", "切換帳號開始", account=account, enabled=notify_enabled)
             _refresh_midas_activity("midas.auto.before_switch")
-            if not switch_account(account):
+            if not robust_switch_account(account, recovery, **(switch_recovery_options or {})):
                 raise RuntimeError(f"切換至帳號 {account} 失敗")
             active_account = account
             _record_current_account(account, "afk.midas.switch")
@@ -432,7 +538,7 @@ def run_auto_round(
         print("🔄 [Auto] 返回起點帳號 【em3】")
         notify_status("Midas", "切換帳號開始", account="em3", enabled=notify_enabled)
         _refresh_midas_activity("midas.auto.before_switch")
-        if not switch_account("em3"):
+        if not robust_switch_account("em3", recovery, **(switch_recovery_options or {})):
             raise RuntimeError("返回 em3 失敗")
         _record_current_account("em3", "afk.midas.switch")
         notify_status("Midas", "切換帳號完成", account="em3", enabled=notify_enabled)
@@ -447,8 +553,22 @@ def run_auto_loop(
     use_all: bool,
     sweep_first: bool = False,
     notify_enabled: bool = False,
+    recover_account_switch: bool = False,
+    task_timeout_seconds: float = DEFAULT_TASK_TIMEOUT_SECONDS,
+    hard_timeout_seconds: float = DEFAULT_TASK_HARD_TIMEOUT_SECONDS,
+    stuck_probe_seconds: float = DEFAULT_STUCK_PROBE_SECONDS,
+    stuck_probe_interval_seconds: float = DEFAULT_STUCK_PROBE_INTERVAL_SECONDS,
+    bluestacks_boot_wait_seconds: float = DEFAULT_RECOVERY_BLUESTACKS_BOOT_WAIT_SECONDS,
 ) -> None:
     accounts = load_accounts()
+    switch_recovery_options = {
+        "recover_account_switch": recover_account_switch,
+        "task_timeout_seconds": task_timeout_seconds,
+        "hard_timeout_seconds": hard_timeout_seconds,
+        "stuck_probe_seconds": stuck_probe_seconds,
+        "stuck_probe_interval_seconds": stuck_probe_interval_seconds,
+        "bluestacks_boot_wait_seconds": bluestacks_boot_wait_seconds,
+    }
     notify_status(
         "Midas",
         "啟動",
@@ -463,16 +583,22 @@ def run_auto_loop(
             accounts=accounts,
             use_all=use_all,
             notify_enabled=notify_enabled,
+            switch_recovery_options=switch_recovery_options,
         )
     else:
-        sleep_seconds = run_auto_initial_round(context, recovery, notify_enabled=notify_enabled)
+        sleep_seconds = run_auto_initial_round(
+            context,
+            recovery,
+            notify_enabled=notify_enabled,
+            switch_recovery_options=switch_recovery_options,
+        )
     next_time = datetime.now(TAIPEI_TZ) + timedelta(seconds=sleep_seconds)
     print(
         f"💤 [Auto] 初始輪結束，休眠 {_format_seconds(sleep_seconds)}；"
         f"預計 {next_time.strftime('%Y-%m-%d %H:%M:%S')} 喚醒後進入第一輪。"
     )
     _clear_midas_activity_active("midas.auto.big_sleep", wake_at=next_time)
-    time.sleep(sleep_seconds)
+    smart_sleep(sleep_seconds)
 
     while True:
         _set_midas_activity_active("midas.auto.round.start")
@@ -482,6 +608,7 @@ def run_auto_loop(
             accounts=accounts,
             use_all=use_all,
             notify_enabled=notify_enabled,
+            switch_recovery_options=switch_recovery_options,
         )
         next_time = datetime.now(TAIPEI_TZ) + timedelta(seconds=sleep_seconds)
         print(
@@ -489,7 +616,7 @@ def run_auto_loop(
             f"預計 {next_time.strftime('%Y-%m-%d %H:%M:%S')} 喚醒。"
         )
         _clear_midas_activity_active("midas.auto.big_sleep", wake_at=next_time)
-        time.sleep(sleep_seconds)
+        smart_sleep(sleep_seconds)
 
 def main():
     parser = argparse.ArgumentParser(description="AwayFromKeyboard 雙帳號定時切換掛機腳本 (點金手專用版)")
@@ -505,7 +632,23 @@ def main():
         help="儲存 Router 與點金手每次操作前後的偵錯截圖",
     )
     parser.add_argument("--no-discord", action="store_true", help="關閉 Discord 狀態通知")
+    parser.set_defaults(recover_account_switch=True)
+    parser.add_argument("--no-recover-account-switch", dest="recover_account_switch", action="store_false", help="disable account switch recovery")
+    parser.add_argument("--task-timeout", default=str(DEFAULT_TASK_TIMEOUT_SECONDS), help="seconds or hh:mm:ss before switch stuck monitor starts")
+    parser.add_argument("--task-hard-timeout", default=str(DEFAULT_TASK_HARD_TIMEOUT_SECONDS), help="seconds or hh:mm:ss before the switch subprocess is killed")
+    parser.add_argument("--stuck-probe-seconds", type=float, default=DEFAULT_STUCK_PROBE_SECONDS, help="static-screen seconds required to classify switch as stuck")
+    parser.add_argument("--stuck-probe-interval", type=float, default=DEFAULT_STUCK_PROBE_INTERVAL_SECONDS, help="seconds between stuck monitor screenshots")
+    parser.add_argument("--recovery-bluestacks-boot-wait", type=float, default=DEFAULT_RECOVERY_BLUESTACKS_BOOT_WAIT_SECONDS, help="seconds to wait after BlueStacks restart during account-switch recovery")
     args = parser.parse_args()
+
+    try:
+        task_timeout_seconds = parse_duration_to_seconds(args.task_timeout)
+        hard_timeout_seconds = parse_duration_to_seconds(args.task_hard_timeout)
+        if task_timeout_seconds is None or hard_timeout_seconds is None:
+            raise ValueError("task timeout values cannot be empty")
+    except ValueError as e:
+        print(f"??[?航炊] {e}")
+        sys.exit(1)
 
     if args.all:
         try:
@@ -542,6 +685,12 @@ def main():
             use_all=args.all,
             sweep_first=args.sweep_first,
             notify_enabled=not args.no_discord,
+            recover_account_switch=args.recover_account_switch,
+            task_timeout_seconds=task_timeout_seconds,
+            hard_timeout_seconds=hard_timeout_seconds,
+            stuck_probe_seconds=args.stuck_probe_seconds,
+            stuck_probe_interval_seconds=args.stuck_probe_interval,
+            bluestacks_boot_wait_seconds=args.recovery_bluestacks_boot_wait,
         )
             
     except KeyboardInterrupt:

@@ -18,6 +18,8 @@ import src.vision_matcher as vm
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from src.paint_cropper import find_blue_boxes, crop_inside_blue_box
+from ads2.core.close_glyph import is_close_glyph_match, match_close_glyphs
+from ads2.core.geometry_close import GeometryCloseSpec, is_geometry_close_match, match_geometry_close
 from ads2.core.profile import AdsProfile, load_ads_profile
 
 class AppRecoveryNeeded(Exception):
@@ -50,10 +52,20 @@ vm.read_image = cached_read_image
 
 
 class ReactiveRunner:
-    def __init__(self, serial=None, ad_wait=15, debug=False, profile=None):
+    def __init__(
+        self,
+        serial=None,
+        ad_wait=15,
+        debug=False,
+        profile=None,
+        geometry_close_fallback=False,
+        geometry_close_threshold=0.85,
+    ):
         self.device = DeviceController(serial=serial)
         self.matcher = VisionMatcher()
         self.debug_mode = debug
+        self.geometry_close_fallback = geometry_close_fallback
+        self.geometry_close_spec = GeometryCloseSpec(threshold=geometry_close_threshold)
         self.force_esc_trigger = False
         self.profile: AdsProfile | None = None
         
@@ -62,6 +74,7 @@ class ReactiveRunner:
         self.assets_dir = self.base_dir / "assets"
         self.templates_dir = self.assets_dir / "1_templates"
         self.close_icons_dir = self.templates_dir / "close_icons"
+        self.close_glyphs_dir = self.templates_dir / "close_glyphs"
         self.got_icons_dir = self.templates_dir / "got_icons"
         self.free_ad_icons_dir = self.templates_dir / "free_ad_icons"
         self.scene_anchors_dir = self.templates_dir / "scene_anchors"
@@ -71,7 +84,7 @@ class ReactiveRunner:
         self.ad_wait = self.profile.ad_wait if self.profile and self.profile.ad_wait is not None else ad_wait
         
         # 確保資料夾存在
-        for d in [self.close_icons_dir, self.got_icons_dir, self.free_ad_icons_dir, self.scene_anchors_dir, self.manual_dir, self.debug_errors_dir]:
+        for d in [self.close_icons_dir, self.close_glyphs_dir, self.got_icons_dir, self.free_ad_icons_dir, self.scene_anchors_dir, self.manual_dir, self.debug_errors_dir]:
             d.mkdir(parents=True, exist_ok=True)
         self.free_ad_icons_dir.mkdir(exist_ok=True)
         
@@ -473,7 +486,19 @@ class ReactiveRunner:
                 close_paths = list(self.close_icons_dir.rglob("*.png"))
                 h, w = screen.shape[:2]
                 close_roi = (0, 0, w, int(h * 0.4))
+                close_glyph_roi = close_roi
                 close_match = scan_category(close_paths, 0.85, "關閉按鈕", roi=close_roi)
+
+                if close_match is None:
+                    close_match = match_close_glyphs(screen, self.close_glyphs_dir, roi=close_glyph_roi)
+
+                if close_match is None and self.geometry_close_fallback:
+                    close_match = match_geometry_close(screen, roi=close_roi, spec=self.geometry_close_spec)
+                    if close_match:
+                        print(
+                            f"\n[GeometryFallback] Found close-like X "
+                            f"(score={close_match.confidence:.3f}, bbox={close_match.bbox})"
+                        )
 
                 if close_match:
                     name = close_match.template_path.name
@@ -490,7 +515,12 @@ class ReactiveRunner:
                         if v_screen is not None:
                             bx, by, bw, bh = close_match.bbox
                             roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
-                            v_res = self.matcher.match_template(v_screen, close_match.template_path, threshold=0.85, roi=roi)
+                            if is_close_glyph_match(close_match):
+                                v_res = match_close_glyphs(v_screen, self.close_glyphs_dir, roi=roi)
+                            elif is_geometry_close_match(close_match):
+                                v_res = match_geometry_close(v_screen, roi=roi, spec=self.geometry_close_spec)
+                            else:
+                                v_res = self.matcher.match_template(v_screen, close_match.template_path, threshold=0.85, roi=roi)
                             if not v_res or v_res.confidence < close_match.confidence - 0.10:
                                 print(f"✅ [確認] 關閉按鈕在第 {i} 次點擊後已消失！")
                                 disappeared = True

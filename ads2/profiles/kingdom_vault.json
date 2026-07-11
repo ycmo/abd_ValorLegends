@@ -1,0 +1,16 @@
+{
+  "name": "kingdom_vault",
+  "title_zh": "王國金庫廣告獎勵",
+  "description": "從王國金庫的看廣告免費按鈕進入廣告後使用；回到王國金庫標題時正常結束。",
+  "usage": "python.exe ads2/cli.py run --profile kingdom_vault --debug",
+  "ad_wait": 15,
+  "finish_templates": [
+    {
+      "name": "kingdom_vault_title",
+      "description": "王國金庫標題，代表已回到王國金庫頁面。",
+      "template": "../../assets/tasks/kingdom_vault/vault_title.png",
+      "roi": [60, 0, 180, 65],
+      "threshold": 0.92
+    }
+  ]
+}

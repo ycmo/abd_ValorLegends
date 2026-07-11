@@ -22,6 +22,17 @@ def main():
     run_parser.add_argument("--ad-wait", type=int, default=15, help="點擊看廣告後暫停偵測的秒數 (預設: 15)")
     run_parser.add_argument("--debug", action="store_true", help="開啟除錯模式，異常時自動儲存截圖")
     run_parser.add_argument(
+        "--geometry-close-fallback",
+        action="store_true",
+        help="Enable geometry-based close fallback after close template/glyph matching fails.",
+    )
+    run_parser.add_argument(
+        "--geometry-close-threshold",
+        type=float,
+        default=0.85,
+        help="Minimum score for geometry close fallback.",
+    )
+    run_parser.add_argument(
         "--profile",
         help="讀取 ads2/profiles/<name>.json，加入任務專用的正常結束條件",
     )
@@ -33,7 +44,16 @@ def main():
         ad_wait = args.ad_wait if hasattr(args, 'ad_wait') else 15
         debug = args.debug if hasattr(args, 'debug') else False
         profile = args.profile if hasattr(args, 'profile') else None
-        runner = ReactiveRunner(serial=serial, ad_wait=ad_wait, debug=debug, profile=profile)
+        geometry_close_fallback = args.geometry_close_fallback if hasattr(args, 'geometry_close_fallback') else False
+        geometry_close_threshold = args.geometry_close_threshold if hasattr(args, 'geometry_close_threshold') else 0.85
+        runner = ReactiveRunner(
+            serial=serial,
+            ad_wait=ad_wait,
+            debug=debug,
+            profile=profile,
+            geometry_close_fallback=geometry_close_fallback,
+            geometry_close_threshold=geometry_close_threshold,
+        )
         runner.run()
 
 if __name__ == "__main__":

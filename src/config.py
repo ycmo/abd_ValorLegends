@@ -21,6 +21,7 @@ RUN_ALL_TASKS_CONFIG = USER_CONFIG_DIR / "run_all_tasks.jsonc"
 
 DEFAULT_SERIAL = os.environ.get("VL_ADB_SERIAL", "emulator-5554")
 ACTION_DEBUG_ENABLED = os.environ.get("VL_DEBUG_ACTIONS", "").lower() in ("1", "true", "yes", "on")
+VERBOSE_PROBE_LOGS_ENABLED = os.environ.get("VL_VERBOSE_PROBE_LOGS", "").lower() in ("1", "true", "yes", "on")
 EXPECTED_SCREEN_SIZE: Tuple[int, int] = (960, 540)
 
 MATCH_THRESHOLD = 0.82
@@ -179,6 +180,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             allowed_actions=("fight_four_times", "refresh_after_two_consecutive_losses_for_5_gems"),
             stop_conditions=("expected_screen_not_found",),
             notes="Run from the event screen for now. Refresh after two consecutive losses costs 5 red gems.",
+        ),
+    ),
+    "kingdom_vault": TaskSpec(
+        key="kingdom_vault",
+        display_name="王國金庫",
+        daily_text="",
+        manual_dir="王國金庫",
+        kind="independent",
+        policy=ResourcePolicy(
+            allowed_actions=("claim_free_daily_offer", "claim_notified_battle_pass_rewards"),
+            stop_conditions=("unknown_popup", "badge_target_uncertain"),
+            notes="Independent task. Enter through the AFK route, then run from the current Kingdom Vault screen.",
         ),
     ),
     "midas": TaskSpec(

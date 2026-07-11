@@ -87,6 +87,38 @@ class AutoMidasLoopTests(unittest.TestCase):
     @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
     @patch("AwayFromKeyboard.loop_toggle_midas.MidasTask")
     @patch("AwayFromKeyboard.loop_toggle_midas.RouteNavigator")
+    def test_midas_route_enter_failure_runs_recovery_then_retries(
+        self,
+        MockRoute,
+        MockMidas,
+        mock_recover,
+        mock_save_failure,
+    ):
+        context = SimpleNamespace(controller=MagicMock())
+        recovery = object()
+        route = MockRoute.return_value
+        route.execute_route.side_effect = [
+            ValueError("route enter blocked by gift pack"),
+            None,
+            None,
+        ]
+        MockMidas.return_value.execute.return_value = "Midas taps: free"
+
+        result = run_midas_once(context, recovery)
+
+        self.assertEqual(result, "Midas taps: free")
+        self.assertEqual(
+            route.execute_route.call_args_list,
+            [call(phase="enter"), call(phase="enter"), call(phase="exit")],
+        )
+        route.handle_blocking_popup.assert_called_once()
+        self.assertEqual(mock_recover.call_count, 2)
+        mock_save_failure.assert_called_once()
+
+    @patch("AwayFromKeyboard.loop_toggle_midas._save_midas_popup_recovery_debug")
+    @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
+    @patch("AwayFromKeyboard.loop_toggle_midas.MidasTask")
+    @patch("AwayFromKeyboard.loop_toggle_midas.RouteNavigator")
     def test_midas_popup_recovery_stops_after_three_retries(
         self,
         MockRoute,
@@ -182,7 +214,7 @@ class AutoMidasLoopTests(unittest.TestCase):
             ["14", "tiger", "311", "em3"],
         )
 
-    @patch("AwayFromKeyboard.loop_toggle_midas.time.sleep")
+    @patch("AwayFromKeyboard.loop_toggle_midas.smart_sleep")
     @patch("AwayFromKeyboard.loop_toggle_midas.run_midas_auto_once")
     @patch("AwayFromKeyboard.loop_toggle_midas._recover_or_restart")
     def test_short_cooldown_waits_then_retries_until_clicked(self, mock_recover, mock_run, mock_sleep):
@@ -347,7 +379,7 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in mock_switch.call_args_list], ["14", "311", "em3"])
         mock_run.assert_called_once_with(context, recovery, require_cooldown=True)
 
-    @patch("AwayFromKeyboard.loop_toggle_midas.time.sleep", side_effect=KeyboardInterrupt)
+    @patch("AwayFromKeyboard.loop_toggle_midas.smart_sleep", side_effect=KeyboardInterrupt)
     @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_round")
     @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_initial_round", return_value=123)
     @patch("AwayFromKeyboard.loop_toggle_midas.load_accounts", return_value={"em3": {}, "311": {}})
@@ -374,7 +406,7 @@ class AutoMidasLoopTests(unittest.TestCase):
         mock_sleep.assert_called_once_with(123)
         mock_round.assert_not_called()
 
-    @patch("AwayFromKeyboard.loop_toggle_midas.time.sleep", side_effect=KeyboardInterrupt)
+    @patch("AwayFromKeyboard.loop_toggle_midas.smart_sleep", side_effect=KeyboardInterrupt)
     @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_round")
     @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_sweep_first_round", return_value=234)
     @patch("AwayFromKeyboard.loop_toggle_midas.run_auto_initial_round")

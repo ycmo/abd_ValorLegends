@@ -333,17 +333,29 @@ class BaseTask:
         """Dismiss common reward overlays by tapping blank/outside areas."""
         if is_closed is not None and is_closed():
             return
+        if self.handle_known_blocker_once():
+            if is_closed is None or is_closed():
+                return
 
         for index in range(max_taps):
             point = tap_points[min(index, len(tap_points) - 1)]
             self.context.controller.tap(*point)
             time.sleep(wait_seconds)
+            if self.handle_known_blocker_once():
+                if is_closed is None or is_closed():
+                    return
             if is_closed is not None and is_closed():
                 return
 
         if is_closed is None:
             return
         raise TaskFailedError(failure_message)
+
+    def handle_known_blocker_once(self, screen=None) -> bool:
+        blocker = getattr(self.context, "blocker", None)
+        if blocker is None:
+            return False
+        return bool(blocker.handle_known_blocker(screen))
 
     def _execute_and_return(self, started: float) -> TaskRunResult:
         result = self.execute_from_current_scene()

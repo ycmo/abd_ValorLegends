@@ -174,3 +174,27 @@ class UIRecovery:
             
         print("❌ 無法自動回到主城")
         return False
+
+    def restart_game_app_and_reenter(self, launch_wait_seconds: float = 10.0) -> bool:
+        """
+        強制關閉遊戲並重啟，接著處理登入與公告，直到順利進入主城。
+        """
+        import time
+        GAME_PACKAGE = "com.ageofeternity.global"
+        try:
+            print(f"🔄 [UI Recovery] 強制關閉遊戲: {GAME_PACKAGE}")
+            self.controller.shell(["am", "force-stop", GAME_PACKAGE])
+            time.sleep(3)
+            
+            print(f"🚀 [UI Recovery] 啟動遊戲: {GAME_PACKAGE}")
+            self.controller.shell(
+                ["monkey", "-p", GAME_PACKAGE, "-c", "android.intent.category.LAUNCHER", "1"]
+            )
+            time.sleep(launch_wait_seconds)
+            
+            from src.game_entry import reenter_game
+            print("⏳ [UI Recovery] 遊戲啟動完成，執行登入與公告排除程序...")
+            return bool(reenter_game(self.controller, self.matcher))
+        except Exception as exc:
+            print(f"❌ [UI Recovery] 遊戲重啟失敗: {exc}")
+            return False

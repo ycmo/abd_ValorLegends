@@ -42,6 +42,7 @@ class SceneDetection:
 DEFAULT_ANCHORS: Tuple[SceneAnchor, ...] = (
     SceneAnchor(Scene.DAILY_TASKS, SHARED_ASSETS_DIR / "daily_tasks_title.png"),
     SceneAnchor(Scene.MAIN, SHARED_ASSETS_DIR / "main_lobby_anchor.png"),
+    SceneAnchor(Scene.MAIN, SHARED_ASSETS_DIR / "main_lobby_anchor_idle.png"),
     SceneAnchor(Scene.LOADING, SHARED_ASSETS_DIR / "loading_anchor.png", threshold=0.78),
     SceneAnchor(Scene.BATTLE_PREP, SHARED_ASSETS_DIR / "challenge_button.png", threshold=0.80),
     SceneAnchor(Scene.BATTLE_RESULT, SHARED_ASSETS_DIR / "battle_victory_anchor.png", threshold=0.80),

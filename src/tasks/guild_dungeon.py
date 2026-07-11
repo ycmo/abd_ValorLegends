@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from src.config import LOG_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import LOG_DIR, TASK_ASSETS_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS, VERBOSE_PROBE_LOGS_ENABLED
 from src.exceptions import TaskFailedError
 from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
@@ -47,6 +47,7 @@ class GuildDungeonTask(BaseTask):
         "back_button.png",
         "guild_lobby_back_button.png",
         "remaining_attempts_zero_anchor.png",
+        "outpost_remaining_zero_anchor.png",
     )
     task_scene_anchors = (
         TaskSceneAnchor("map_title_anchor.png", threshold=0.86, roi=(0, 0, 260, 110)),
@@ -76,7 +77,9 @@ class GuildDungeonTask(BaseTask):
     CONTINUE_ROI = (390, 430, 190, 90)
     CLOSE_ROI = (760, 10, 130, 90)
     REMAINING_DAILY_ZERO_ROI = (105, 78, 45, 35)
+    OUTPOST_REMAINING_ZERO_ROI = (760, 80, 100, 40)
     START_BATTLE_POINT = (902, 480)
+    INTRO_POPUP_DISMISS_POINT = (480, 500)
     BATTLE_READY_ASSET = TASK_ASSETS_DIR / "endless_trial" / "battle_ready_anchor.png"
 
     def __init__(self, context):
@@ -106,6 +109,9 @@ class GuildDungeonTask(BaseTask):
                     screen = self.context.controller.screenshot()
                 if self._is_plain_map_screen(screen) and self._daily_attempts_exhausted(screen):
                     battle_messages.append("daily remaining attempts exhausted")
+                    break
+                if self._outpost_attempts_exhausted(screen):
+                    battle_messages.append("outpost remaining attempts exhausted")
                     break
                 if self._match_battle_ready_on_screen(screen) is not None or self._is_battle_ready_screen(timeout_seconds=1.0):
                     target_message = "guild dungeon continued from battle ready"
@@ -149,6 +155,21 @@ class GuildDungeonTask(BaseTask):
             f"threshold={self.REMAINING_DAILY_ZERO_THRESHOLD:.4f} "
             f"exhausted={exhausted}"
         )
+        return exhausted
+
+    def _outpost_attempts_exhausted(self, screen) -> bool:
+        if self._match_outpost_close_on_screen(screen) is None:
+            return False
+        match = self.context.matcher.match_template(
+            screen,
+            self.asset_path("outpost_remaining_zero_anchor.png"),
+            threshold=0.90,
+            roi=self.OUTPOST_REMAINING_ZERO_ROI,
+            check_brightness=False,
+        )
+        exhausted = match is not None
+        if exhausted:
+            self._log("Guild dungeon outpost remaining challenge count is zero")
         return exhausted
 
     def _is_plain_map_screen(self, screen) -> bool:
@@ -220,7 +241,7 @@ class GuildDungeonTask(BaseTask):
         )
 
     def probe_target_from_current_map(self, *, tap_challenge: bool = True) -> str:
-        debug_dir = LOG_DIR / f"guild_dungeon_probe_{time.strftime('%Y%m%d_%H%M%S')}"
+        debug_dir = self._probe_debug_dir()
         self.last_probe_records = []
         self.last_probe_summary_path = None
         tried_targets: list[tuple[int, int]] = []
@@ -228,6 +249,7 @@ class GuildDungeonTask(BaseTask):
         try:
             for scan_index in range(len(self.MAP_SWIPES) + 1):
                 screen = self.context.controller.screenshot()
+                screen = self._dismiss_intro_popup_if_blocking(screen)
                 targets = [
                     target for target in self._find_map_targets(screen)
                     if target.match.center not in tried_targets
@@ -282,8 +304,47 @@ class GuildDungeonTask(BaseTask):
             if not saved_summary:
                 self._save_probe_summary(debug_dir)
 
+    def _dismiss_intro_popup_if_blocking(self, screen):
+        if self._match_map_title_on_screen(screen) is None:
+            return screen
+        if self._match_outpost_close_on_screen(screen) is not None:
+            return screen
+        if self._find_map_targets(screen):
+            return screen
+
+        save_debug = getattr(self.context.controller, "save_annotated_debug", None)
+        if save_debug is not None:
+            x, y = self.INTRO_POPUP_DISMISS_POINT
+            save_debug(
+                "guild_dungeon_intro_popup_blocking_map",
+                screen,
+                lines=[
+                    "guild dungeon map title visible but no map targets found",
+                    "dismissing possible intro/rules popup by tapping outside the panel",
+                ],
+                boxes=[(x - 20, y - 20, 40, 40, "dismiss_tap")],
+                panel_position="right",
+            )
+        self.context.controller.annotate_next_tap_debug(
+            lines=["guild dungeon dismiss possible intro/rules popup"],
+            boxes=[
+                (
+                    self.INTRO_POPUP_DISMISS_POINT[0] - 20,
+                    self.INTRO_POPUP_DISMISS_POINT[1] - 20,
+                    40,
+                    40,
+                    "dismiss",
+                )
+            ],
+        )
+        self.context.controller.tap(*self.INTRO_POPUP_DISMISS_POINT)
+        time.sleep(TRANSITION_WAIT_SECONDS)
+        return self.context.controller.screenshot()
+
     def _select_challenge_from_open_outpost(self, *, tap_challenge: bool) -> Optional[str]:
         screen = self.context.controller.screenshot()
+        if self._outpost_attempts_exhausted(screen):
+            return None
         challenge, remaining_matches, challenge_matches = self._find_challenge_probe(screen)
         if challenge is None:
             return None
@@ -709,6 +770,8 @@ class GuildDungeonTask(BaseTask):
         )
 
     def _save_probe_summary(self, debug_dir) -> None:
+        if debug_dir is None:
+            return
         debug_dir.mkdir(parents=True, exist_ok=True)
         lines = ["Guild dungeon probe"]
         for record in self.last_probe_records:
@@ -722,3 +785,8 @@ class GuildDungeonTask(BaseTask):
         path = debug_dir / "summary.txt"
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         self.last_probe_summary_path = path
+
+    def _probe_debug_dir(self) -> Optional[Path]:
+        if not VERBOSE_PROBE_LOGS_ENABLED:
+            return None
+        return LOG_DIR / f"guild_dungeon_probe_{time.strftime('%Y%m%d_%H%M%S')}"

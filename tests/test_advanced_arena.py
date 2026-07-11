@@ -55,7 +55,16 @@ class AdvancedArenaTests(unittest.TestCase):
     def test_parse_season_days(self):
         self.assertEqual(parse_season_days("9天18小時"), 9)
         self.assertEqual(parse_season_days("賽季重置倒數計時0天23小時"), 0)
-        self.assertIsNone(parse_season_days("18小時"))
+        self.assertEqual(parse_season_days("18小時"), 0)
+        self.assertEqual(parse_season_days("23"), 0)
+        self.assertEqual(parse_season_days("24"), 0)
+        self.assertEqual(parse_season_days("14"), 0)
+        self.assertEqual(parse_season_days("8"), 0)
+        self.assertEqual(parse_season_days("24時"), 0)
+        self.assertEqual(parse_season_days("9 18"), 9)
+        self.assertEqual(parse_season_days("918"), 9)
+        self.assertEqual(parse_season_days("10 18"), 10)
+        self.assertEqual(parse_season_days("1018"), 10)
 
     def test_execute_fails_and_returns_on_last_day(self):
         controller = FakeController()

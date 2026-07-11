@@ -8,7 +8,7 @@ from typing import Optional
 
 import cv2
 
-from src.config import LOG_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import LOG_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS, VERBOSE_PROBE_LOGS_ENABLED
 from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSkippedError
 from src.ocr_utils import get_cached_easyocr_reader, parse_power_value
 from src.task_runner import BaseTask, TaskRunResult, TaskSceneAnchor, TaskState
@@ -241,7 +241,7 @@ class AbyssTask(BaseTask):
         if tap_forest:
             self._tap_forest_if_visible()
 
-        debug_dir = LOG_DIR / f"abyss_rental_scan_{time.strftime('%Y%m%d_%H%M%S')}"
+        debug_dir = self._rental_scan_debug_dir()
         self._last_rental_scan_active_count = 0
         self._last_rental_scan_rented_count = 0
         self._last_rental_scan_dragon_count = 0
@@ -255,7 +255,7 @@ class AbyssTask(BaseTask):
         self._save_rental_probe_summary(rows, debug_dir)
         return rows
 
-    def _scan_rental_view(self, screen, scan_index: int, debug_dir: Path) -> list[AbyssRentalRow]:
+    def _scan_rental_view(self, screen, scan_index: int, debug_dir: Path | None) -> list[AbyssRentalRow]:
         rent_matches = self.context.matcher.match_template_all(
             screen,
             self.asset_path("rent_button.png"),
@@ -331,14 +331,16 @@ class AbyssTask(BaseTask):
         self,
         screen,
         roi: Roi,
-        debug_dir: Path,
+        debug_dir: Path | None,
         scan_index: int,
         row_index: int,
     ) -> tuple[str, float, Path]:
         x, y, w, h = roi
         crop = screen[y : y + h, x : x + w]
-        crop_path = debug_dir / f"{scan_index:02d}_{row_index:02d}_power.png"
-        write_image(crop_path, crop)
+        crop_path = Path(f"{scan_index:02d}_{row_index:02d}_power.png")
+        if debug_dir is not None:
+            crop_path = debug_dir / crop_path
+            write_image(crop_path, crop)
         if crop.size == 0:
             return "", 0.0, crop_path
 
@@ -487,7 +489,14 @@ class AbyssTask(BaseTask):
                 return row
         return None
 
-    def _rental_rescan_debug_dir(self) -> Path:
+    def _rental_scan_debug_dir(self) -> Path | None:
+        if not VERBOSE_PROBE_LOGS_ENABLED:
+            return None
+        return LOG_DIR / f"abyss_rental_scan_{time.strftime('%Y%m%d_%H%M%S')}"
+
+    def _rental_rescan_debug_dir(self) -> Path | None:
+        if not VERBOSE_PROBE_LOGS_ENABLED:
+            return None
         return LOG_DIR / f"abyss_rental_rescan_{time.strftime('%Y%m%d_%H%M%S')}"
 
     def _tap_rental_candidate(self, row: AbyssRentalRow) -> None:
@@ -1360,7 +1369,7 @@ class AbyssTask(BaseTask):
         screen,
         rows: list[AbyssRentalRow],
         rent_matches: list[MatchResult],
-        debug_dir: Path,
+        debug_dir: Path | None,
         scan_index: int,
     ) -> None:
         boxes = []
@@ -1388,13 +1397,18 @@ class AbyssTask(BaseTask):
             if path is not None:
                 return
 
+        if debug_dir is None:
+            return
+
         debug = screen.copy()
         for x, y, w, h, kind in boxes:
             color = (0, 255, 0) if kind == "label" else (255, 0, 0)
             cv2.rectangle(debug, (x, y), (x + w, y + h), color, 2)
         write_image(debug_dir / f"{scan_index:02d}_screen.png", debug)
 
-    def _save_rental_probe_summary(self, rows: list[AbyssRentalRow], debug_dir: Path) -> None:
+    def _save_rental_probe_summary(self, rows: list[AbyssRentalRow], debug_dir: Path | None) -> None:
+        if debug_dir is None:
+            return
         debug_dir.mkdir(parents=True, exist_ok=True)
         lines = [
             "Abyss rental scan",

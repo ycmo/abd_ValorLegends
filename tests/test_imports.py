@@ -26,7 +26,7 @@ class ImportTests(unittest.TestCase):
 
         independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
         self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES) - independent)
-        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest"})
+        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest", "kingdom_vault"})
 
     def test_task_specs_are_configured(self):
         from src.config import (
@@ -39,7 +39,7 @@ class ImportTests(unittest.TestCase):
 
         independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
         self.assertEqual(set(TASK_ORDER), set(TASK_SPECS) - independent)
-        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest"})
+        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest", "kingdom_vault"})
         self.assertLessEqual(set(RUN_ALL_TASK_ORDER), set(TASK_ORDER))
         self.assertLessEqual(set(RUN_ALL_GO_FIRST_TASK_ORDER), set(TASK_ORDER))
         self.assertNotIn("endless_trial", RUN_ALL_TASK_ORDER)

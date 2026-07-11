@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import cv2
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -138,14 +139,39 @@ class GuildDungeonTaskTests(unittest.TestCase):
             )
         )
 
+        with tempfile.TemporaryDirectory() as tempdir:
+            with (
+                patch("src.tasks.guild_dungeon.LOG_DIR", Path(tempdir)),
+                patch("src.tasks.guild_dungeon.VERBOSE_PROBE_LOGS_ENABLED", True),
+                patch("src.tasks.guild_dungeon.time.sleep"),
+            ):
+                message = task.probe_target_from_current_map(tap_challenge=True)
+
+            self.assertIn("target selected", message)
+            self.assertEqual(len(task.last_probe_records), 1)
+            self.assertEqual(task.last_probe_records[0].node_kind, "sword")
+            self.assertEqual(task.last_probe_records[0].selected_center, (389, 336))
+            self.assertTrue(task.last_probe_summary_path.exists())
+
+    def test_probe_target_skips_debug_summary_by_default(self):
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=FakeController(),
+                matcher=FakeMatcher(
+                    all_matches={
+                        "sword_node_anchor.png": [_match("sword_node_anchor.png", 600, 100)],
+                        "remaining_attempt_anchor.png": [_match("remaining_attempt_anchor.png", 390, 374)],
+                        "challenge_button.png": [_match("challenge_button.png", 389, 336)],
+                    }
+                ),
+            )
+        )
+
         with patch("src.tasks.guild_dungeon.time.sleep"):
             message = task.probe_target_from_current_map(tap_challenge=True)
 
         self.assertIn("target selected", message)
-        self.assertEqual(len(task.last_probe_records), 1)
-        self.assertEqual(task.last_probe_records[0].node_kind, "sword")
-        self.assertEqual(task.last_probe_records[0].selected_center, (389, 336))
-        self.assertTrue(task.last_probe_summary_path.exists())
+        self.assertIsNone(task.last_probe_summary_path)
 
     def test_bonus_reward_column_is_preferred(self):
         task = GuildDungeonTask(
@@ -473,6 +499,45 @@ class GuildDungeonTaskTests(unittest.TestCase):
 
         self.assertTrue(task.is_task_scene("screen"))
 
+    def test_intro_popup_dismiss_taps_outside_when_map_has_no_targets(self):
+        controller = FakeController()
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=controller,
+                matcher=FakeMatcher(
+                    matches={
+                        "map_title_anchor.png": _match("map_title_anchor.png", 127, 38),
+                    }
+                ),
+            )
+        )
+
+        with patch("src.tasks.guild_dungeon.time.sleep"):
+            task._dismiss_intro_popup_if_blocking("screen")
+
+        self.assertEqual(controller.taps, [GuildDungeonTask.INTRO_POPUP_DISMISS_POINT])
+        self.assertEqual(controller.debug_saves[0][0][0], "guild_dungeon_intro_popup_blocking_map")
+
+    def test_intro_popup_dismiss_does_not_tap_when_target_is_visible(self):
+        controller = FakeController()
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=controller,
+                matcher=FakeMatcher(
+                    matches={
+                        "map_title_anchor.png": _match("map_title_anchor.png", 127, 38),
+                    },
+                    all_matches={
+                        "sword_node_anchor.png": [_match("sword_node_anchor.png", 600, 100)],
+                    },
+                ),
+            )
+        )
+
+        task._dismiss_intro_popup_if_blocking("screen")
+
+        self.assertEqual(controller.taps, [])
+
     def test_wait_for_map_accepts_open_outpost(self):
         task = GuildDungeonTask(
             SimpleNamespace(
@@ -555,6 +620,28 @@ class GuildDungeonTaskTests(unittest.TestCase):
 
         self.assertIn("completed=1", message)
         self.assertEqual(task.context.controller.debug_saves, [])
+
+    def test_execute_exits_when_open_outpost_remaining_challenges_are_zero(self):
+        task = GuildDungeonTask(
+            SimpleNamespace(
+                controller=FakeController(),
+                matcher=FakeMatcher(
+                    matches={
+                        "outpost_close_button.png": _match("outpost_close_button.png", 830, 48),
+                        "outpost_remaining_zero_anchor.png": _match("outpost_remaining_zero_anchor.png", 810, 100),
+                    }
+                ),
+                navigator=FakeNavigator(),
+            )
+        )
+
+        with patch.object(task, "_select_challenge_from_open_outpost", side_effect=AssertionError("should not select")), \
+             patch.object(task, "probe_target_from_current_map", side_effect=AssertionError("should not probe")), \
+             patch.object(task, "_start_battle_from_ready_screen", side_effect=AssertionError("should not start")):
+            message = task.execute()
+
+        self.assertIn("completed=0", message)
+        self.assertIn("outpost remaining attempts exhausted", message)
 
     def test_execute_runs_two_battles_and_rechecks_map_between_them(self):
         task = GuildDungeonTask(

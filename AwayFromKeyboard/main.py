@@ -4,6 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from AwayFromKeyboard.time_utils import smart_sleep
+except ModuleNotFoundError:
+    from time_utils import smart_sleep
+
 # 將專案根目錄加入 sys.path 以便 import
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -101,7 +106,7 @@ def main():
         print(f"\n{'='*40}")
         print(f"💤 所有帳號循環完畢，開始休眠 {sleep_minutes} 分鐘...")
         print(f"{'='*40}")
-        time.sleep(sleep_minutes * 60)
+        smart_sleep(sleep_minutes * 60)
 
 if __name__ == "__main__":
     main()

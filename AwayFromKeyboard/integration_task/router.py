@@ -13,11 +13,20 @@ if str(PROJECT_ROOT) not in sys.path:
 try:
     from src.adb_controller import DeviceController
     from src.blocker_handler import BlockerHandler
-    from src.config import ACTION_DEBUG_ENABLED
+    from src.config import ACTION_DEBUG_ENABLED, SHARED_ASSETS_DIR
 except ImportError:
     DeviceController = None
     BlockerHandler = None
     ACTION_DEBUG_ENABLED = False
+    SHARED_ASSETS_DIR = PROJECT_ROOT / "assets" / "shared"
+
+MAX_SHARED_BACK_TAPS = 5
+SHARED_BACK_THRESHOLD = 0.80
+MAIN_LOBBY_THRESHOLD = 0.82
+SHARED_BACK_ROI = (0, 0, 130, 100)
+SHARED_BACK_RECHECK_SECONDS = 2.0
+ROUTE_STEP_SUFFIXES = {".png", ".txt"}
+SHARED_BACK_COMMANDS = {"shared_back", "auto_back", "back"}
 
 class RedBoxFinder:
     def find_largest_box_info(self, img_path: Path) -> tuple[tuple[int, int], tuple[int, int, int, int], np.ndarray, str]:
@@ -163,16 +172,20 @@ class RouteNavigator:
         if not self.route_dir.exists() or not self.route_dir.is_dir():
             raise FileNotFoundError(f"路由目錄不存在: {self.route_dir}")
             
-        png_files = sorted(self.route_dir.glob("*.png"))
-        if not png_files:
-            raise FileNotFoundError(f"在 {self.route_dir} 中找不到任何 .png 檔案")
+        route_files = sorted(
+            f
+            for f in self.route_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in ROUTE_STEP_SUFFIXES
+        )
+        if not route_files:
+            raise FileNotFoundError(f"在 {self.route_dir} 中找不到任何 .png/.txt 檔案")
             
         if phase == "enter":
-            target_files = [f for f in png_files if f.name[0].isdigit()]
+            target_files = [f for f in route_files if f.name[0].isdigit()]
         elif phase == "exit":
-            target_files = [f for f in png_files if f.name.lower().startswith('r')]
+            target_files = [f for f in route_files if f.name.lower().startswith('r')]
         else:
-            target_files = png_files
+            target_files = route_files
             
         if not target_files:
             return
@@ -203,10 +216,22 @@ class RouteNavigator:
         get_screen_func = getattr(self.controller, "get_screen", getattr(self.controller, "screenshot", None))
         
         for group_index, (prefix, group) in enumerate(grouped_items):
+            command_files = [f for f in group if f.suffix.lower() == ".txt"]
+            template_files = [f for f in group if f.suffix.lower() == ".png"]
+            if command_files and template_files:
+                names = ", ".join(f.name for f in sorted(group))
+                raise ValueError(f"Route step {prefix} mixes .txt commands and .png templates: {names}")
+            if command_files:
+                for command_path in sorted(command_files):
+                    self._execute_text_route_step(command_path, phase=phase)
+                continue
+            if not template_files:
+                continue
+
             templates_info = []
             has_swipe = False
             is_optional = False
-            for img_path in group:
+            for img_path in template_files:
                 threshold = 0.5 if "_lowconf" in img_path.name.lower() else 0.7
                 (cx, cy), (x, y, w, h), original_img, action_kind = self._find_route_box_info(img_path, prefer="red")
                 template = original_img[y:y+h, x:x+w]
@@ -235,6 +260,8 @@ class RouteNavigator:
             if group_index + 1 < len(grouped_items):
                 _, next_group = grouped_items[group_index + 1]
                 for next_img_path in next_group:
+                    if next_img_path.suffix.lower() != ".png":
+                        continue
                     threshold = 0.5 if "_lowconf" in next_img_path.name.lower() else 0.7
                     (cx, cy), (x, y, w, h), original_img, action_kind = self._find_route_box_info(next_img_path, prefer="green")
                     next_templates_info.append({
@@ -517,6 +544,137 @@ class RouteNavigator:
                 )
                 raise ValueError(f"比對失敗！步驟群組 {prefix} 找不到目標 (最高信心度 {best_overall_val:.2f} < {best_overall_threshold})。\n已將偵錯畫面存至: {debug_img_path}")
 
+    def _execute_text_route_step(self, command_path: Path, *, phase: str) -> None:
+        command = self._read_text_route_command(command_path)
+        if command not in SHARED_BACK_COMMANDS:
+            raise ValueError(f"Unsupported route command in {command_path.name}: {command}")
+
+        self._auto_return_to_main(command_path, phase=phase)
+
+    def _read_text_route_command(self, command_path: Path) -> str:
+        text = command_path.read_text(encoding="utf-8-sig")
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            return line.replace("=", " ").split()[0].strip().lower()
+        raise ValueError(f"Empty route command file: {command_path.name}")
+
+    def _auto_return_to_main(self, command_path: Path, *, phase: str) -> None:
+        get_screen_func = getattr(self.controller, "get_screen", getattr(self.controller, "screenshot", None))
+        if get_screen_func is None:
+            raise ValueError(f"{command_path.name} requires screenshot support for shared back")
+
+        back_taps = 0
+        checks = 0
+        max_checks = MAX_SHARED_BACK_TAPS * 3 + 1
+        while back_taps <= MAX_SHARED_BACK_TAPS and checks < max_checks:
+            checks += 1
+            screen = get_screen_func()
+            if screen is None:
+                continue
+            if self._is_main_lobby_visible(screen):
+                print(f"[Router] {command_path.name}: reached main lobby")
+                return
+
+            if back_taps >= MAX_SHARED_BACK_TAPS:
+                break
+
+            if self._handle_blocking_popup(screen):
+                time.sleep(1.0)
+                continue
+
+            match = self._match_shared_back_button(screen)
+            if match is None:
+                print(
+                    f"[Router] {command_path.name}: main/back not visible "
+                    f"(check {checks}/{max_checks}); waiting for transition"
+                )
+                time.sleep(SHARED_BACK_RECHECK_SECONDS)
+                continue
+
+            x, y, w, h = match["bbox"]
+            self._tap_route_target(
+                *match["center"],
+                phase=phase,
+                template_name=match["asset"].name,
+                confidence=match["confidence"],
+                bbox=(x, y, w, h),
+            )
+            back_taps += 1
+            time.sleep(SHARED_BACK_RECHECK_SECONDS)
+
+        screen = get_screen_func()
+        debug_img_path = self._save_match_failure_debug(
+            screen,
+            command_path.name,
+            None,
+            None,
+            0,
+            0,
+        )
+        raise ValueError(f"{command_path.name}: failed to reach main lobby after {MAX_SHARED_BACK_TAPS} shared back taps; debug={debug_img_path}")
+
+    def _is_main_lobby_visible(self, screen: np.ndarray) -> bool:
+        for asset in sorted(SHARED_ASSETS_DIR.glob("main_lobby_anchor*.png")):
+            if self._match_asset(screen, asset, MAIN_LOBBY_THRESHOLD) is not None:
+                return True
+        return False
+
+    def _match_shared_back_button(self, screen: np.ndarray):
+        assets = [
+            SHARED_ASSETS_DIR / "back_button.png",
+            SHARED_ASSETS_DIR / "back_button2.png",
+        ]
+        best = None
+        for asset in assets:
+            match = self._match_asset(
+                screen,
+                asset,
+                SHARED_BACK_THRESHOLD,
+                roi=SHARED_BACK_ROI,
+            )
+            if match is None:
+                continue
+            if best is None or match["confidence"] > best["confidence"]:
+                best = match
+        return best
+
+    def _match_asset(self, screen: np.ndarray, asset_path: Path, threshold: float, roi=None):
+        if screen is None or not asset_path.exists():
+            return None
+        template = cv2.imdecode(np.fromfile(asset_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if template is None:
+            return None
+
+        sh, sw = screen.shape[:2]
+        if roi is None:
+            roi_x, roi_y, roi_w, roi_h = 0, 0, sw, sh
+        else:
+            roi_x, roi_y, roi_w, roi_h = roi
+            roi_x = max(0, roi_x)
+            roi_y = max(0, roi_y)
+            roi_w = max(0, min(roi_w, sw - roi_x))
+            roi_h = max(0, min(roi_h, sh - roi_y))
+        search = screen[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+        th, tw = template.shape[:2]
+        if search.size == 0 or th > search.shape[0] or tw > search.shape[1]:
+            return None
+
+        result = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
+        _, confidence, _, loc = cv2.minMaxLoc(result)
+        if confidence < threshold:
+            return None
+
+        x = roi_x + loc[0]
+        y = roi_y + loc[1]
+        return {
+            "asset": asset_path,
+            "confidence": confidence,
+            "bbox": (x, y, tw, th),
+            "center": (x + tw // 2, y + th // 2),
+        }
+
     def _find_route_box_info(self, img_path: Path, *, prefer: str = "red"):
         if prefer == "green":
             find_green = getattr(self.finder, "find_largest_green_box_info", None)
@@ -713,21 +871,24 @@ class RouteNavigator:
     ) -> Path:
         debug_dir = self.base_dir / "debug"
         debug_dir.mkdir(parents=True, exist_ok=True)
-        debug_img_path = debug_dir / f"fallback_{failed_name}"
+        failed_path = Path(str(failed_name))
+        debug_name = f"fallback_{failed_name}" if failed_path.suffix.lower() == ".png" else f"fallback_{failed_path.stem}.png"
+        debug_img_path = debug_dir / debug_name
 
-        if screen is not None and best_overall_roi is not None and best_overall_loc is not None:
+        if screen is not None:
             debug_image = screen.copy()
-            roi_x1, roi_x2, roi_y1, roi_y2 = best_overall_roi
-            cv2.rectangle(debug_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (255, 0, 0), 2)
-            abs_max_x = roi_x1 + best_overall_loc[0]
-            abs_max_y = roi_y1 + best_overall_loc[1]
-            cv2.rectangle(
-                debug_image,
-                (abs_max_x, abs_max_y),
-                (abs_max_x + best_overall_w, abs_max_y + best_overall_h),
-                (0, 255, 255),
-                2,
-            )
+            if best_overall_roi is not None and best_overall_loc is not None:
+                roi_x1, roi_x2, roi_y1, roi_y2 = best_overall_roi
+                cv2.rectangle(debug_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (255, 0, 0), 2)
+                abs_max_x = roi_x1 + best_overall_loc[0]
+                abs_max_y = roi_y1 + best_overall_loc[1]
+                cv2.rectangle(
+                    debug_image,
+                    (abs_max_x, abs_max_y),
+                    (abs_max_x + best_overall_w, abs_max_y + best_overall_h),
+                    (0, 255, 255),
+                    2,
+                )
             is_success, im_buf_arr = cv2.imencode(".png", debug_image)
             if is_success:
                 im_buf_arr.tofile(str(debug_img_path))

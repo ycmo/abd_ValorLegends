@@ -39,6 +39,17 @@ class FakeContext:
     def __init__(self):
         self.controller = FakeController()
         self.navigator = FakeNavigator()
+        self.blocker = None
+
+
+class FakeBlocker:
+    def __init__(self, handled: bool):
+        self.handled = handled
+        self.calls = 0
+
+    def handle_known_blocker(self, _screen=None):
+        self.calls += 1
+        return self.handled
 
 
 class FakeSceneTask(BaseTask):
@@ -121,6 +132,16 @@ class CurrentSceneRunnerTests(unittest.TestCase):
         task.dismiss_reward_overlay_by_blank_taps(is_closed=lambda: checks.pop(0))
 
         self.assertEqual(context.controller.taps, [(80, 500)])
+
+    def test_reward_blank_tap_helper_uses_known_blocker_first(self):
+        context = FakeContext()
+        context.blocker = FakeBlocker(handled=True)
+        task = FakeSceneTask(context, in_scene=True)
+
+        task.dismiss_reward_overlay_by_blank_taps()
+
+        self.assertEqual(context.blocker.calls, 1)
+        self.assertEqual(context.controller.taps, [])
 
     def test_reward_blank_tap_helper_raises_when_still_open(self):
         context = FakeContext()

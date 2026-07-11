@@ -548,4 +548,4 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="開啟 Debug 模式")
     args = parser.parse_args()
 
-    switch_account(args.account, debug_mode=args.debug)
+    raise SystemExit(0 if switch_account(args.account, debug_mode=args.debug) else 1)

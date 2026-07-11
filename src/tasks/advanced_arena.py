@@ -159,7 +159,7 @@ class AdvancedArenaTask(BaseTask):
             confidences.append(float(confidence))
         if not digits:
             return "", 0.0
-        return "".join(digits), min(confidences)
+        return " ".join(digits), min(confidences)
 
     def _open_challenge_dialog(self) -> bool:
         if self._match_asset(
@@ -369,16 +369,30 @@ class AdvancedArenaTask(BaseTask):
 
 
 def parse_season_days(text: str) -> Optional[int]:
-    normalized = str(text).replace(" ", "")
+    raw = str(text)
+    normalized = raw.replace(" ", "")
     match = re.search(r"(\d+)\s*天", normalized)
     if match:
         return int(match.group(1))
     if "天" not in normalized:
         if any(marker in normalized for marker in ("小", "時", "时")):
+            return 0
+        digit_groups = re.findall(r"\d+", raw)
+        if len(digit_groups) >= 2:
+            return int(digit_groups[0])
+        if len(digit_groups) == 1:
+            digits_only = digit_groups[0]
+            if len(digits_only) <= 2 and int(digits_only) <= 24:
+                return 0
+            if len(digits_only) == 3:
+                hours = int(digits_only[-2:])
+                if hours <= 23:
+                    return int(digits_only[:1])
+            if len(digits_only) == 4:
+                hours = int(digits_only[-2:])
+                if hours <= 23:
+                    return int(digits_only[:2])
             return None
-        digits_only = re.sub(r"\D+", "", normalized)
-        if digits_only:
-            return int(digits_only[0])
         return None
     digits = re.findall(r"\d+", normalized)
     if not digits:

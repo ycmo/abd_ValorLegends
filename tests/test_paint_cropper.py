@@ -81,6 +81,21 @@ class PaintCropperTests(unittest.TestCase):
         self.assertLessEqual(abs(boxes[0].width - 23), 2)
         self.assertLessEqual(abs(boxes[0].height - 26), 2)
 
+    def test_find_blue_boxes_accepts_tiny_notification_marker_box(self):
+        image = np.full((80, 120, 3), 255, dtype=np.uint8)
+        image[25:35, 45:52] = (20, 30, 40)
+        cv2.rectangle(image, (40, 20), (56, 39), PAINT_BLUE, 2)
+
+        boxes = find_blue_boxes(image)
+
+        self.assertEqual(len(boxes), 1)
+        self.assertLessEqual(abs(boxes[0].width - 19), 2)
+        self.assertLessEqual(abs(boxes[0].height - 22), 2)
+        crop = crop_inside_blue_box(image, boxes[0])
+        self.assertGreater(crop.shape[0], 5)
+        self.assertGreater(crop.shape[1], 5)
+        self.assertFalse(np.any(np.all(crop == PAINT_BLUE, axis=2)))
+
     def test_find_red_boxes_detects_click_region_outline(self):
         image = np.full((100, 180, 3), 255, dtype=np.uint8)
         image[34:72, 48:138] = (40, 80, 120)

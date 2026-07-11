@@ -14,6 +14,7 @@ from src.tasks.equipment_enhance import EquipmentEnhanceTask
 from src.tasks.guild_dungeon import GuildDungeonTask
 from src.tasks.guild_wish import GuildWishTask
 from src.tasks.hero_contest import HeroContestTask
+from src.tasks.kingdom_vault import KingdomVaultTask
 from src.tasks.magic_shop import MagicShopTask
 from src.tasks.midas import MidasTask
 from src.tasks.secret_realm import SecretRealmTask
@@ -32,6 +33,7 @@ TASK_CLASSES: Dict[str, Type[BaseTask]] = {
     "guild_dungeon": GuildDungeonTask,
     "guild_wish": GuildWishTask,
     "hero_contest": HeroContestTask,
+    "kingdom_vault": KingdomVaultTask,
     "magic_shop": MagicShopTask,
     "midas": MidasTask,
     "secret_realm": SecretRealmTask,

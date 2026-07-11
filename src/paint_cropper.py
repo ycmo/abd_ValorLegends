@@ -56,7 +56,7 @@ def find_colored_boxes(image: np.ndarray, color: BoxColor) -> List[CropBox]:
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
         area = w * h
-        if w < 20 or h < 12:
+        if w < 10 or h < 10:
             continue
         if area < 300 or area > img_w * img_h * 0.9:
             continue
@@ -98,6 +98,10 @@ def crop_inside_colored_box(image: np.ndarray, box: CropBox, color: BoxColor) ->
     roi = image[box.y : box.y + box.height, box.x : box.x + box.width]
     mask = _outline_mask(roi, color)
 
+    projected_crop = _crop_by_outline_projection(roi, mask)
+    if projected_crop is not None:
+        return projected_crop
+
     y_min, y_max = 0, box.height - 1
     x_min, x_max = 0, box.width - 1
     mid_x1, mid_x2 = int(box.width * 0.25), max(int(box.width * 0.75), int(box.width * 0.25) + 1)
@@ -117,6 +121,55 @@ def crop_inside_colored_box(image: np.ndarray, box: CropBox, color: BoxColor) ->
     x_min = min(x_min + 1, x_max)
     x_max = max(x_max - 1, x_min)
     return roi[y_min : y_max + 1, x_min : x_max + 1]
+
+
+def _crop_by_outline_projection(roi: np.ndarray, mask: np.ndarray) -> Optional[np.ndarray]:
+    height, width = mask.shape[:2]
+    if width <= 2 or height <= 2:
+        return None
+
+    row_counts = np.count_nonzero(mask, axis=1)
+    col_counts = np.count_nonzero(mask, axis=0)
+    top = _leading_outline_thickness(row_counts, width)
+    bottom = _trailing_outline_thickness(row_counts, width)
+    left = _leading_outline_thickness(col_counts, height)
+    right = _trailing_outline_thickness(col_counts, height)
+    if not any((top, bottom, left, right)):
+        return None
+
+    x_min = left
+    x_max = width - right - 1
+    y_min = top
+    y_max = height - bottom - 1
+    if x_min > x_max or y_min > y_max:
+        return None
+
+    crop = roi[y_min : y_max + 1, x_min : x_max + 1]
+    if crop.size == 0:
+        return None
+    return crop
+
+
+def _leading_outline_thickness(counts: np.ndarray, span: int) -> int:
+    threshold = max(2, int(round(span * 0.60)))
+    limit = max(1, len(counts) // 2)
+    thickness = 0
+    for value in counts[:limit]:
+        if int(value) < threshold:
+            break
+        thickness += 1
+    return thickness
+
+
+def _trailing_outline_thickness(counts: np.ndarray, span: int) -> int:
+    threshold = max(2, int(round(span * 0.60)))
+    limit = max(1, len(counts) // 2)
+    thickness = 0
+    for value in counts[::-1][:limit]:
+        if int(value) < threshold:
+            break
+        thickness += 1
+    return thickness
 
 
 def write_blue_crop_review(

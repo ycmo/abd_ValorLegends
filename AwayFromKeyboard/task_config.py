@@ -9,6 +9,8 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 CONFIG_FILE = Path(__file__).resolve().parent / "afk_tasks.ini"
 CONFIG_ENV_VAR = "AFK_TASKS_INI"
+TIMEOUT_KEYS = ("timeout", "task_timeout")
+HARD_TIMEOUT_KEYS = ("hard_timeout", "task_hard_timeout")
 SETTINGS_SECTIONS = ("settings", "設定", "__settings__")
 START_TIME_KEYS = ("start_time", "開始時間", "start")
 
@@ -88,3 +90,23 @@ def get_command_for_task(task_name: str) -> list[str]:
             # 支援 Windows 環境，shlex.split 處理反斜線時可能會有問題，但在這裡一般指令通常不會有太複雜的反斜線
             return shlex.split(command_val)
     return []
+
+def get_task_timeout(task_name: str) -> str | None:
+    config = _get_config()
+    if not config.has_section(task_name):
+        return None
+    for key in TIMEOUT_KEYS:
+        value = config.get(task_name, key, fallback="").strip()
+        if value:
+            return value
+    return None
+
+def get_task_hard_timeout(task_name: str) -> str | None:
+    config = _get_config()
+    if not config.has_section(task_name):
+        return None
+    for key in HARD_TIMEOUT_KEYS:
+        value = config.get(task_name, key, fallback="").strip()
+        if value:
+            return value
+    return None

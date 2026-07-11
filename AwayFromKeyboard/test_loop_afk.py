@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -47,6 +48,11 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
         self.assertEqual(delay_seconds, 10 * 60)
         self.assertEqual(wake_time, datetime(2026, 6, 27, 6, 40, 0))
+
+    def test_parse_duration_accepts_seconds_and_hh_mm_ss(self):
+        self.assertEqual(loop_afk.parse_duration_to_seconds("90"), 90)
+        self.assertEqual(loop_afk.parse_duration_to_seconds("00:02:30"), 150)
+        self.assertIsNone(loop_afk.parse_duration_to_seconds(""))
 
     def test_ini_start_time_delays_until_today_when_future(self):
         now = datetime(2026, 6, 27, 7, 0, 0)
@@ -216,6 +222,34 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
         self.assertTrue(loop_afk.is_route_completed(loaded, "em3", "每日任務"))
 
+    def test_failed_this_round_is_written_and_cleared_without_completing_route(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(loop_afk, "STATE_DIR", Path(tmpdir)):
+                state = {"date": "2026-06-26", "completed": {}}
+
+                loop_afk.mark_route_failed_this_round(state, "em3", "route_a", "returncode=1")
+                loaded = loop_afk.load_completion_state("2026-06-26")
+
+                self.assertTrue(loop_afk.is_route_failed_this_round(loaded, "em3", "route_a"))
+                self.assertFalse(loop_afk.is_route_completed(loaded, "em3", "route_a"))
+                self.assertEqual(
+                    loop_afk.pending_tasks_for_account(loaded, "em3", ["route_a", "route_b"], force=False),
+                    ["route_b"],
+                )
+                self.assertEqual(
+                    loop_afk.pending_tasks_for_account(loaded, "em3", ["route_a", "route_b"], force=True),
+                    ["route_a", "route_b"],
+                )
+
+                self.assertTrue(loop_afk.clear_failed_this_round(loaded))
+                reloaded = loop_afk.load_completion_state("2026-06-26")
+
+        self.assertFalse(loop_afk.is_route_failed_this_round(reloaded, "em3", "route_a"))
+        self.assertEqual(
+            loop_afk.pending_tasks_for_account(reloaded, "em3", ["route_a", "route_b"], force=False),
+            ["route_a", "route_b"],
+        )
+
     def test_runtime_task_state_reloads_enabled_tasks_each_call(self):
         task_lists = [["每日任務"], ["深淵", "疾風呼喚"]]
 
@@ -304,9 +338,259 @@ class LoopAfkCompletionTests(unittest.TestCase):
         self.assertEqual(child_env["PYTHONIOENCODING"], "utf-8")
         self.assertEqual(child_env["PYTHONUTF8"], "1")
 
+    def test_run_router_task_watchdog_uses_subprocess_watchdog_and_debug_label(self):
+        recovery = MagicMock()
+        watchdog = loop_afk.TaskWatchdogConfig(
+            enabled=True,
+            task_timeout_seconds=600,
+            hard_timeout_seconds=1200,
+            stuck_probe_seconds=60,
+            stuck_probe_interval_seconds=10,
+            debug_label="afk_test_label",
+        )
+
+        with patch.object(loop_afk, "run_router_task_subprocess_watchdog", return_value=(124, "stuck_static")) as run_watchdog, \
+             patch.object(loop_afk, "rename_router_debug_dirs_for_failure") as rename_debug:
+            returncode = loop_afk.run_router_task(
+                task_cmd=["python", "run_router.py", "route_a"],
+                router_argv=["route_a"],
+                force_subprocess=False,
+                watchdog=watchdog,
+                recovery=recovery,
+            )
+
+        self.assertEqual(returncode, 124)
+        run_watchdog.assert_called_once()
+        env = run_watchdog.call_args.kwargs["env"]
+        self.assertEqual(env["VL_ACTION_DEBUG_LABEL"], "afk_test_label")
+        rename_debug.assert_called_once_with("afk_test_label", "stuck_static", 124)
+
+    def test_run_router_task_route_exit_failure_renames_only_route_exit_debug_dir(self):
+        recovery = MagicMock()
+        watchdog = loop_afk.TaskWatchdogConfig(
+            enabled=True,
+            task_timeout_seconds=600,
+            hard_timeout_seconds=1200,
+            stuck_probe_seconds=60,
+            stuck_probe_interval_seconds=10,
+            debug_label="afk_test_label",
+        )
+
+        with patch.object(
+            loop_afk,
+            "run_router_task_subprocess_watchdog",
+            return_value=(loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE, "route_exit_after_task_success"),
+        ), patch.object(loop_afk, "rename_router_debug_dirs_for_failure") as rename_debug:
+            returncode = loop_afk.run_router_task(
+                task_cmd=["python", "run_router.py", "route_a"],
+                router_argv=["route_a"],
+                force_subprocess=False,
+                watchdog=watchdog,
+                recovery=recovery,
+            )
+
+        self.assertEqual(returncode, loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE)
+        rename_debug.assert_called_once_with(
+            "afk_test_label",
+            "route_exit_after_task_success",
+            loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE,
+        )
+
+    def test_rename_latest_stage_action_debug_dir_for_failure_only_marks_active_stage(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(loop_afk, "LOG_DIR", Path(tmpdir)):
+                old = Path(tmpdir) / "20260711_010000_afk_label_route_enter"
+                new = Path(tmpdir) / "20260711_010001_afk_label_task"
+                old.mkdir()
+                new.mkdir()
+                os.utime(old, (1, 1))
+                os.utime(new, (2, 2))
+
+                renamed = loop_afk.rename_latest_stage_action_debug_dir_for_failure(
+                    "afk_label",
+                    "stuck_static",
+                )
+
+                self.assertEqual(len(renamed), 1)
+                self.assertIn("_task_fail_stuck_static", renamed[0].name)
+                self.assertTrue(old.exists())
+
     def test_run_router_task_in_process_converts_system_exit_to_returncode(self):
         with patch("AwayFromKeyboard.integration_task.run_router.main", side_effect=SystemExit(3)):
             self.assertEqual(loop_afk.run_router_task_in_process(["深淵"]), 3)
+
+    def test_run_router_task_with_recovery_direct_retry_success(self):
+        recovery = MagicMock()
+        with patch.object(loop_afk, "run_router_task", side_effect=[1, 0]) as run_task, \
+             patch.object(loop_afk, "restart_game_app_and_reenter") as restart_app, \
+             patch.object(loop_afk, "restart_bluestacks_and_reenter") as restart_bs:
+            returncode, stage = loop_afk.run_router_task_with_recovery(
+                task_cmd=["python", "run_router.py", "route_a"],
+                router_argv=["route_a"],
+                force_subprocess=False,
+                recovery=recovery,
+                enabled=True,
+                bluestacks_boot_wait_seconds=1,
+            )
+
+        self.assertEqual(returncode, 0)
+        self.assertEqual(stage, "direct_retry")
+        self.assertEqual(run_task.call_count, 2)
+        restart_app.assert_not_called()
+        restart_bs.assert_not_called()
+
+    def test_run_router_task_with_recovery_route_exit_failure_does_not_rerun_task(self):
+        recovery = MagicMock()
+        recovery.recover_to_main.return_value = True
+        with patch.object(
+            loop_afk,
+            "run_router_task",
+            return_value=loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE,
+        ) as run_task, patch.object(loop_afk, "restart_game_app_and_reenter") as restart_app:
+            returncode, stage = loop_afk.run_router_task_with_recovery(
+                task_cmd=["python", "run_router.py", "route_a"],
+                router_argv=["route_a"],
+                force_subprocess=False,
+                recovery=recovery,
+                enabled=True,
+                bluestacks_boot_wait_seconds=1,
+            )
+
+        self.assertEqual(returncode, 0)
+        self.assertEqual(stage, "route_exit_recovered")
+        run_task.assert_called_once()
+        recovery.recover_to_main.assert_called_once()
+        restart_app.assert_not_called()
+
+    def test_run_router_task_with_recovery_restarts_app_then_bluestacks(self):
+        recovery = MagicMock()
+        with patch.object(loop_afk, "run_router_task", side_effect=[1, 1, 1, 0]) as run_task, \
+             patch.object(loop_afk, "restart_game_app_and_reenter", return_value=True) as restart_app, \
+             patch.object(loop_afk, "restart_bluestacks_and_reenter", return_value=True) as restart_bs:
+            returncode, stage = loop_afk.run_router_task_with_recovery(
+                task_cmd=["python", "run_router.py", "route_a"],
+                router_argv=["route_a"],
+                force_subprocess=False,
+                recovery=recovery,
+                enabled=True,
+                bluestacks_boot_wait_seconds=123,
+            )
+
+        self.assertEqual(returncode, 0)
+        self.assertEqual(stage, "bluestacks_restart_retry")
+        self.assertEqual(run_task.call_count, 4)
+        restart_app.assert_called_once_with(recovery)
+        restart_bs.assert_called_once_with(recovery, boot_wait_seconds=123)
+
+    def test_run_router_task_with_recovery_disabled_keeps_fail_fast_returncode(self):
+        recovery = MagicMock()
+        with patch.object(loop_afk, "run_router_task", return_value=1) as run_task, \
+             patch.object(loop_afk, "restart_game_app_and_reenter") as restart_app:
+            returncode, stage = loop_afk.run_router_task_with_recovery(
+                task_cmd=["python", "run_router.py", "route_a"],
+                router_argv=["route_a"],
+                force_subprocess=False,
+                recovery=recovery,
+                enabled=False,
+                bluestacks_boot_wait_seconds=1,
+            )
+
+        self.assertEqual(returncode, 1)
+        self.assertEqual(stage, "initial")
+        run_task.assert_called_once()
+        restart_app.assert_not_called()
+
+    def test_switch_account_with_recovery_disabled_uses_in_process_switch(self):
+        recovery = MagicMock()
+        watchdog = loop_afk.TaskWatchdogConfig(
+            enabled=False,
+            task_timeout_seconds=600,
+            hard_timeout_seconds=1200,
+            stuck_probe_seconds=60,
+            stuck_probe_interval_seconds=10,
+        )
+
+        with patch.object(loop_afk, "switch_account", return_value=True) as switch_mock, \
+             patch.object(loop_afk, "run_switch_account_command") as run_switch:
+            success, stage = loop_afk.switch_account_with_recovery(
+                account_name="em3",
+                switch_cmd=["python", "-m", "switch_account.switch_account", "em3"],
+                recovery=recovery,
+                enabled=False,
+                bluestacks_boot_wait_seconds=180,
+                watchdog=watchdog,
+            )
+
+        self.assertTrue(success)
+        self.assertEqual(stage, "initial")
+        switch_mock.assert_called_once_with("em3")
+        run_switch.assert_not_called()
+
+    def test_switch_account_with_recovery_fails_after_app_and_bluestacks_retry(self):
+        recovery = MagicMock()
+        watchdog = loop_afk.TaskWatchdogConfig(
+            enabled=True,
+            task_timeout_seconds=600,
+            hard_timeout_seconds=1200,
+            stuck_probe_seconds=60,
+            stuck_probe_interval_seconds=10,
+            debug_label="afk_switch",
+        )
+
+        with patch.object(
+            loop_afk,
+            "run_switch_account_command",
+            side_effect=[(False, "stuck_static"), (False, "returncode_1"), (False, "returncode_1")],
+        ) as run_switch, \
+             patch.object(loop_afk, "restart_game_app_and_reenter", return_value=True) as restart_app, \
+             patch.object(loop_afk, "restart_bluestacks_and_reenter", return_value=True) as restart_bs:
+            success, stage = loop_afk.switch_account_with_recovery(
+                account_name="em3",
+                switch_cmd=["python", "-m", "switch_account.switch_account", "em3"],
+                recovery=recovery,
+                enabled=True,
+                bluestacks_boot_wait_seconds=180,
+                watchdog=watchdog,
+            )
+
+        self.assertFalse(success)
+        self.assertEqual(stage, "returncode_1")
+        self.assertEqual(run_switch.call_count, 3)
+        restart_app.assert_called_once_with(recovery)
+        restart_bs.assert_called_once_with(recovery, boot_wait_seconds=180)
+
+    def test_resolve_task_watchdog_config_uses_ini_timeout_and_double_hard_timeout(self):
+        config = loop_afk.resolve_task_watchdog_config(
+            enabled=True,
+            account_name="em3",
+            task_name="route_a",
+            cli_task_timeout_seconds=600,
+            cli_hard_timeout_seconds=1200,
+            stuck_probe_seconds=60,
+            stuck_probe_interval_seconds=10,
+            ini_timeout="00:03:00",
+            ini_hard_timeout=None,
+        )
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.task_timeout_seconds, 180)
+        self.assertEqual(config.hard_timeout_seconds, 360)
+        self.assertIn("em3", config.debug_label)
+
+    def test_task_config_reads_task_timeouts_from_ini(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "custom.ini"
+            config_path.write_text(
+                "[route_a]\n"
+                "enable = Y\n"
+                "timeout = 00:03:00\n"
+                "hard_timeout = 00:07:00\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {"AFK_TASKS_INI": str(config_path)}):
+                self.assertEqual(task_config.get_task_timeout("route_a"), "00:03:00")
+                self.assertEqual(task_config.get_task_hard_timeout("route_a"), "00:07:00")
 
     def test_cleanup_previous_day_logs_removes_only_yesterday_log_items(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -428,7 +712,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
             )
         )
 
-    @patch("AwayFromKeyboard.loop_afk.time.sleep")
+    @patch("AwayFromKeyboard.loop_afk.smart_sleep")
     def test_wait_for_midas_activity_clearance_polls_until_state_clears(self, sleep_mock):
         recovery = MagicMock()
         states = [
@@ -453,7 +737,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
         self.assertEqual(recovery.recover_to_main.call_count, 2)
 
     @patch("AwayFromKeyboard.loop_afk.notify_status")
-    @patch("AwayFromKeyboard.loop_afk.time.sleep")
+    @patch("AwayFromKeyboard.loop_afk.smart_sleep")
     def test_wait_for_midas_activity_clearance_ignores_stale_active_lock(self, sleep_mock, notify_mock):
         recovery = MagicMock()
         with patch("AwayFromKeyboard.loop_afk.read_activity_state", return_value={"activity": "midas_auto", "active": True}), \
