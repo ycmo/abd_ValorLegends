@@ -81,17 +81,25 @@ class TestRouter(unittest.TestCase):
     def _write_shared_navigation_assets(self):
         assets_dir = self.temp_dir / "shared_assets"
         assets_dir.mkdir()
+        back_assets_dir = assets_dir / "back_buttons"
+        back_assets_dir.mkdir()
 
         back = np.zeros((20, 20, 3), dtype=np.uint8)
         back[2:18, 2:6] = (20, 180, 240)
         back[7:13, 5:18] = (20, 180, 240)
         back[4:16, 4:10] = (10, 120, 220)
-        cv2.imwrite(str(assets_dir / "back_button.png"), back)
+        cv2.imwrite(str(back_assets_dir / "back_button.png"), back)
 
         back2 = np.zeros((20, 20, 3), dtype=np.uint8)
         back2[3:17, 3:8] = (30, 160, 220)
         back2[8:12, 8:18] = (30, 160, 220)
-        cv2.imwrite(str(assets_dir / "back_button2.png"), back2)
+        cv2.imwrite(str(back_assets_dir / "back_button2.png"), back2)
+
+        back3 = np.zeros((20, 20, 3), dtype=np.uint8)
+        back3[2:18, 4:9] = (180, 210, 250)
+        back3[8:12, 8:18] = (180, 210, 250)
+        back3[5:15, 2:7] = (80, 160, 240)
+        cv2.imwrite(str(back_assets_dir / "back_button3.png"), back3)
 
         main = np.zeros((18, 34, 3), dtype=np.uint8)
         main[2:16, 3:31] = (70, 120, 210)
@@ -205,6 +213,67 @@ class TestRouter(unittest.TestCase):
         self.assertIn("router route=test_route phase=exit", lines)
         self.assertIn("template=back_button.png confidence=1.000", lines)
         self.assertEqual(boxes, [(15, 10, 20, 20, "route_match")])
+
+    def test_text_route_step_uses_back_button_directory_assets(self):
+        (self.route_dir / "r01_shared_back.txt").write_text("shared_back\n", encoding="utf-8")
+        assets_dir, _back_template, main_anchor = self._write_shared_navigation_assets()
+        for path in (assets_dir / "back_buttons").glob("back_button*.png"):
+            if path.name != "back_button3.png":
+                path.unlink()
+
+        back3 = cv2.imread(str(assets_dir / "back_buttons" / "back_button3.png"))
+        back_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        back_screen[10:30, 15:35] = back3
+        main_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        main_screen[45:63, 70:104] = main_anchor
+
+        controller = FakeDeviceController(screen_images=[back_screen, main_screen])
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+
+        with patch("router.SHARED_ASSETS_DIR", assets_dir), patch("router.time.sleep"):
+            navigator.execute_route(phase="exit")
+
+        self.assertEqual(controller.taps, [(25, 20)])
+        lines, _boxes = controller.tap_annotations[0]
+        self.assertIn("template=back_button3.png confidence=1.000", lines)
+
+    def test_text_route_step_prefers_visible_back_before_blocker(self):
+        (self.route_dir / "r01_shared_back.txt").write_text("shared_back\n", encoding="utf-8")
+        assets_dir, back_template, main_anchor = self._write_shared_navigation_assets()
+
+        back_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        back_screen[10:30, 15:35] = back_template
+        main_screen = np.zeros((120, 160, 3), dtype=np.uint8)
+        main_screen[45:63, 70:104] = main_anchor
+
+        class AlwaysBlocker:
+            def __init__(self):
+                self.calls = 0
+
+            def handle_known_blocker(self, _screen):
+                self.calls += 1
+                return True
+
+        blocker = AlwaysBlocker()
+        controller = FakeDeviceController(screen_images=[back_screen, main_screen])
+        navigator = RouteNavigator(
+            route_name=self.route_name,
+            controller=controller,
+            finder=FakeRedBoxFinder(),
+            base_dir=self.temp_dir,
+        )
+        navigator.blocker_handler = blocker
+
+        with patch("router.SHARED_ASSETS_DIR", assets_dir), patch("router.time.sleep"):
+            navigator.execute_route(phase="exit")
+
+        self.assertEqual(controller.taps, [(25, 20)])
+        self.assertEqual(blocker.calls, 0)
 
     def test_text_route_step_waits_through_transition_without_back_button(self):
         (self.route_dir / "r01_shared_back.txt").write_text("shared_back\n", encoding="utf-8")

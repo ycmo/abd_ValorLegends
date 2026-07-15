@@ -1,91 +1,98 @@
 import argparse
-import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
-# 強制設定輸出為 UTF-8，以防在 Windows 終端機顯示中文出錯
-sys.stdout.reconfigure(encoding='utf-8')
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import cv2
+
+from src.adb_controller import DeviceController
+
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 
 class SystemEnv:
     def prompt_user(self, msg: str) -> str:
         return input(msg)
-        
-    def run_adb_screencap(self, adb_path: str, serial: str, out_file: Path) -> int:
-        with open(out_file, "wb") as f:
-            result = subprocess.run(
-                [str(adb_path), "-s", serial, "exec-out", "screencap", "-p"],
-                stdout=f,
-                stderr=subprocess.PIPE
-            )
-        # 印出 stderr 以供除錯
-        if result.returncode != 0 and result.stderr:
-            print(result.stderr.decode('utf-8', errors='ignore'))
-        return result.returncode
 
-    def open_mspaint(self, file_path: Path):
+    def create_controller(self, serial: str | None = None) -> DeviceController:
+        return DeviceController(serial=serial)
+
+    def write_screenshot(self, controller: DeviceController, out_file: Path) -> None:
+        screen = controller.screenshot()
+        ok, buf = cv2.imencode(".png", screen)
+        if not ok:
+            raise RuntimeError(f"failed to write screenshot: {out_file}")
+        out_file.write_bytes(buf.tobytes())
+
+    def open_mspaint(self, file_path: Path) -> None:
         try:
-            print("🎨 正在開啟 mspaint...")
+            print("Opening screenshot in mspaint...")
             subprocess.Popen(["mspaint", str(file_path)])
-        except Exception as e:
-            print(f"⚠️ [警告] 無法自動開啟小畫家，請手動開啟：{e}")
+        except Exception as exc:
+            print(f"[warn] failed to open mspaint: {exc}")
+
 
 class RouteCapturer:
     def __init__(self, env=None):
         self.env = env or SystemEnv()
-        
-    def capture(self, route: str, tag: str, serial: str = "emulator-5554", base_dir: Path = None) -> bool:
+
+    def capture(
+        self,
+        route: str,
+        tag: str,
+        serial: str | None = None,
+        base_dir: Path | None = None,
+    ) -> bool:
         if base_dir is None:
             base_dir = Path(__file__).resolve().parent
-            
+
         screenshots_dir = base_dir / "route_screenshots" / route
         out_file = screenshots_dir / f"{tag}.png"
-        
-        # 防呆檢查 (Overwrite Warning)
+
         if out_file.exists():
-            print(f"⚠️ [警告] 截圖檔案已存在: {out_file}")
-            ans = self.env.prompt_user("是否要覆蓋原本的截圖？(y/n): ").strip().lower()
-            if ans != 'y':
-                print("已取消截圖。")
+            print(f"[warn] screenshot already exists: {out_file}")
+            ans = self.env.prompt_user("Overwrite? (y/n): ").strip().lower()
+            if ans != "y":
+                print("Capture cancelled.")
                 return False
-                
-        # 建立目錄結構
+
         screenshots_dir.mkdir(parents=True, exist_ok=True)
-        
+
         try:
-            # 嘗試優先使用專案內的 adb
-            project_root = base_dir.parent
-            adb_path = project_root / "tools" / "adb.exe"
-            if not adb_path.exists():
-                adb_path = "adb" # fallback 到環境變數的 adb
-                
-            code = self.env.run_adb_screencap(adb_path, serial, out_file)
-            if code != 0:
-                print("❌ [錯誤] ADB 截圖失敗，請確認模擬器是否已啟動並連線。")
+            controller = self.env.create_controller(serial)
+            if not controller.connect():
+                print("[error] cannot connect to ADB device")
                 return False
-                
-            # 友善提示
-            print(f"✅ [成功] 截圖已儲存至：AwayFromKeyboard/route_screenshots/{route}/{tag}.png")
-            print(f"💡 [後續動作] 請用小畫家開啟此圖，在目標上畫正紅色空心框覆蓋存檔。未來的 Router 將直接讀取該紅框座標！")
-            
+            self.env.write_screenshot(controller, out_file)
+
+            print(f"[ok] screenshot saved: {out_file}")
+            print("Crop/edit the image, then keep it as the route template.")
             self.env.open_mspaint(out_file)
             return True
-            
-        except Exception as e:
-            print(f"❌ [錯誤] 發生未預期的例外：{e}")
+        except Exception as exc:
+            print(f"[error] capture failed: {exc}")
             return False
 
-def main():
-    parser = argparse.ArgumentParser(description="AwayFromKeyboard 路由截圖小工具")
-    parser.add_argument("--route", required=True, help="任務名稱（例如 midas, call_of_gale），這會作為子目錄名稱")
-    parser.add_argument("--tag", required=True, help="截圖步驟名稱（例如 001_進入任務），這會作為檔名")
-    parser.add_argument("--serial", default="emulator-5554", help="指定 ADB 設備序號 (預設: emulator-5554)")
-    
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="AwayFromKeyboard route screenshot capture tool")
+    parser.add_argument("--route", required=True, help="Route name")
+    parser.add_argument("--tag", required=True, help="Screenshot filename without .png, for example 001_entry")
+    parser.add_argument("--serial", default=None, help="ADB serial override; omitted means auto-detect")
+
     args = parser.parse_args()
-    
+
     capturer = RouteCapturer()
     success = capturer.capture(args.route, args.tag, args.serial)
     sys.exit(0 if success else 1)
+
 
 if __name__ == "__main__":
     main()

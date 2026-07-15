@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.adb_controller import DeviceController
-from src.config import SHARED_ASSETS_DIR, TRANSITION_WAIT_SECONDS, TaskSpec
+from src.config import SHARED_ASSETS_DIR, SHARED_BACK_ASSETS_DIR, TRANSITION_WAIT_SECONDS, TaskSpec
 from src.daily_task_finder import DailyTaskFinder, TaskSearchResult, TaskSearchStatus
 from src.debug_log import DebugLogger
 from src.exceptions import MissingAssetError, NavigationError
@@ -190,14 +190,16 @@ class Navigator:
         return self.matcher.match_any(screen, assets, threshold=0.80, roi=self.DAILY_ENTRY_ROI)
 
     def _tap_back_button_if_visible(self, screen, back_asset: Optional[Path] = None) -> bool:
-        back_button = back_asset or SHARED_ASSETS_DIR / "back_button.png"
-        if not back_button.exists():
-            return False
-        match = self.matcher.match_template(screen, back_button, threshold=0.80)
-        if match is None:
-            return False
-        self.controller.tap(*match.center)
-        return True
+        assets = [back_asset] if back_asset is not None else sorted(SHARED_BACK_ASSETS_DIR.glob("*.png"))
+        for back_button in assets:
+            if not back_button.exists():
+                continue
+            match = self.matcher.match_template(screen, back_button, threshold=0.80)
+            if match is None:
+                continue
+            self.controller.tap(*match.center)
+            return True
+        return False
 
     def _annotate_daily_task_tap(self, spec: TaskSpec, result: TaskSearchResult) -> None:
         label = result.label_match

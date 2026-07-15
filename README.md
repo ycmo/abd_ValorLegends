@@ -21,6 +21,22 @@ ADB 截圖 -> OpenCV template matching / OCR -> ADB tap/swipe
 - 舊架構已封存到 `legacy/20260604_pre_rewrite/`。
 - 第一版不自動點每日任務「領取」。
 
+## GUI Launcher
+
+常用指令可以直接開 GUI：
+
+```powershell
+.\launcher_gui.bat
+```
+
+或手動執行：
+
+```powershell
+.\.venv-codex\Scripts\python.exe .\tools\launcher_gui.py
+```
+
+GUI 會用 `.venv-codex` 的 Python 執行 Ads2、截圖、切帳號、router、AFK Daily、AFK Midas，並在視窗內顯示輸出。
+
 ## 安裝
 
 ```powershell

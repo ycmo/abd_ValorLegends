@@ -1,13 +1,14 @@
 # Shared Templates
 
-建議共用 template：
+Shared UI templates used across tasks and route automation.
+
+Common root-level templates include:
 
 ```text
 daily_tasks_title.png
-daily_tasks_entry.png
-daily_tasks_entry_alt.png
+daily_tasks_entry*.png
 go_button.png
-main_lobby_anchor.png
+main_lobby_anchor*.png
 loading_anchor.png
 challenge_button.png
 battle_victory_anchor.png
@@ -15,8 +16,16 @@ battle_defeat_anchor.png
 exit_confirm_anchor.png
 exit_yes_button.png
 dialog_close_button.png
+claim_button.png
+completed_button.png
+busy_waiting_overlay.png
+reward_acquired_title.png
 ```
 
-第一版不自動點每日任務「領取」，所以不需要 `claim_button.png`。
+Shared back-button templates live in:
 
-`daily_tasks_entry*.png` 會在右上角 ROI 內一起比對，用來涵蓋不同主畫面任務入口外觀。
+```text
+back_buttons/*.png
+```
+
+Router `shared_back`, UI recovery, and generic navigator back handling load every PNG in that folder automatically.

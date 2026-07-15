@@ -44,6 +44,7 @@ MIDAS_ACTIVITY_POLL_SECONDS = 5 * 60
 MIDAS_ACTIVE_STALE_SECONDS = 10 * 60
 MIDAS_WAKE_GUARD_SECONDS = 20 * 60
 MIDAS_WAKE_GRACE_SECONDS = 2 * 60 * 60
+MIDAS_TASK_SAFETY_MARGIN_SECONDS = 2 * 60
 DEFAULT_TASK_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_TASK_HARD_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_STUCK_PROBE_SECONDS = 60
@@ -886,7 +887,13 @@ def is_midas_activity_stale(activity: dict, now: datetime | None = None) -> bool
         return False
     return (_taipei_now(now) - updated_at).total_seconds() > MIDAS_ACTIVE_STALE_SECONDS
 
-def midas_activity_wait_reason(activity: dict, now: datetime | None = None) -> str | None:
+def midas_activity_wait_reason(
+    activity: dict,
+    now: datetime | None = None,
+    *,
+    estimated_task_seconds: float | None = None,
+    safety_margin_seconds: float = 0,
+) -> str | None:
     if activity.get("activity") != MIDAS_ACTIVITY_NAME:
         return None
     if bool(activity.get("active")):
@@ -899,20 +906,37 @@ def midas_activity_wait_reason(activity: dict, now: datetime | None = None) -> s
         return None
     current = _taipei_now(now)
 
-    wait_start = wake_at - timedelta(seconds=MIDAS_WAKE_GUARD_SECONDS)
-    wait_end = wake_at + timedelta(seconds=MIDAS_WAKE_GRACE_SECONDS)
-    if wait_start <= current <= wait_end:
-        return "wake_soon"
+    if estimated_task_seconds is not None:
+        wait_end = wake_at + timedelta(seconds=MIDAS_WAKE_GRACE_SECONDS)
+        if current > wait_end:
+            return None
+        latest_finish = current + timedelta(
+            seconds=max(0, estimated_task_seconds) + max(0, safety_margin_seconds)
+        )
+        if latest_finish > wake_at:
+            return "wake_soon"
+        return None
+
     return None
 
 def is_midas_activity_active() -> bool:
     return midas_activity_wait_reason(read_activity_state()) is not None
 
-def wait_for_midas_activity_clearance(recovery: UIRecovery | None, *, notify_enabled: bool) -> None:
+def wait_for_midas_activity_clearance(
+    recovery: UIRecovery | None,
+    *,
+    notify_enabled: bool,
+    estimated_task_seconds: float | None = None,
+    safety_margin_seconds: float = MIDAS_TASK_SAFETY_MARGIN_SECONDS,
+) -> None:
     notified_reason = None
     while True:
         activity = read_activity_state()
-        reason = midas_activity_wait_reason(activity)
+        reason = midas_activity_wait_reason(
+            activity,
+            estimated_task_seconds=estimated_task_seconds,
+            safety_margin_seconds=safety_margin_seconds,
+        )
         if reason is None:
             return
         if reason == "stale_active":
@@ -1145,6 +1169,11 @@ def main():
                         if args.recover_task_failure
                         else None,
                     )
+                    wait_for_midas_activity_clearance(
+                        recovery,
+                        notify_enabled=notify_enabled,
+                        estimated_task_seconds=switch_watchdog.hard_timeout_seconds,
+                    )
                     success, switch_stage = switch_account_with_recovery(
                         account_name=account_name,
                         switch_cmd=switch_cmd,
@@ -1175,7 +1204,6 @@ def main():
 
                 # 1. 執行掛機任務
                 for task_name in pending_tasks:
-                    wait_for_midas_activity_clearance(recovery, notify_enabled=notify_enabled)
                     notify_status(
                         "AFK",
                         "開始",
@@ -1209,6 +1237,11 @@ def main():
                     except ValueError as e:
                         print(f"??[?航炊] route timeout 設定錯誤: {e}")
                         sys.exit(1)
+                    wait_for_midas_activity_clearance(
+                        recovery,
+                        notify_enabled=notify_enabled,
+                        estimated_task_seconds=watchdog.hard_timeout_seconds,
+                    )
                     task_cmd = [python_exe, str(run_router_script)] + router_argv
                     print("\n" + "-" * 50)
                     print("🛠️ [Debug] 若此 Router 任務卡住，可複製以下指令單獨測試：")

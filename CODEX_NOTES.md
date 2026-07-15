@@ -1,6 +1,6 @@
 # Codex Notes
 
-> Last updated: 2026-06-08
+> Last updated: 2026-07-13
 > Purpose: fast handoff notes for Codex. Keep this short, factual, and implementation-focused.
 
 ## Read First
@@ -9,6 +9,15 @@
 2. `docs/implementation_notes.md` records live ADB findings.
 3. `docs/requirements_QA.md` is user-maintained QA. Append open questions there, do not bury them in chat.
 4. `manual_screenshots/` is the user-provided source of truth. Do not overwrite it.
+
+## Long-Term Working Principles
+
+- Before fixing a symptom with a threshold, fallback, or narrow condition, first confirm the workflow responsibility and priority order. A local workaround is acceptable only after the main flow is structurally correct.
+- For recovery flows, prefer explicit successful actions before generic cleanup. Example: `shared_back` should check main lobby and visible back buttons before invoking blocker handling; blocker handling is a fallback for unclear or obstructed states, not the primary path.
+- When debugging automation failures, separate:
+  - symptom: which detector/action failed or misfired;
+  - root cause: why that detector/action had authority over the flow;
+  - boundary: whether the logic belongs in the primary path or a recovery path.
 
 ## Current Workspace Shape
 

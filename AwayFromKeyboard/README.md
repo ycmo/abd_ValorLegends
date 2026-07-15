@@ -1,42 +1,48 @@
-# AwayFromKeyboard
+﻿# AwayFromKeyboard
 
-## 點金手自動循環
+## AFK Midas
 
-`loop_toggle_midas.py` 預設就是自動循環模式，不再需要 `--auto`。
+`afk_midas.py` 是點金手長駐掛機入口，預設循環全部設定帳號，不再需要 `--all`。
 
-兩帳號循環：
-
-```powershell
-python.exe AwayFromKeyboard\loop_toggle_midas.py
-```
-
-四帳號循環：
+預設全部帳號：
 
 ```powershell
-python.exe AwayFromKeyboard\loop_toggle_midas.py --all
+python.exe AwayFromKeyboard\afk_midas.py
 ```
 
-第一輪先掃完整帳號，再回 `em3` 點金、讀冷卻並睡眠：
+只跑 em3 與 311：
 
 ```powershell
-python.exe AwayFromKeyboard\loop_toggle_midas.py --all --sweep-first
+python.exe AwayFromKeyboard\afk_midas.py --two-accounts
 ```
 
-保留操作前後截圖，方便確認點擊與路由：
+第一輪依目前帳號調整順序，減少 Google/email 帳號來回切換：
 
 ```powershell
-python.exe AwayFromKeyboard\loop_toggle_midas.py --all --sweep-first --debug-actions
+python.exe AwayFromKeyboard\afk_midas.py --sweep-first
 ```
 
-Discord 狀態通知預設開啟。只需要關閉通知時加：
+外層 route、recovery、帳號切換偵錯截圖：
 
 ```powershell
-python.exe AwayFromKeyboard\loop_toggle_midas.py --no-discord
+python.exe AwayFromKeyboard\afk_midas.py --debug-actions
 ```
 
-## Sweep-first 第一輪順序
+如果也要打開 MidasTask 本體內部偵錯截圖，再加：
 
-`--sweep-first --all` 會依起始帳號調整第一輪順序，減少 Google/email 帳號來回切換：
+```powershell
+python.exe AwayFromKeyboard\afk_midas.py --debug-actions --midas-debug-actions
+```
+
+關閉 Discord 狀態通知：
+
+```powershell
+python.exe AwayFromKeyboard\afk_midas.py --no-discord
+```
+
+## Sweep-first 順序
+
+`--sweep-first` 預設搭配全部帳號，會依起始帳號調整第一輪順序：
 
 ```text
 em3   -> 311 -> tiger -> 14  -> em3
@@ -45,103 +51,96 @@ tiger -> 14 -> 311 -> em3
 14    -> tiger -> 311 -> em3
 ```
 
-最後的 `em3` 會執行點金手 auto 判斷：能點就點，不能點就 OCR 讀冷卻時間並進入大休眠。
+## Debug 分層
 
-## 點金手路由規則
+- `--debug-actions`：只控制 AFK Midas 外層、route、recovery、帳號切換。
+- `--midas-debug-actions`：另外開啟 MidasTask 本體內部操作截圖。
+- `afk_daily.py` 執行任務時，task 本體 debug 仍由 `afk_tasks.ini` 的 command 個別控制。
+## afk_daily 瘥摰?蝝??
 
-點金手由 AFK route 進場，不走每日任務列表。這可以避免每日任務已完成後標籤變灰或消失，導致找不到點金手。
-
-相關設定：
-
-- route 圖片：`AwayFromKeyboard/route_screenshots/點金手/`
-- 任務執行：直接呼叫 `MidasTask.execute_auto()`，不讀 `afk_tasks.ini`
-- 偵錯截圖：加 `--debug-actions` 後輸出到 `log/<timestamp>_<pid>_<route>/`
-
-## loop_afk 每日完成紀錄
-
-`loop_afk.py` 會記錄當天每個帳號已完成的 route。已完成的帳號/route 不會重複執行；如果某個帳號今天所有 route 都完成，也不會特地切換過去。
+`afk_daily.py` ???憭拇??董?歇摰???route?歇摰??董??route 銝????瑁?嚗????董??憭拇???route ?賢???銋???啣????颯?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py --debug-actions
+python.exe AwayFromKeyboard\afk_daily.py --debug-actions
 ```
 
-需要輸出每個 Router 任務的 UTF-8 文字 log 與載入耗時 profile 時加 `--log`，檔案會放在專案 `log/`：
+?閬撓?箸???Router 隞餃???UTF-8 ?? log ???亥? profile ?? `--log`嚗?獢??曉撠? `log/`嚗?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py --now --log --debug-actions
+python.exe AwayFromKeyboard\afk_daily.py --now --log --debug-actions
 ```
 
-指定不同任務設定檔：
+??銝?隞餃?閮剖?瑼?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py --ini AwayFromKeyboard\afk_tasks_event.ini --debug-actions
+python.exe AwayFromKeyboard\afk_daily.py --ini AwayFromKeyboard\afk_tasks_event.ini --debug-actions
 ```
 
-`--config` 和 `--ini` 等價。指定 ini 會同時套用到 `loop_afk.py` 和它呼叫的 `run_router.py` 子程序。
+`--config` ??`--ini` 蝑??摰?ini ?????典 `afk_daily.py` ???澆??`run_router.py` 摮?摨?
 
-ini 可以指定啟動時間；未指定 `--now`、`--delay` 或 `--du8` 時，程式會等到這個時間才開始執行：
+ini ?臭誑??????嚗?? `--now`?--delay` ??`--du8` ??蝔????圈??????瑁?嚗?
 
 ```ini
 [settings]
 start_time = 08:10:00
 
-[每日任務]
+[瘥隞餃?]
 enable = Y
 command = -m src.main --debug run-all
 ```
 
-要臨時忽略 ini 的 `start_time` 並立刻執行：
+閬?蕭??ini ??`start_time` 銝衣??餃銵?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py --now --debug-actions
+python.exe AwayFromKeyboard\afk_daily.py --now --debug-actions
 ```
 
-等待優先順序是：`--now` 立刻執行最高；其次是命令列的 `--du8` / `--delay`；最後才使用 ini 的 `start_time`。
+蝑??芸????荔?`--now` 蝡?瑁??擃??嗆活?臬隞文???`--du8` / `--delay`嚗?敺?雿輻 ini ??`start_time`??
 
-Discord 狀態通知預設開啟，會回報帳號切換與 route 開始/完成。只需要關閉通知時加：
+Discord ???身??嚗??撣唾?????route ??/摰???閬????嚗?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py --no-discord
+python.exe AwayFromKeyboard\afk_daily.py --no-discord
 ```
 
-完成紀錄依遊戲重置日建立，切換點是台灣時間早上 08:00。08:00 前仍算前一天：
+摰?蝝????蔭?亙遣蝡???暺?啁???拐? 08:00??8:00 ??蝞?銝憭抬?
 
 ```text
 AwayFromKeyboard/state/route_completion_YYYY-MM-DD.json
 ```
 
-需要忽略今日紀錄、強制全部重跑時：
+?閬蕭?乩??亦??撥?嗅?券?頝?嚗?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py -f --debug-actions
+python.exe AwayFromKeyboard\afk_daily.py -f --debug-actions
 ```
 
-需要等到早上 8 點後再多等一段時間，例如活動常晚 10 分鐘開。`--du8` 的基準點是 08:00:30，避開剛好 08:00:00 進場的時間差：
+?閬??唳銝?8 暺???蝑?畾菜???靘?瘣餃?撣豢? 10 ???--du8` ?皞???08:00:30嚗??憟?08:00:00 ?脣???榆嚗?
 
 ```powershell
-python.exe AwayFromKeyboard\loop_afk.py --du8 --delay 00:10:00 --debug-actions
+python.exe AwayFromKeyboard\afk_daily.py --du8 --delay 00:10:00 --debug-actions
 ```
 
-`--skip-current` 已移除；現在由每日完成紀錄決定是否跳過目前帳號。
+`--skip-current` 撌脩宏?歹??曉?望??亙????捱摰?西歲??董??
 
-## Router 框線規則
+## Router 獢?閬?
 
-route 截圖中的框線會決定 Router 行為：
+route ?芸?銝剔?獢??捱摰?Router 銵嚗?
 
-- 紅框：點擊目標，點擊紅框中心。
-- 綠框：Anchor，只確認目標出現，不點擊。
+- 蝝?嚗??璅?暺?蝝?銝剖???
+- 蝬?嚗nchor嚗蝣箄??格??箇嚗?暺???
 
-檔名 suffix：
+瑼? suffix嚗?
 
-- `_optional`：找不到時略過。
-- `_verify`：點擊後確認自己消失，未消失會重點。
-- `_verifyNext`：點擊後確認下一個排序步驟出現，未出現會重點。
+- `_optional`嚗銝???
+- `_verify`嚗???蝣箄??芸楛瘨仃嚗瘨仃??暺?
+- `_verifyNext`嚗???蝣箄?銝???摨郊撽?橘??芸?暹?????
 
-範例：
+蝭?嚗?
 
 ```text
-01主畫面點擊野外_verifyNext.png
-02確認進入野外.png
+01銝餌?ａ???憭verifyNext.png
+02蝣箄??脣??.png
 ```
 
-`01` 點完後會等待 `02` 的 template 出現；如果等不到，會回頭重點 `01`。`02` 可以是紅框或綠框，常見用法是綠框 Anchor。
+`01` 暺?敺?蝑? `02` ??template ?箇嚗???銝嚗???? `01`?02` ?臭誑?舐?獢?蝬?嚗虜閬瘜蝬? Anchor??

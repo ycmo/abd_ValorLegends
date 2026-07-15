@@ -580,28 +580,28 @@ class RouteNavigator:
             if back_taps >= MAX_SHARED_BACK_TAPS:
                 break
 
+            match = self._match_shared_back_button(screen)
+            if match is not None:
+                x, y, w, h = match["bbox"]
+                self._tap_route_target(
+                    *match["center"],
+                    phase=phase,
+                    template_name=match["asset"].name,
+                    confidence=match["confidence"],
+                    bbox=(x, y, w, h),
+                )
+                back_taps += 1
+                time.sleep(SHARED_BACK_RECHECK_SECONDS)
+                continue
+
             if self._handle_blocking_popup(screen):
                 time.sleep(1.0)
                 continue
 
-            match = self._match_shared_back_button(screen)
-            if match is None:
-                print(
-                    f"[Router] {command_path.name}: main/back not visible "
-                    f"(check {checks}/{max_checks}); waiting for transition"
-                )
-                time.sleep(SHARED_BACK_RECHECK_SECONDS)
-                continue
-
-            x, y, w, h = match["bbox"]
-            self._tap_route_target(
-                *match["center"],
-                phase=phase,
-                template_name=match["asset"].name,
-                confidence=match["confidence"],
-                bbox=(x, y, w, h),
+            print(
+                f"[Router] {command_path.name}: main/back not visible "
+                f"(check {checks}/{max_checks}); waiting for transition"
             )
-            back_taps += 1
             time.sleep(SHARED_BACK_RECHECK_SECONDS)
 
         screen = get_screen_func()
@@ -622,10 +622,7 @@ class RouteNavigator:
         return False
 
     def _match_shared_back_button(self, screen: np.ndarray):
-        assets = [
-            SHARED_ASSETS_DIR / "back_button.png",
-            SHARED_ASSETS_DIR / "back_button2.png",
-        ]
+        assets = sorted((SHARED_ASSETS_DIR / "back_buttons").glob("*.png"))
         best = None
         for asset in assets:
             match = self._match_asset(

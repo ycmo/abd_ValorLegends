@@ -10,6 +10,7 @@ from typing import Dict, Tuple
 ROOT_DIR = Path(__file__).resolve().parents[1]
 ASSETS_DIR = ROOT_DIR / "assets"
 SHARED_ASSETS_DIR = ASSETS_DIR / "shared"
+SHARED_BACK_ASSETS_DIR = SHARED_ASSETS_DIR / "back_buttons"
 TASK_ASSETS_DIR = ASSETS_DIR / "tasks"
 RAW_CAPTURES_DIR = ASSETS_DIR / "raw_captures"
 LOG_DIR = ROOT_DIR / "log"

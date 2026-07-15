@@ -33,6 +33,18 @@ class GeometryCloseSpec:
     max_center_offset: float = 0.17
     min_continuity: float = 0.0
     max_gap_ratio: float = 1.0
+    min_axis_span_px: float = 0.0
+    min_arm_extent_px: float = 0.0
+    min_arm_coverage: float = 0.0
+    max_center_thickness_ratio: float = 999.0
+    min_axis_core_union: float = 0.0
+    min_axis_core_balance: float = 0.0
+    two_stroke_fit: bool = False
+    max_fit_error: float = 999.0
+    max_extra_error: float = 999.0
+    max_missing_error: float = 999.0
+    max_center_extra_error: float = 999.0
+    dedupe_distance: int = 8
     gates: Tuple[str, ...] = ("white_strict", "white_soft", "black_strict", "black_soft")
 
 
@@ -74,7 +86,7 @@ def match_geometry_close_all(
 
     rows.sort(key=lambda row: row["score"], reverse=True)
     matches = []
-    min_distance_sq = 16 * 16
+    min_distance_sq = spec.dedupe_distance * spec.dedupe_distance
     for row in rows:
         if row["score"] < spec.threshold:
             continue
@@ -98,6 +110,53 @@ def match_geometry_close_all(
         if len(matches) >= spec.max_results:
             break
     return matches
+
+
+def match_geometry_close_rows(
+    screen: np.ndarray,
+    *,
+    roi: Optional[Roi] = None,
+    spec: GeometryCloseSpec = GeometryCloseSpec(),
+) -> list[dict]:
+    haystack, offset = _crop(screen, roi, spec.roi_top_ratio)
+    if haystack.size == 0:
+        return []
+
+    args = _build_args(spec)
+    hsv = cv2.cvtColor(haystack, cv2.COLOR_BGR2HSV)
+    gate_names = set(spec.gates)
+    rows = []
+    for gate in GATES:
+        if gate.name not in gate_names:
+            continue
+        rows.extend(find_x_candidates(hsv, gate=gate, args=args))
+
+    rows.sort(key=lambda row: row["score"], reverse=True)
+    selected = []
+    min_distance_sq = spec.dedupe_distance * spec.dedupe_distance
+    for row in rows:
+        if row["score"] < spec.threshold:
+            continue
+        x, y, w, h = row["box"]
+        abs_box = (int(x + offset[0]), int(y + offset[1]), int(w), int(h))
+        center = (abs_box[0] + abs_box[2] // 2, abs_box[1] + abs_box[3] // 2)
+        if any(
+            (center[0] - existing["_center"][0]) ** 2 + (center[1] - existing["_center"][1]) ** 2
+            < min_distance_sq
+            for existing in selected
+        ):
+            continue
+        output = dict(row)
+        output["bbox"] = abs_box
+        output["box"] = abs_box
+        output["center"] = center
+        output["_center"] = center
+        selected.append(output)
+        if len(selected) >= spec.max_results:
+            break
+    for row in selected:
+        row.pop("_center", None)
+    return selected
 
 
 def _build_args(spec: GeometryCloseSpec):
@@ -127,6 +186,17 @@ def _build_args(spec: GeometryCloseSpec):
         continuity_bins=7,
         min_continuity=spec.min_continuity,
         max_gap_ratio=spec.max_gap_ratio,
+        min_axis_span_px=spec.min_axis_span_px,
+        min_arm_extent_px=spec.min_arm_extent_px,
+        min_arm_coverage=spec.min_arm_coverage,
+        max_center_thickness_ratio=spec.max_center_thickness_ratio,
+        min_axis_core_union=spec.min_axis_core_union,
+        min_axis_core_balance=spec.min_axis_core_balance,
+        two_stroke_fit=spec.two_stroke_fit,
+        max_fit_error=spec.max_fit_error,
+        max_extra_error=spec.max_extra_error,
+        max_missing_error=spec.max_missing_error,
+        max_center_extra_error=spec.max_center_extra_error,
         weight_axis_union=0.30,
         weight_axis_balance=0.22,
         weight_length_ratio=0.23,

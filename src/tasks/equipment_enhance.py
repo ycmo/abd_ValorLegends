@@ -4,7 +4,13 @@ import time
 from typing import Optional
 
 from src.account_state import read_current_account
-from src.config import SHARED_ASSETS_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
+from src.config import (
+    SHARED_ASSETS_DIR,
+    SHARED_BACK_ASSETS_DIR,
+    TAP_COOLDOWN_SECONDS,
+    TASK_SPECS,
+    TRANSITION_WAIT_SECONDS,
+)
 from src.exceptions import TaskFailedError
 from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
@@ -253,15 +259,13 @@ class EquipmentEnhanceTask(BaseTask):
                 threshold=0.86,
                 wait_after_seconds=TRANSITION_WAIT_SECONDS,
             )
-        elif self._match_shared_asset(
-            "back_button2.png",
+        elif self._match_shared_back_asset(
             roi=self.HERO_INFO_BACK_ROI,
             threshold=0.86,
             timeout_seconds=0.5,
         ):
-            self._tap_shared_asset(
+            self._tap_shared_back_asset(
                 "back from hero equipment",
-                "back_button2.png",
                 roi=self.HERO_INFO_BACK_ROI,
                 threshold=0.86,
                 wait_after_seconds=TRANSITION_WAIT_SECONDS,
@@ -360,6 +364,21 @@ class EquipmentEnhanceTask(BaseTask):
         time.sleep(wait_after_seconds)
         return match
 
+    def _tap_shared_back_asset(
+        self,
+        label: str,
+        *,
+        roi: Optional[Roi] = None,
+        threshold: float = 0.82,
+        wait_after_seconds: float = TAP_COOLDOWN_SECONDS,
+    ) -> MatchResult:
+        match = self._match_shared_back_asset(roi=roi, threshold=threshold)
+        if match is None:
+            raise TaskFailedError(f"Equipment Enhance expected shared back element not found: {label}")
+        self.context.controller.tap(*match.center)
+        time.sleep(wait_after_seconds)
+        return match
+
     def _require_task_asset(
         self,
         label: str,
@@ -421,5 +440,23 @@ class EquipmentEnhanceTask(BaseTask):
             match = self.context.matcher.match_template(screen, path, threshold=threshold, roi=roi)
             if match is not None:
                 return match
+            time.sleep(0.35)
+        return None
+
+    def _match_shared_back_asset(
+        self,
+        *,
+        roi: Optional[Roi] = None,
+        threshold: float = 0.82,
+        timeout_seconds: float = 3.0,
+    ) -> Optional[MatchResult]:
+        assets = sorted(SHARED_BACK_ASSETS_DIR.glob("*.png"))
+        deadline = time.time() + timeout_seconds
+        while time.time() <= deadline:
+            screen = self.context.controller.screenshot()
+            for path in assets:
+                match = self.context.matcher.match_template(screen, path, threshold=threshold, roi=roi)
+                if match is not None:
+                    return match
             time.sleep(0.35)
         return None

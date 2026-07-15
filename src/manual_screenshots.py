@@ -10,7 +10,7 @@ if __package__ in (None, ""):
 import cv2
 
 from src.adb_controller import AdbControllerError, DeviceController
-from src.config import DEFAULT_SERIAL, MANUAL_SCREENSHOTS_DIR
+from src.config import MANUAL_SCREENSHOTS_DIR
 from src.paint_cropper import run_paint_crop_workflow
 
 
@@ -19,7 +19,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", required=True, help="Task folder name, e.g. 無盡試煉")
     parser.add_argument("--index", help="Screenshot index, e.g. 1 or 001. Omit to auto-increment.")
     parser.add_argument("--scene", help="Scene name, e.g. 每日任務")
-    parser.add_argument("--serial", default=DEFAULT_SERIAL, help=f"ADB serial, default: {DEFAULT_SERIAL}")
+    parser.add_argument("--serial", default=None, help="ADB serial override; omitted means auto-detect")
     parser.add_argument("--no-open-paint", action="store_true", help="Do not open saved image in mspaint")
     return parser
 
@@ -70,7 +70,8 @@ def main(argv: list = None) -> int:
 
     controller = DeviceController(args.serial)
     if not controller.connect():
-        print(f"ERROR: cannot connect to ADB device: {args.serial}", file=sys.stderr)
+        serial_label = args.serial or "auto-detect"
+        print(f"ERROR: cannot connect to ADB device: {serial_label}", file=sys.stderr)
         return 1
 
     try:

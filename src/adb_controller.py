@@ -49,19 +49,33 @@ class DeviceController:
         self.serial = serial or DEFAULT_SERIAL
         self.debug_actions = ACTION_DEBUG_ENABLED if debug_actions is None else debug_actions
         self.logger = logger or DebugLogger(False)
-        base_debug_dir = debug_dir or ACTION_DEBUG_DIR
-        label = _sanitize_debug_label(debug_label or os.environ.get("VL_ACTION_DEBUG_LABEL"))
-        debug_dir_name = f"{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
-        if label:
-            debug_dir_name = f"{debug_dir_name}_{label}"
+        self._debug_base_dir = debug_dir or ACTION_DEBUG_DIR
+        self._debug_label = _sanitize_debug_label(debug_label or os.environ.get("VL_ACTION_DEBUG_LABEL"))
         self.debug_dir = (
-            base_debug_dir / debug_dir_name
+            self._build_action_debug_dir()
             if self.debug_actions
-            else base_debug_dir
+            else self._debug_base_dir
         )
         self._debug_capture_counter = 0
         self._next_tap_debug_lines: List[str] = []
         self._next_tap_debug_boxes: List[Tuple[int, int, int, int, str]] = []
+
+    def _build_action_debug_dir(self) -> Path:
+        debug_dir_name = f"{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
+        if self._debug_label:
+            debug_dir_name = f"{debug_dir_name}_{self._debug_label}"
+        return self._debug_base_dir / debug_dir_name
+
+    def reset_action_debug_dir(self, debug_label: Optional[str] = None) -> Path:
+        if debug_label is not None:
+            self._debug_label = _sanitize_debug_label(debug_label)
+        self.debug_dir = (
+            self._build_action_debug_dir()
+            if self.debug_actions
+            else self._debug_base_dir
+        )
+        self._debug_capture_counter = 0
+        return self.debug_dir
 
     @property
     def base_cmd(self) -> List[str]:
@@ -333,8 +347,31 @@ class DeviceController:
         )
 
     def shell(self, args: Sequence[str]) -> str:
-        result = self._run(["shell"] + list(args), timeout=10)
+        shell_args = list(args)
+        if self._is_input_shell_command(shell_args):
+            result = self._run_input_with_debug(
+                self._action_name_from_input_shell_args(shell_args),
+                ["shell"] + shell_args,
+                timeout=10,
+            )
+            return result.stdout
+        result = self._run(["shell"] + shell_args, timeout=10)
         return result.stdout
+
+    @staticmethod
+    def _is_input_shell_command(args: Sequence[str]) -> bool:
+        return len(args) >= 2 and args[0] == "input" and args[1] in {"tap", "swipe", "keyevent"}
+
+    @staticmethod
+    def _action_name_from_input_shell_args(args: Sequence[str]) -> str:
+        action = args[1]
+        if action == "tap" and len(args) >= 4:
+            return f"tap_{args[2]}_{args[3]}"
+        if action == "swipe" and len(args) >= 7:
+            return f"swipe_{args[2]}_{args[3]}_{args[4]}_{args[5]}_{args[6]}"
+        if action == "keyevent" and len(args) >= 3:
+            return f"keyevent_{args[2]}"
+        return "input_" + "_".join(str(part) for part in args[1:])
 
     def _run_input_with_debug(
         self,

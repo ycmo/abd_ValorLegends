@@ -27,6 +27,9 @@ ads2/debug/
 ads2/assets/2_communication/
 ads2/assets/debug_errors/
 ads2/assets/review_crops/
+close_x_classifier/.torch_cache/
+vision_platform/temp/
+vision_platform/ads/runtime_collection/
 magic_shop/runtime_captures/*
 !magic_shop/runtime_captures/README.md
 magic_shop/debug_output/*

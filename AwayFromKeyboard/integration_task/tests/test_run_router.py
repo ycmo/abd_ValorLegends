@@ -17,23 +17,29 @@ class RunRouterCommandTests(unittest.TestCase):
         self.assertTrue(run_router._is_src_main_command(["-m", "src.main", "--debug", "run-all"]))
         self.assertFalse(run_router._is_src_main_command(["call_of_the_gale/scripts/auto_shoot.py"]))
 
-    def test_prepare_src_main_argv_adds_serial_and_debug_actions(self):
+    def test_prepare_src_main_argv_adds_serial_without_forcing_debug_actions(self):
         argv = run_router._prepare_src_main_argv(
             ["-m", "src.main", "--debug", "run-all"],
             selected_serial="emulator-1234",
-            debug_actions=True,
         )
 
-        self.assertEqual(argv, ["--debug-actions", "--serial", "emulator-1234", "--debug", "run-all"])
+        self.assertEqual(argv, ["--serial", "emulator-1234", "--debug", "run-all"])
 
     def test_prepare_src_main_argv_keeps_explicit_serial(self):
         argv = run_router._prepare_src_main_argv(
             ["-m", "src.main", "--serial", "explicit", "run-all"],
             selected_serial="emulator-1234",
-            debug_actions=False,
         )
 
         self.assertEqual(argv, ["--serial", "explicit", "run-all"])
+
+    def test_prepare_src_main_argv_preserves_ini_debug_actions(self):
+        argv = run_router._prepare_src_main_argv(
+            ["-m", "src.main", "--debug", "--debug-actions", "run-all"],
+            selected_serial=None,
+        )
+
+        self.assertEqual(argv, ["--debug", "--debug-actions", "run-all"])
 
     def test_profile_log_file_uses_route_log_stem(self):
         path = run_router._profile_log_file_for_route_log(r"E:\debug\afk_每日任務.txt")
@@ -56,7 +62,7 @@ class RunRouterCommandTests(unittest.TestCase):
                 )
 
         self.assertEqual(returncode, 0)
-        mock_main.assert_called_once_with(["--debug-actions", "--serial", "emulator-1234", "--debug", "run-all"])
+        mock_main.assert_called_once_with(["--serial", "emulator-1234", "--debug", "run-all"])
         mock_subprocess.assert_not_called()
 
     def test_src_main_in_process_restores_environment(self):
@@ -98,7 +104,7 @@ class RunRouterCommandTests(unittest.TestCase):
             observed,
             {
                 "serial": "emulator-5678",
-                "debug": "1",
+                "debug": None,
                 "label": "route_test",
                 "profile": profile_path,
                 "pythonioencoding": "utf-8",

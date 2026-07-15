@@ -143,7 +143,7 @@ def warn_if_midas_activity_active(
         f"  state 檔案: {Path(path)}\n"
         f"  source: {activity.get('source', 'unknown')}\n"
         f"  updated_at: {activity.get('updated_at', 'unknown')}\n"
-        "  這通常表示 loop_toggle_midas.py 正在跑點金，或前一次被強制關閉後沒有正常清除狀態。\n"
+        "  這通常表示 afk_midas.py 正在跑點金，或前一次被強制關閉後沒有正常清除狀態。\n"
         "  本程序不會暫停，會繼續執行；如果你確認點金已經停止，請到上面的 state 檔案把 active 改成 false，"
         "或刪除該檔案。\n",
         file=sys.stderr,

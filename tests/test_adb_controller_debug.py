@@ -1,6 +1,6 @@
 import unittest
 import subprocess
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import cv2
 import numpy as np
@@ -16,6 +16,18 @@ class AdbControllerDebugAnnotationTests(unittest.TestCase):
             controller.debug_dir.name,
             r"^\d{8}_\d{6}_\d+_abyss_route_magic_store$",
         )
+
+    def test_reset_action_debug_dir_rotates_dir_and_resets_counter(self):
+        with patch("src.adb_controller.time.strftime", side_effect=["20260710_010203", "20260711_040506"]), \
+             patch("src.adb_controller.os.getpid", return_value=1234):
+            controller = DeviceController(debug_actions=True, debug_label="old")
+            controller._debug_capture_counter = 8
+
+            debug_dir = controller.reset_action_debug_dir("midas")
+
+        self.assertEqual(debug_dir.name, "20260711_040506_1234_midas")
+        self.assertEqual(controller.debug_dir, debug_dir)
+        self.assertEqual(controller._debug_capture_counter, 0)
 
     def test_annotate_action_debug_image_draws_tap_and_boxes(self):
         image = np.zeros((220, 260, 3), dtype=np.uint8)
@@ -79,6 +91,37 @@ class AdbControllerDebugAnnotationTests(unittest.TestCase):
 
         self.assertIs(result, image)
         save_debug.assert_not_called()
+
+    def test_tap_debug_saves_before_and_after_images(self):
+        controller = DeviceController(debug_actions=True)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+
+        with patch.object(controller, "_capture_screen", return_value=image), \
+             patch.object(controller, "_run", return_value=subprocess.CompletedProcess(["adb"], 0, stdout="", stderr="")) as run_cmd, \
+             patch.object(controller, "_save_debug_image") as save_debug:
+            controller.tap(12, 34)
+
+        run_cmd.assert_called_once()
+        self.assertEqual(
+            [call.args[0] for call in save_debug.call_args_list],
+            ["before_tap_12_34", "after_tap_12_34"],
+        )
+
+    def test_shell_input_keyevent_debug_saves_before_and_after_images(self):
+        controller = DeviceController(debug_actions=True)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+
+        with patch.object(controller, "_capture_screen", return_value=image), \
+             patch.object(controller, "_run", return_value=subprocess.CompletedProcess(["adb"], 0, stdout="ok", stderr="")) as run_cmd, \
+             patch.object(controller, "_save_debug_image") as save_debug:
+            result = controller.shell(["input", "keyevent", "279"])
+
+        self.assertEqual(result, "ok")
+        run_cmd.assert_called_once()
+        self.assertEqual(
+            [call.args[0] for call in save_debug.call_args_list],
+            ["before_keyevent_279", "after_keyevent_279"],
+        )
 
     def test_connect_falls_back_to_connected_bluestacks_serial(self):
         controller = DeviceController(serial="emulator-5554")

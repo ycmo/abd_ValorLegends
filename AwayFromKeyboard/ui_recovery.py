@@ -5,7 +5,7 @@ from pathlib import Path
 from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from src.scene_detector import SceneDetector, Scene
-from src.config import SHARED_ASSETS_DIR
+from src.config import SHARED_ASSETS_DIR, SHARED_BACK_ASSETS_DIR
 from AwayFromKeyboard.integration_task.router import RedBoxFinder
 
 MATCH_THRESHOLD = 0.80
@@ -137,7 +137,7 @@ class UIRecovery:
         """
         嘗試關閉任何彈窗，直到畫面確認為 Scene.MAIN
         """
-        back_btn = SHARED_ASSETS_DIR / "back_button.png"
+        back_buttons = sorted(SHARED_BACK_ASSETS_DIR.glob("*.png"))
         close_btn = SHARED_ASSETS_DIR / "dialog_close_button.png"
         
         for attempt in range(max_attempts):
@@ -160,13 +160,17 @@ class UIRecovery:
                     continue
 
             # 其次嘗試 Back Button
-            if back_btn.exists():
+            for back_btn in back_buttons:
                 match = self.matcher.match_template(screen, back_btn, threshold=MATCH_THRESHOLD)
                 if match:
                     print(f"👉 點擊返回按鈕 {match.center}")
                     self.controller.tap(*match.center)
                     time.sleep(UI_WAIT_SEC)
-                    continue
+                    break
+            else:
+                match = None
+            if match:
+                continue
                     
             # 如果都找不到明確的按鈕，就等待一下（動畫或載入中）
             print(f"⏳ 找不到明確的關閉按鈕，等待 {UI_WAIT_SEC} 秒...")

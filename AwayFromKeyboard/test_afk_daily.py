@@ -7,26 +7,26 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from AwayFromKeyboard import task_config
-from AwayFromKeyboard import loop_afk
+from AwayFromKeyboard import afk_daily
 
 
-class LoopAfkCompletionTests(unittest.TestCase):
+class AfkDailyCompletionTests(unittest.TestCase):
     def test_today_key_uses_taipei_reset_day(self):
         utc_time = datetime(2026, 6, 25, 17, 30, tzinfo=timezone.utc)
 
-        self.assertEqual(loop_afk.today_key(utc_time), "2026-06-25")
+        self.assertEqual(afk_daily.today_key(utc_time), "2026-06-25")
 
     def test_today_key_switches_at_taipei_8am(self):
-        before_reset = datetime(2026, 6, 27, 7, 59, tzinfo=loop_afk.TAIPEI_TZ)
-        at_reset = datetime(2026, 6, 27, 8, 0, tzinfo=loop_afk.TAIPEI_TZ)
+        before_reset = datetime(2026, 6, 27, 7, 59, tzinfo=afk_daily.TAIPEI_TZ)
+        at_reset = datetime(2026, 6, 27, 8, 0, tzinfo=afk_daily.TAIPEI_TZ)
 
-        self.assertEqual(loop_afk.today_key(before_reset), "2026-06-26")
-        self.assertEqual(loop_afk.today_key(at_reset), "2026-06-27")
+        self.assertEqual(afk_daily.today_key(before_reset), "2026-06-26")
+        self.assertEqual(afk_daily.today_key(at_reset), "2026-06-27")
 
     def test_delay_until_8_waits_until_8_00_30_and_can_add_extra_delay(self):
         now = datetime(2026, 6, 27, 6, 30, 0)
 
-        delay_seconds, wake_time, label = loop_afk.resolve_start_delay(
+        delay_seconds, wake_time, label = afk_daily.resolve_start_delay(
             delay="00:10:00",
             delay_until_8=True,
             now=now,
@@ -40,7 +40,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
     def test_delay_without_until_8_keeps_original_behavior(self):
         now = datetime(2026, 6, 27, 6, 30, 0)
 
-        delay_seconds, wake_time, _ = loop_afk.resolve_start_delay(
+        delay_seconds, wake_time, _ = afk_daily.resolve_start_delay(
             delay="00:10:00",
             delay_until_8=False,
             now=now,
@@ -50,14 +50,14 @@ class LoopAfkCompletionTests(unittest.TestCase):
         self.assertEqual(wake_time, datetime(2026, 6, 27, 6, 40, 0))
 
     def test_parse_duration_accepts_seconds_and_hh_mm_ss(self):
-        self.assertEqual(loop_afk.parse_duration_to_seconds("90"), 90)
-        self.assertEqual(loop_afk.parse_duration_to_seconds("00:02:30"), 150)
-        self.assertIsNone(loop_afk.parse_duration_to_seconds(""))
+        self.assertEqual(afk_daily.parse_duration_to_seconds("90"), 90)
+        self.assertEqual(afk_daily.parse_duration_to_seconds("00:02:30"), 150)
+        self.assertIsNone(afk_daily.parse_duration_to_seconds(""))
 
     def test_ini_start_time_delays_until_today_when_future(self):
         now = datetime(2026, 6, 27, 7, 0, 0)
 
-        delay_seconds, wake_time, label = loop_afk.resolve_start_delay(
+        delay_seconds, wake_time, label = afk_daily.resolve_start_delay(
             delay=None,
             delay_until_8=False,
             config_start_time="08:10:00",
@@ -71,7 +71,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
     def test_ini_start_time_delays_until_tomorrow_when_past(self):
         now = datetime(2026, 6, 27, 9, 0, 0)
 
-        delay_seconds, wake_time, _ = loop_afk.resolve_start_delay(
+        delay_seconds, wake_time, _ = afk_daily.resolve_start_delay(
             delay=None,
             delay_until_8=False,
             config_start_time="08:10:00",
@@ -84,7 +84,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
     def test_cli_delay_overrides_ini_start_time(self):
         now = datetime(2026, 6, 27, 6, 30, 0)
 
-        delay_seconds, wake_time, _ = loop_afk.resolve_start_delay(
+        delay_seconds, wake_time, _ = afk_daily.resolve_start_delay(
             delay="00:10:00",
             delay_until_8=False,
             config_start_time="08:10:00",
@@ -97,7 +97,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
     def test_run_now_overrides_ini_start_time(self):
         now = datetime(2026, 6, 27, 6, 30, 0)
 
-        delay_seconds, wake_time, label = loop_afk.resolve_start_delay(
+        delay_seconds, wake_time, label = afk_daily.resolve_start_delay(
             delay=None,
             delay_until_8=False,
             config_start_time="08:10:00",
@@ -121,11 +121,11 @@ class LoopAfkCompletionTests(unittest.TestCase):
         tasks = ["每日任務", "深淵"]
 
         self.assertEqual(
-            loop_afk.pending_tasks_for_account(state, "em3", tasks, force=False),
+            afk_daily.pending_tasks_for_account(state, "em3", tasks, force=False),
             ["深淵"],
         )
         self.assertEqual(
-            loop_afk.pending_tasks_for_account(state, "em3", tasks, force=True),
+            afk_daily.pending_tasks_for_account(state, "em3", tasks, force=True),
             tasks,
         )
 
@@ -133,11 +133,11 @@ class LoopAfkCompletionTests(unittest.TestCase):
         accounts = ["em3", "311", "tiger", "14"]
 
         self.assertEqual(
-            loop_afk.build_account_rotation(accounts, "tiger"),
+            afk_daily.build_account_rotation(accounts, "tiger"),
             ["tiger", "14", "em3", "311"],
         )
         self.assertEqual(
-            loop_afk.build_account_rotation(accounts, None),
+            afk_daily.build_account_rotation(accounts, None),
             accounts,
         )
 
@@ -150,7 +150,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            loop_afk.build_account_execution_order(
+            afk_daily.build_account_execution_order(
                 accounts,
                 "14",
                 {"date": "2026-06-26", "completed": {}},
@@ -176,7 +176,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            loop_afk.build_account_execution_order(
+            afk_daily.build_account_execution_order(
                 accounts,
                 "14",
                 state,
@@ -202,7 +202,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            loop_afk.build_account_execution_order(
+            afk_daily.build_account_execution_order(
                 accounts,
                 "14",
                 state,
@@ -214,39 +214,39 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_mark_route_completed_writes_daily_state_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(loop_afk, "STATE_DIR", Path(tmpdir)):
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
                 state = {"date": "2026-06-26", "completed": {}}
 
-                loop_afk.mark_route_completed(state, "em3", "每日任務")
-                loaded = loop_afk.load_completion_state("2026-06-26")
+                afk_daily.mark_route_completed(state, "em3", "每日任務")
+                loaded = afk_daily.load_completion_state("2026-06-26")
 
-        self.assertTrue(loop_afk.is_route_completed(loaded, "em3", "每日任務"))
+        self.assertTrue(afk_daily.is_route_completed(loaded, "em3", "每日任務"))
 
     def test_failed_this_round_is_written_and_cleared_without_completing_route(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(loop_afk, "STATE_DIR", Path(tmpdir)):
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
                 state = {"date": "2026-06-26", "completed": {}}
 
-                loop_afk.mark_route_failed_this_round(state, "em3", "route_a", "returncode=1")
-                loaded = loop_afk.load_completion_state("2026-06-26")
+                afk_daily.mark_route_failed_this_round(state, "em3", "route_a", "returncode=1")
+                loaded = afk_daily.load_completion_state("2026-06-26")
 
-                self.assertTrue(loop_afk.is_route_failed_this_round(loaded, "em3", "route_a"))
-                self.assertFalse(loop_afk.is_route_completed(loaded, "em3", "route_a"))
+                self.assertTrue(afk_daily.is_route_failed_this_round(loaded, "em3", "route_a"))
+                self.assertFalse(afk_daily.is_route_completed(loaded, "em3", "route_a"))
                 self.assertEqual(
-                    loop_afk.pending_tasks_for_account(loaded, "em3", ["route_a", "route_b"], force=False),
+                    afk_daily.pending_tasks_for_account(loaded, "em3", ["route_a", "route_b"], force=False),
                     ["route_b"],
                 )
                 self.assertEqual(
-                    loop_afk.pending_tasks_for_account(loaded, "em3", ["route_a", "route_b"], force=True),
+                    afk_daily.pending_tasks_for_account(loaded, "em3", ["route_a", "route_b"], force=True),
                     ["route_a", "route_b"],
                 )
 
-                self.assertTrue(loop_afk.clear_failed_this_round(loaded))
-                reloaded = loop_afk.load_completion_state("2026-06-26")
+                self.assertTrue(afk_daily.clear_failed_this_round(loaded))
+                reloaded = afk_daily.load_completion_state("2026-06-26")
 
-        self.assertFalse(loop_afk.is_route_failed_this_round(reloaded, "em3", "route_a"))
+        self.assertFalse(afk_daily.is_route_failed_this_round(reloaded, "em3", "route_a"))
         self.assertEqual(
-            loop_afk.pending_tasks_for_account(reloaded, "em3", ["route_a", "route_b"], force=False),
+            afk_daily.pending_tasks_for_account(reloaded, "em3", ["route_a", "route_b"], force=False),
             ["route_a", "route_b"],
         )
 
@@ -254,41 +254,41 @@ class LoopAfkCompletionTests(unittest.TestCase):
         task_lists = [["每日任務"], ["深淵", "疾風呼喚"]]
 
         with tempfile.TemporaryDirectory() as tmpdir, \
-             patch.object(loop_afk, "STATE_DIR", Path(tmpdir)), \
-             patch.object(loop_afk, "today_key", return_value="2026-06-26"), \
+             patch.object(afk_daily, "STATE_DIR", Path(tmpdir)), \
+             patch.object(afk_daily, "today_key", return_value="2026-06-26"), \
              patch("AwayFromKeyboard.task_config.get_tasks_to_run", side_effect=task_lists):
-            first_tasks, _, _ = loop_afk.load_runtime_task_state()
-            second_tasks, _, _ = loop_afk.load_runtime_task_state()
+            first_tasks, _, _ = afk_daily.load_runtime_task_state()
+            second_tasks, _, _ = afk_daily.load_runtime_task_state()
 
         self.assertEqual(first_tasks, ["每日任務"])
         self.assertEqual(second_tasks, ["深淵", "疾風呼喚"])
 
     def test_route_log_file_uses_project_relative_directory(self):
-        path = loop_afk.build_route_log_file(
+        path = afk_daily.build_route_log_file(
             True,
             account_name="em3",
             task_name="每日任務",
-            now=datetime(2026, 7, 1, 9, 1, 2, tzinfo=loop_afk.TAIPEI_TZ),
+            now=datetime(2026, 7, 1, 9, 1, 2, tzinfo=afk_daily.TAIPEI_TZ),
         )
 
         self.assertEqual(
             path,
-            loop_afk.PROJECT_ROOT / "log" / "afk_20260701_090102_em3_每日任務.txt",
+            afk_daily.PROJECT_ROOT / "log" / "afk_20260701_090102_em3_每日任務.txt",
         )
 
     def test_route_log_file_sanitizes_unsafe_name_parts(self):
-        path = loop_afk.build_route_log_file(
+        path = afk_daily.build_route_log_file(
             True,
             account_name="em:3",
             task_name="深淵/測試",
-            now=datetime(2026, 7, 1, 9, 1, 2, tzinfo=loop_afk.TAIPEI_TZ),
+            now=datetime(2026, 7, 1, 9, 1, 2, tzinfo=afk_daily.TAIPEI_TZ),
         )
 
         self.assertEqual(path.name, "afk_20260701_090102_em_3_深淵_測試.txt")
 
     def test_route_log_file_disabled_returns_none(self):
         self.assertIsNone(
-            loop_afk.build_route_log_file(
+            afk_daily.build_route_log_file(
                 False,
                 account_name="em3",
                 task_name="每日任務",
@@ -296,7 +296,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
         )
 
     def test_build_router_argv_includes_debug_force_and_log(self):
-        argv = loop_afk.build_router_argv(
+        argv = afk_daily.build_router_argv(
             "深淵",
             debug_actions=True,
             force_subprocess=True,
@@ -309,9 +309,9 @@ class LoopAfkCompletionTests(unittest.TestCase):
         )
 
     def test_run_router_task_defaults_to_in_process(self):
-        with patch.object(loop_afk, "run_router_task_in_process", return_value=0) as in_process, \
-             patch("AwayFromKeyboard.loop_afk.subprocess.run") as subprocess_run:
-            returncode = loop_afk.run_router_task(
+        with patch.object(afk_daily, "run_router_task_in_process", return_value=0) as in_process, \
+             patch("AwayFromKeyboard.afk_daily.subprocess.run") as subprocess_run:
+            returncode = afk_daily.run_router_task(
                 task_cmd=["python", "run_router.py", "深淵"],
                 router_argv=["深淵"],
                 force_subprocess=False,
@@ -323,9 +323,9 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_run_router_task_force_subprocess_uses_old_mode_with_utf8_env(self):
         completed = subprocess.CompletedProcess(args=[], returncode=7)
-        with patch.object(loop_afk, "run_router_task_in_process") as in_process, \
-             patch("AwayFromKeyboard.loop_afk.subprocess.run", return_value=completed) as subprocess_run:
-            returncode = loop_afk.run_router_task(
+        with patch.object(afk_daily, "run_router_task_in_process") as in_process, \
+             patch("AwayFromKeyboard.afk_daily.subprocess.run", return_value=completed) as subprocess_run:
+            returncode = afk_daily.run_router_task(
                 task_cmd=["python", "run_router.py", "深淵"],
                 router_argv=["深淵"],
                 force_subprocess=True,
@@ -340,7 +340,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_run_router_task_watchdog_uses_subprocess_watchdog_and_debug_label(self):
         recovery = MagicMock()
-        watchdog = loop_afk.TaskWatchdogConfig(
+        watchdog = afk_daily.TaskWatchdogConfig(
             enabled=True,
             task_timeout_seconds=600,
             hard_timeout_seconds=1200,
@@ -349,9 +349,9 @@ class LoopAfkCompletionTests(unittest.TestCase):
             debug_label="afk_test_label",
         )
 
-        with patch.object(loop_afk, "run_router_task_subprocess_watchdog", return_value=(124, "stuck_static")) as run_watchdog, \
-             patch.object(loop_afk, "rename_router_debug_dirs_for_failure") as rename_debug:
-            returncode = loop_afk.run_router_task(
+        with patch.object(afk_daily, "run_router_task_subprocess_watchdog", return_value=(124, "stuck_static")) as run_watchdog, \
+             patch.object(afk_daily, "rename_router_debug_dirs_for_failure") as rename_debug:
+            returncode = afk_daily.run_router_task(
                 task_cmd=["python", "run_router.py", "route_a"],
                 router_argv=["route_a"],
                 force_subprocess=False,
@@ -367,7 +367,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_run_router_task_route_exit_failure_renames_only_route_exit_debug_dir(self):
         recovery = MagicMock()
-        watchdog = loop_afk.TaskWatchdogConfig(
+        watchdog = afk_daily.TaskWatchdogConfig(
             enabled=True,
             task_timeout_seconds=600,
             hard_timeout_seconds=1200,
@@ -377,11 +377,11 @@ class LoopAfkCompletionTests(unittest.TestCase):
         )
 
         with patch.object(
-            loop_afk,
+            afk_daily,
             "run_router_task_subprocess_watchdog",
-            return_value=(loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE, "route_exit_after_task_success"),
-        ), patch.object(loop_afk, "rename_router_debug_dirs_for_failure") as rename_debug:
-            returncode = loop_afk.run_router_task(
+            return_value=(afk_daily.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE, "route_exit_after_task_success"),
+        ), patch.object(afk_daily, "rename_router_debug_dirs_for_failure") as rename_debug:
+            returncode = afk_daily.run_router_task(
                 task_cmd=["python", "run_router.py", "route_a"],
                 router_argv=["route_a"],
                 force_subprocess=False,
@@ -389,16 +389,16 @@ class LoopAfkCompletionTests(unittest.TestCase):
                 recovery=recovery,
             )
 
-        self.assertEqual(returncode, loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE)
+        self.assertEqual(returncode, afk_daily.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE)
         rename_debug.assert_called_once_with(
             "afk_test_label",
             "route_exit_after_task_success",
-            loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE,
+            afk_daily.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE,
         )
 
     def test_rename_latest_stage_action_debug_dir_for_failure_only_marks_active_stage(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(loop_afk, "LOG_DIR", Path(tmpdir)):
+            with patch.object(afk_daily, "LOG_DIR", Path(tmpdir)):
                 old = Path(tmpdir) / "20260711_010000_afk_label_route_enter"
                 new = Path(tmpdir) / "20260711_010001_afk_label_task"
                 old.mkdir()
@@ -406,7 +406,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
                 os.utime(old, (1, 1))
                 os.utime(new, (2, 2))
 
-                renamed = loop_afk.rename_latest_stage_action_debug_dir_for_failure(
+                renamed = afk_daily.rename_latest_stage_action_debug_dir_for_failure(
                     "afk_label",
                     "stuck_static",
                 )
@@ -417,14 +417,14 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_run_router_task_in_process_converts_system_exit_to_returncode(self):
         with patch("AwayFromKeyboard.integration_task.run_router.main", side_effect=SystemExit(3)):
-            self.assertEqual(loop_afk.run_router_task_in_process(["深淵"]), 3)
+            self.assertEqual(afk_daily.run_router_task_in_process(["深淵"]), 3)
 
     def test_run_router_task_with_recovery_direct_retry_success(self):
         recovery = MagicMock()
-        with patch.object(loop_afk, "run_router_task", side_effect=[1, 0]) as run_task, \
-             patch.object(loop_afk, "restart_game_app_and_reenter") as restart_app, \
-             patch.object(loop_afk, "restart_bluestacks_and_reenter") as restart_bs:
-            returncode, stage = loop_afk.run_router_task_with_recovery(
+        with patch.object(afk_daily, "run_router_task", side_effect=[1, 0]) as run_task, \
+             patch.object(afk_daily, "restart_game_app_and_reenter") as restart_app, \
+             patch.object(afk_daily, "restart_bluestacks_and_reenter") as restart_bs:
+            returncode, stage = afk_daily.run_router_task_with_recovery(
                 task_cmd=["python", "run_router.py", "route_a"],
                 router_argv=["route_a"],
                 force_subprocess=False,
@@ -443,11 +443,11 @@ class LoopAfkCompletionTests(unittest.TestCase):
         recovery = MagicMock()
         recovery.recover_to_main.return_value = True
         with patch.object(
-            loop_afk,
+            afk_daily,
             "run_router_task",
-            return_value=loop_afk.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE,
-        ) as run_task, patch.object(loop_afk, "restart_game_app_and_reenter") as restart_app:
-            returncode, stage = loop_afk.run_router_task_with_recovery(
+            return_value=afk_daily.ROUTE_EXIT_AFTER_COMMAND_SUCCESS_RETURNCODE,
+        ) as run_task, patch.object(afk_daily, "restart_game_app_and_reenter") as restart_app:
+            returncode, stage = afk_daily.run_router_task_with_recovery(
                 task_cmd=["python", "run_router.py", "route_a"],
                 router_argv=["route_a"],
                 force_subprocess=False,
@@ -464,10 +464,10 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_run_router_task_with_recovery_restarts_app_then_bluestacks(self):
         recovery = MagicMock()
-        with patch.object(loop_afk, "run_router_task", side_effect=[1, 1, 1, 0]) as run_task, \
-             patch.object(loop_afk, "restart_game_app_and_reenter", return_value=True) as restart_app, \
-             patch.object(loop_afk, "restart_bluestacks_and_reenter", return_value=True) as restart_bs:
-            returncode, stage = loop_afk.run_router_task_with_recovery(
+        with patch.object(afk_daily, "run_router_task", side_effect=[1, 1, 1, 0]) as run_task, \
+             patch.object(afk_daily, "restart_game_app_and_reenter", return_value=True) as restart_app, \
+             patch.object(afk_daily, "restart_bluestacks_and_reenter", return_value=True) as restart_bs:
+            returncode, stage = afk_daily.run_router_task_with_recovery(
                 task_cmd=["python", "run_router.py", "route_a"],
                 router_argv=["route_a"],
                 force_subprocess=False,
@@ -484,9 +484,9 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_run_router_task_with_recovery_disabled_keeps_fail_fast_returncode(self):
         recovery = MagicMock()
-        with patch.object(loop_afk, "run_router_task", return_value=1) as run_task, \
-             patch.object(loop_afk, "restart_game_app_and_reenter") as restart_app:
-            returncode, stage = loop_afk.run_router_task_with_recovery(
+        with patch.object(afk_daily, "run_router_task", return_value=1) as run_task, \
+             patch.object(afk_daily, "restart_game_app_and_reenter") as restart_app:
+            returncode, stage = afk_daily.run_router_task_with_recovery(
                 task_cmd=["python", "run_router.py", "route_a"],
                 router_argv=["route_a"],
                 force_subprocess=False,
@@ -502,7 +502,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_switch_account_with_recovery_disabled_uses_in_process_switch(self):
         recovery = MagicMock()
-        watchdog = loop_afk.TaskWatchdogConfig(
+        watchdog = afk_daily.TaskWatchdogConfig(
             enabled=False,
             task_timeout_seconds=600,
             hard_timeout_seconds=1200,
@@ -510,9 +510,9 @@ class LoopAfkCompletionTests(unittest.TestCase):
             stuck_probe_interval_seconds=10,
         )
 
-        with patch.object(loop_afk, "switch_account", return_value=True) as switch_mock, \
-             patch.object(loop_afk, "run_switch_account_command") as run_switch:
-            success, stage = loop_afk.switch_account_with_recovery(
+        with patch.object(afk_daily, "switch_account", return_value=True) as switch_mock, \
+             patch.object(afk_daily, "run_switch_account_command") as run_switch:
+            success, stage = afk_daily.switch_account_with_recovery(
                 account_name="em3",
                 switch_cmd=["python", "-m", "switch_account.switch_account", "em3"],
                 recovery=recovery,
@@ -528,7 +528,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_switch_account_with_recovery_fails_after_app_and_bluestacks_retry(self):
         recovery = MagicMock()
-        watchdog = loop_afk.TaskWatchdogConfig(
+        watchdog = afk_daily.TaskWatchdogConfig(
             enabled=True,
             task_timeout_seconds=600,
             hard_timeout_seconds=1200,
@@ -538,13 +538,13 @@ class LoopAfkCompletionTests(unittest.TestCase):
         )
 
         with patch.object(
-            loop_afk,
+            afk_daily,
             "run_switch_account_command",
             side_effect=[(False, "stuck_static"), (False, "returncode_1"), (False, "returncode_1")],
         ) as run_switch, \
-             patch.object(loop_afk, "restart_game_app_and_reenter", return_value=True) as restart_app, \
-             patch.object(loop_afk, "restart_bluestacks_and_reenter", return_value=True) as restart_bs:
-            success, stage = loop_afk.switch_account_with_recovery(
+             patch.object(afk_daily, "restart_game_app_and_reenter", return_value=True) as restart_app, \
+             patch.object(afk_daily, "restart_bluestacks_and_reenter", return_value=True) as restart_bs:
+            success, stage = afk_daily.switch_account_with_recovery(
                 account_name="em3",
                 switch_cmd=["python", "-m", "switch_account.switch_account", "em3"],
                 recovery=recovery,
@@ -560,7 +560,7 @@ class LoopAfkCompletionTests(unittest.TestCase):
         restart_bs.assert_called_once_with(recovery, boot_wait_seconds=180)
 
     def test_resolve_task_watchdog_config_uses_ini_timeout_and_double_hard_timeout(self):
-        config = loop_afk.resolve_task_watchdog_config(
+        config = afk_daily.resolve_task_watchdog_config(
             enabled=True,
             account_name="em3",
             task_name="route_a",
@@ -608,9 +608,9 @@ class LoopAfkCompletionTests(unittest.TestCase):
             today_file.write_text("new", encoding="utf-8")
             unrelated_file.write_text("keep", encoding="utf-8")
 
-            removed = loop_afk.cleanup_previous_day_logs(
+            removed = afk_daily.cleanup_previous_day_logs(
                 log_dir,
-                now=datetime(2026, 7, 3, 9, 0, 0, tzinfo=loop_afk.TAIPEI_TZ),
+                now=datetime(2026, 7, 3, 9, 0, 0, tzinfo=afk_daily.TAIPEI_TZ),
             )
 
             self.assertEqual(removed, 3)
@@ -622,49 +622,97 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_previous_log_date_prefix_uses_taipei_calendar_day(self):
         self.assertEqual(
-            loop_afk.previous_log_date_prefix(
-                datetime(2026, 7, 3, 1, 0, 0, tzinfo=loop_afk.TAIPEI_TZ)
+            afk_daily.previous_log_date_prefix(
+                datetime(2026, 7, 3, 1, 0, 0, tzinfo=afk_daily.TAIPEI_TZ)
             ),
             "20260702",
         )
 
     def test_record_current_account_writes_non_empty_account_only(self):
-        with patch("AwayFromKeyboard.loop_afk.write_current_account") as write:
-            loop_afk.record_current_account("311", "test.source")
-            loop_afk.record_current_account(None, "test.none")
+        with patch("AwayFromKeyboard.afk_daily.write_current_account") as write:
+            afk_daily.record_current_account("311", "test.source")
+            afk_daily.record_current_account(None, "test.none")
 
         write.assert_called_once_with("311", source="test.source")
 
     def test_is_midas_activity_active_only_for_active_midas_auto(self):
-        with patch("AwayFromKeyboard.loop_afk.read_activity_state", return_value={"activity": "midas_auto", "active": True}):
-            self.assertTrue(loop_afk.is_midas_activity_active())
+        with patch("AwayFromKeyboard.afk_daily.read_activity_state", return_value={"activity": "midas_auto", "active": True}):
+            self.assertTrue(afk_daily.is_midas_activity_active())
 
-        with patch("AwayFromKeyboard.loop_afk.read_activity_state", return_value={"activity": "midas_auto", "active": False}):
-            self.assertFalse(loop_afk.is_midas_activity_active())
+        with patch("AwayFromKeyboard.afk_daily.read_activity_state", return_value={"activity": "midas_auto", "active": False}):
+            self.assertFalse(afk_daily.is_midas_activity_active())
 
-        with patch("AwayFromKeyboard.loop_afk.read_activity_state", return_value={"activity": "other", "active": True}):
-            self.assertFalse(loop_afk.is_midas_activity_active())
+        with patch("AwayFromKeyboard.afk_daily.read_activity_state", return_value={"activity": "other", "active": True}):
+            self.assertFalse(afk_daily.is_midas_activity_active())
 
-    def test_midas_activity_wait_reason_detects_wake_guard_window(self):
-        now = datetime(2026, 7, 3, 7, 45, 0, tzinfo=loop_afk.TAIPEI_TZ)
+    def test_midas_activity_wait_reason_does_not_use_fixed_wake_guard_without_estimate(self):
+        now = datetime(2026, 7, 3, 7, 45, 0, tzinfo=afk_daily.TAIPEI_TZ)
 
-        self.assertEqual(
-            loop_afk.midas_activity_wait_reason(
+        self.assertIsNone(
+            afk_daily.midas_activity_wait_reason(
                 {
                     "activity": "midas_auto",
                     "active": False,
                     "wake_at": "2026-07-03T08:00:00+08:00",
                 },
                 now=now,
+            )
+        )
+
+    def test_midas_activity_wait_reason_allows_task_that_fits_before_wake_at(self):
+        now = datetime(2026, 7, 3, 7, 30, 0, tzinfo=afk_daily.TAIPEI_TZ)
+
+        self.assertIsNone(
+            afk_daily.midas_activity_wait_reason(
+                {
+                    "activity": "midas_auto",
+                    "active": False,
+                    "wake_at": "2026-07-03T08:00:00+08:00",
+                },
+                now=now,
+                estimated_task_seconds=20 * 60,
+                safety_margin_seconds=2 * 60,
+            )
+        )
+
+    def test_midas_activity_wait_reason_allows_short_task_inside_old_guard_window(self):
+        now = datetime(2026, 7, 15, 23, 0, 0, tzinfo=afk_daily.TAIPEI_TZ)
+
+        self.assertIsNone(
+            afk_daily.midas_activity_wait_reason(
+                {
+                    "activity": "midas_auto",
+                    "active": False,
+                    "wake_at": "2026-07-15T23:17:16+08:00",
+                },
+                now=now,
+                estimated_task_seconds=4 * 60,
+                safety_margin_seconds=2 * 60,
+            )
+        )
+
+    def test_midas_activity_wait_reason_blocks_task_that_would_overlap_wake_at(self):
+        now = datetime(2026, 7, 3, 7, 45, 0, tzinfo=afk_daily.TAIPEI_TZ)
+
+        self.assertEqual(
+            afk_daily.midas_activity_wait_reason(
+                {
+                    "activity": "midas_auto",
+                    "active": False,
+                    "wake_at": "2026-07-03T08:00:00+08:00",
+                },
+                now=now,
+                estimated_task_seconds=14 * 60,
+                safety_margin_seconds=2 * 60,
             ),
             "wake_soon",
         )
 
     def test_midas_activity_wait_reason_treats_active_lock_over_10_minutes_as_stale(self):
-        now = datetime(2026, 7, 3, 8, 11, 0, tzinfo=loop_afk.TAIPEI_TZ)
+        now = datetime(2026, 7, 3, 8, 11, 0, tzinfo=afk_daily.TAIPEI_TZ)
 
         self.assertEqual(
-            loop_afk.midas_activity_wait_reason(
+            afk_daily.midas_activity_wait_reason(
                 {
                     "activity": "midas_auto",
                     "active": True,
@@ -676,10 +724,10 @@ class LoopAfkCompletionTests(unittest.TestCase):
         )
 
     def test_midas_activity_wait_reason_keeps_recent_active_lock(self):
-        now = datetime(2026, 7, 3, 8, 9, 0, tzinfo=loop_afk.TAIPEI_TZ)
+        now = datetime(2026, 7, 3, 8, 9, 0, tzinfo=afk_daily.TAIPEI_TZ)
 
         self.assertEqual(
-            loop_afk.midas_activity_wait_reason(
+            afk_daily.midas_activity_wait_reason(
                 {
                     "activity": "midas_auto",
                     "active": True,
@@ -692,27 +740,27 @@ class LoopAfkCompletionTests(unittest.TestCase):
 
     def test_midas_activity_wait_reason_ignores_far_future_and_stale_wake_time(self):
         self.assertIsNone(
-            loop_afk.midas_activity_wait_reason(
+            afk_daily.midas_activity_wait_reason(
                 {
                     "activity": "midas_auto",
                     "active": False,
                     "wake_at": "2026-07-03T08:00:00+08:00",
                 },
-                now=datetime(2026, 7, 3, 7, 30, 0, tzinfo=loop_afk.TAIPEI_TZ),
+                now=datetime(2026, 7, 3, 7, 30, 0, tzinfo=afk_daily.TAIPEI_TZ),
             )
         )
         self.assertIsNone(
-            loop_afk.midas_activity_wait_reason(
+            afk_daily.midas_activity_wait_reason(
                 {
                     "activity": "midas_auto",
                     "active": False,
                     "wake_at": "2026-07-03T08:00:00+08:00",
                 },
-                now=datetime(2026, 7, 3, 10, 1, 0, tzinfo=loop_afk.TAIPEI_TZ),
+                now=datetime(2026, 7, 3, 10, 1, 0, tzinfo=afk_daily.TAIPEI_TZ),
             )
         )
 
-    @patch("AwayFromKeyboard.loop_afk.smart_sleep")
+    @patch("AwayFromKeyboard.afk_daily.smart_sleep")
     def test_wait_for_midas_activity_clearance_polls_until_state_clears(self, sleep_mock):
         recovery = MagicMock()
         states = [
@@ -725,24 +773,24 @@ class LoopAfkCompletionTests(unittest.TestCase):
             {"activity": "midas_auto", "active": False},
         ]
 
-        with patch("AwayFromKeyboard.loop_afk.read_activity_state", side_effect=states), \
+        with patch("AwayFromKeyboard.afk_daily.read_activity_state", side_effect=states), \
              patch(
-                 "AwayFromKeyboard.loop_afk.midas_activity_wait_reason",
+                 "AwayFromKeyboard.afk_daily.midas_activity_wait_reason",
                  side_effect=["active", "wake_soon", None],
              ):
-            loop_afk.wait_for_midas_activity_clearance(recovery, notify_enabled=False)
+            afk_daily.wait_for_midas_activity_clearance(recovery, notify_enabled=False)
 
         self.assertEqual(sleep_mock.call_count, 2)
-        sleep_mock.assert_called_with(loop_afk.MIDAS_ACTIVITY_POLL_SECONDS)
+        sleep_mock.assert_called_with(afk_daily.MIDAS_ACTIVITY_POLL_SECONDS)
         self.assertEqual(recovery.recover_to_main.call_count, 2)
 
-    @patch("AwayFromKeyboard.loop_afk.notify_status")
-    @patch("AwayFromKeyboard.loop_afk.smart_sleep")
+    @patch("AwayFromKeyboard.afk_daily.notify_status")
+    @patch("AwayFromKeyboard.afk_daily.smart_sleep")
     def test_wait_for_midas_activity_clearance_ignores_stale_active_lock(self, sleep_mock, notify_mock):
         recovery = MagicMock()
-        with patch("AwayFromKeyboard.loop_afk.read_activity_state", return_value={"activity": "midas_auto", "active": True}), \
-             patch("AwayFromKeyboard.loop_afk.midas_activity_wait_reason", return_value="stale_active"):
-            loop_afk.wait_for_midas_activity_clearance(recovery, notify_enabled=True)
+        with patch("AwayFromKeyboard.afk_daily.read_activity_state", return_value={"activity": "midas_auto", "active": True}), \
+             patch("AwayFromKeyboard.afk_daily.midas_activity_wait_reason", return_value="stale_active"):
+            afk_daily.wait_for_midas_activity_clearance(recovery, notify_enabled=True)
 
         sleep_mock.assert_not_called()
         recovery.recover_to_main.assert_not_called()

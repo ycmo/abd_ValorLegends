@@ -96,13 +96,10 @@ def _prepare_src_main_argv(
     cmd_args: list[str],
     *,
     selected_serial: str | None,
-    debug_actions: bool,
 ) -> list[str]:
     argv = list(cmd_args[2:])
     if selected_serial and not _has_cli_option(argv, "--serial"):
         argv = ["--serial", selected_serial] + argv
-    if debug_actions and not _has_cli_option(argv, "--debug-actions"):
-        argv = ["--debug-actions"] + argv
     return argv
 
 
@@ -182,8 +179,7 @@ def run_configured_command(
     print("=" * 60)
 
     env_updates: dict[str, str] = _python_utf8_env()
-    if debug_actions:
-        env_updates["VL_DEBUG_ACTIONS"] = "1"
+    if route_debug_label:
         env_updates.setdefault("VL_ACTION_DEBUG_LABEL", route_debug_label)
     if selected_serial:
         env_updates["VL_ADB_SERIAL"] = selected_serial
@@ -196,7 +192,6 @@ def run_configured_command(
         argv = _prepare_src_main_argv(
             cmd_args,
             selected_serial=selected_serial,
-            debug_actions=debug_actions,
         )
         print("[Router] 執行模式: in-process src.main")
         print("=" * 60 + "\n")

@@ -351,7 +351,7 @@ class KingdomVaultPlanningTests(unittest.TestCase):
 
         self.assertIsNotNone(section)
         assert section is not None
-        self.assertEqual(section.reason, "battle_pass_side_section")
+        self.assertEqual(section.reason, "side_badge_section")
         self.assertLess(abs(section.badge_center[0] - 167), 8)
         self.assertLess(abs(section.badge_center[1] - 81), 8)
         self.assertLess(abs(section.tap_point[0] - 80), 8)
@@ -380,8 +380,13 @@ class KingdomVaultPlanningTests(unittest.TestCase):
         self.assertEqual(
             context.controller.swipes,
             [
-                (86, 430, 86, 130, 420),
-                (86, 130, 86, 430, 420),
+                (86, 420, 86, 150, 420),
+                (86, 420, 86, 150, 420),
+                (86, 420, 86, 150, 420),
+                (86, 150, 86, 420, 420),
+                (86, 150, 86, 420, 420),
+                (86, 150, 86, 420, 420),
+                (86, 150, 86, 420, 420),
             ],
         )
         self.assertEqual(context.controller.taps, [])

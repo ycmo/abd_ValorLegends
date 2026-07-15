@@ -19,7 +19,14 @@ from src.adb_controller import DeviceController
 from src.vision_matcher import VisionMatcher
 from src.paint_cropper import find_blue_boxes, crop_inside_blue_box
 from ads2.core.close_glyph import is_close_glyph_match, match_close_glyphs
-from ads2.core.geometry_close import GeometryCloseSpec, is_geometry_close_match, match_geometry_close
+from ads2.core.close_x_classifier_runtime import CloseXClassifierRuntime
+from ads2.core.click_success_collection import ClickSuccessCollector
+from ads2.core.geometry_close import (
+    GeometryCloseSpec,
+    is_geometry_close_match,
+    match_geometry_close,
+    match_geometry_close_rows,
+)
 from ads2.core.profile import AdsProfile, load_ads_profile
 
 class AppRecoveryNeeded(Exception):
@@ -60,12 +67,28 @@ class ReactiveRunner:
         profile=None,
         geometry_close_fallback=False,
         geometry_close_threshold=0.85,
+        enable_close_x_classifier=False,
+        close_x_classifier_threshold=0.5,
+        close_x_classifier_checkpoint=None,
+        close_x_classifier_min_failures=2,
+        max_classifier_fallback_taps=3,
+        enable_click_success_collection=False,
+        click_success_change_threshold=2.0,
+        click_success_collection_dir=None,
     ):
         self.device = DeviceController(serial=serial)
         self.matcher = VisionMatcher()
         self.debug_mode = debug
         self.geometry_close_fallback = geometry_close_fallback
         self.geometry_close_spec = GeometryCloseSpec(threshold=geometry_close_threshold)
+        self.enable_close_x_classifier = enable_close_x_classifier
+        self.close_x_classifier_threshold = close_x_classifier_threshold
+        self.close_x_classifier_min_failures = close_x_classifier_min_failures
+        self.max_classifier_fallback_taps = max_classifier_fallback_taps
+        self.close_x_classifier = None
+        self.enable_click_success_collection = enable_click_success_collection
+        self.click_success_change_threshold = click_success_change_threshold
+        self.click_success_collector = None
         self.force_esc_trigger = False
         self.profile: AdsProfile | None = None
         
@@ -80,6 +103,29 @@ class ReactiveRunner:
         self.scene_anchors_dir = self.templates_dir / "scene_anchors"
         self.manual_dir = self.assets_dir / "2_manual_captures"
         self.debug_errors_dir = self.assets_dir / "debug_errors"
+        self.close_x_classifier_collection_dir = Path(_PROJECT_ROOT) / "close_x_classifier" / "runtime_collection"
+        self.click_success_collection_dir = (
+            Path(click_success_collection_dir)
+            if click_success_collection_dir
+            else Path(_PROJECT_ROOT) / "vision_platform" / "ads" / "runtime_collection" / "click_success"
+        )
+        checkpoint_path = (
+            Path(close_x_classifier_checkpoint)
+            if close_x_classifier_checkpoint
+            else Path(_PROJECT_ROOT) / "close_x_classifier" / "runs" / "stage0_6_deployment" / "best.pt"
+        )
+        self.close_x_classifier_checkpoint = checkpoint_path
+        if self.enable_close_x_classifier:
+            self.close_x_classifier = CloseXClassifierRuntime(
+                checkpoint_path=checkpoint_path,
+                collection_dir=self.close_x_classifier_collection_dir,
+                threshold=self.close_x_classifier_threshold,
+            )
+        if self.enable_click_success_collection:
+            self.click_success_collector = ClickSuccessCollector(
+                collection_dir=self.click_success_collection_dir,
+                change_threshold=self.click_success_change_threshold,
+            )
         self.profile = load_ads_profile(profile, project_root=Path(_PROJECT_ROOT), ads2_dir=self.base_dir)
         self.ad_wait = self.profile.ad_wait if self.profile and self.profile.ad_wait is not None else ad_wait
         
@@ -345,6 +391,158 @@ class ReactiveRunner:
                 return condition, result
         return None
 
+    def _screen_change_score(self, before, after):
+        if before is None or after is None:
+            return 0.0
+        try:
+            before_small = cv2.resize(before, (160, 90), interpolation=cv2.INTER_AREA)
+            after_small = cv2.resize(after, (160, 90), interpolation=cv2.INTER_AREA)
+            before_gray = cv2.cvtColor(before_small, cv2.COLOR_BGR2GRAY)
+            after_gray = cv2.cvtColor(after_small, cv2.COLOR_BGR2GRAY)
+            diff = cv2.absdiff(before_gray, after_gray)
+            return float(diff.mean())
+        except Exception as e:
+            print(f"[AdsClickCollection] screen-change check failed: {e}")
+            return 0.0
+
+    def _screen_changed(self, before, after, threshold=2.0):
+        try:
+            return self._screen_change_score(before, after) >= threshold
+        except Exception as e:
+            print(f"[CloseXClassifier] screen-change check failed: {e}")
+            return False
+
+    def _record_click_success_if_changed(
+        self,
+        *,
+        before_screen,
+        after_screen,
+        click_xy,
+        proposal_source,
+        verified_success,
+        match=None,
+        extra_metadata=None,
+    ):
+        if self.click_success_collector is None:
+            return
+        metadata = dict(extra_metadata or {})
+        if match is not None:
+            metadata.update(
+                {
+                    "template_path": str(getattr(match, "template_path", "")),
+                    "template_name": getattr(getattr(match, "template_path", None), "name", ""),
+                    "confidence": float(getattr(match, "confidence", 0.0)),
+                    "bbox": tuple(int(v) for v in getattr(match, "bbox", ())),
+                    "match_center": tuple(int(v) for v in getattr(match, "center", click_xy)),
+                }
+            )
+        try:
+            record = self.click_success_collector.maybe_record(
+                before_screen=before_screen,
+                after_screen=after_screen,
+                click_xy=(int(click_xy[0]), int(click_xy[1])),
+                proposal_source=proposal_source,
+                verified_success=verified_success,
+                metadata=metadata,
+            )
+            if record is not None:
+                print(f"[AdsClickCollection] saved weak success event: {record.event_dir}")
+        except Exception as e:
+            print(f"[AdsClickCollection] save failed: {type(e).__name__}: {e}")
+
+    def _try_close_x_classifier_fallback(self, screen, close_roi):
+        if not self.enable_close_x_classifier:
+            return False, False, screen
+        if self.close_x_classifier is None:
+            return False, False, screen
+        if not self.close_x_classifier.ready:
+            print(f"[CloseXClassifier] checkpoint not found: {self.close_x_classifier_checkpoint}")
+            return False, False, screen
+
+        spec = GeometryCloseSpec(
+            threshold=0.70,
+            roi_top_ratio=1.0,
+            max_results=8,
+            max_size=52,
+            max_fill=0.60,
+            min_axis_union=0.55,
+            min_axis_balance=0.25,
+            min_length_ratio=0.80,
+            gates=("white_strict", "white_soft", "black_strict", "black_soft", "cyan_strict", "bright"),
+            two_stroke_fit=True,
+            max_fit_error=0.42,
+            max_extra_error=0.055,
+            max_missing_error=0.80,
+            max_center_extra_error=0.035,
+        )
+        rows = match_geometry_close_rows(screen, roi=close_roi, spec=spec)
+        if not rows:
+            print("[CloseXClassifier] no geometry candidates")
+            return False, False, screen
+
+        try:
+            event = self.close_x_classifier.score_event(screen, rows)
+        except Exception as e:
+            print(f"[CloseXClassifier] scoring failed: {type(e).__name__}: {e}")
+            return False, False, screen
+
+        print(
+            f"[CloseXClassifier] candidates={len(event.candidates)} "
+            f"threshold={self.close_x_classifier_threshold:.3f} "
+            f"max_taps={self.max_classifier_fallback_taps} event={event.event_dir}"
+        )
+        attempted = False
+        tap_count = 0
+        current_screen = screen
+        for candidate in event.candidates:
+            if candidate.p_close < self.close_x_classifier_threshold:
+                continue
+            if self.max_classifier_fallback_taps > 0 and tap_count >= self.max_classifier_fallback_taps:
+                break
+            attempted = True
+            tap_count += 1
+            x, y = candidate.center
+            print(
+                f"[CloseXClassifier] tap rank={candidate.rank} "
+                f"p={candidate.p_close:.3f} geometry={candidate.geometry_score:.3f} "
+                f"bbox={candidate.bbox}"
+            )
+            self._safe_tap(x, y)
+            self.sleep_or_esc(1.0)
+            after_screen = self._safe_screenshot()
+            changed = self._screen_changed(current_screen, after_screen)
+            self.close_x_classifier.mark_attempt(
+                event,
+                candidate,
+                after_screen=after_screen,
+                screen_changed=changed,
+            )
+            if changed:
+                self._record_click_success_if_changed(
+                    before_screen=current_screen,
+                    after_screen=after_screen,
+                    click_xy=(x, y),
+                    proposal_source="close_x_classifier",
+                    verified_success=True,
+                    extra_metadata={
+                        "bbox": candidate.bbox,
+                        "geometry_score": candidate.geometry_score,
+                        "p_close": candidate.p_close,
+                        "rank": candidate.rank,
+                        "classifier_event_dir": str(event.event_dir),
+                    },
+                )
+            current_screen = after_screen if after_screen is not None else current_screen
+            if changed:
+                print(f"[CloseXClassifier] screen changed after rank={candidate.rank}; returning to full detection loop")
+                return True, True, current_screen
+
+        if not attempted:
+            print("[CloseXClassifier] abstain: no candidate above threshold")
+        else:
+            print("[CloseXClassifier] all above-threshold candidates tapped; no screen change detected")
+        return False, attempted, current_screen
+
     def run(self):
         if not self.setup():
             return
@@ -386,6 +584,7 @@ class ReactiveRunner:
         
         t = threading.Thread(target=poll_esc, daemon=True)
         t.start()
+        close_template_glyph_failure_count = 0
         
         while True:
             try:
@@ -448,21 +647,33 @@ class ReactiveRunner:
                 if free_ad_match:
                     name = free_ad_match.template_path.name
                     print(f"\n📺 [比對成功] 找到免費廣告按鈕: '{name}' (信心值: {free_ad_match.confidence:.2f})")
-                    
+
                     disappeared = False
+                    last_verify_screen = None
                     for i in range(1, 11):
+                        before_tap_screen = last_verify_screen if last_verify_screen is not None else screen
                         tx, ty = self.get_click_point(free_ad_match, ((i - 1) % 5) + 1)
                         print(f"👉 [點擊] 執行第 {i}/10 次點擊")
                         self._safe_tap(tx, ty)
                         self.sleep_or_esc(0.5)
                         
                         v_screen = self._safe_screenshot()
+                        last_verify_screen = v_screen
                         if v_screen is not None:
                             bx, by, bw, bh = free_ad_match.bbox
                             roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
                             v_res = self.matcher.match_template(v_screen, free_ad_match.template_path, threshold=0.75, roi=roi)
                             if not v_res or v_res.confidence < free_ad_match.confidence - 0.10:
                                 print(f"✅ [確認] 廣告按鈕在第 {i} 次點擊後已消失！")
+                                self._record_click_success_if_changed(
+                                    before_screen=before_tap_screen,
+                                    after_screen=v_screen,
+                                    click_xy=(tx, ty),
+                                    proposal_source="free_ad_template",
+                                    verified_success=True,
+                                    match=free_ad_match,
+                                    extra_metadata={"tap_index": i},
+                                )
                                 disappeared = True
                                 break
                     
@@ -491,8 +702,20 @@ class ReactiveRunner:
 
                 if close_match is None:
                     close_match = match_close_glyphs(screen, self.close_glyphs_dir, roi=close_glyph_roi)
+                template_or_glyph_close_match = close_match
+                classifier_attempted = False
+                if template_or_glyph_close_match is None:
+                    close_template_glyph_failure_count += 1
+                    if close_template_glyph_failure_count >= self.close_x_classifier_min_failures:
+                        changed, classifier_attempted, screen = self._try_close_x_classifier_fallback(screen, close_roi)
+                        if classifier_attempted:
+                            matched_anything = True
+                            close_template_glyph_failure_count = 0
+                        if changed:
+                            close_successful = True
+                            continue
 
-                if close_match is None and self.geometry_close_fallback:
+                if close_match is None and self.geometry_close_fallback and not classifier_attempted:
                     close_match = match_geometry_close(screen, roi=close_roi, spec=self.geometry_close_spec)
                     if close_match:
                         print(
@@ -505,13 +728,16 @@ class ReactiveRunner:
                     print(f"\n🎯 [比對成功] 找到關閉廣告按鈕: '{name}' (信心值: {close_match.confidence:.2f})")
 
                     disappeared = False
+                    last_verify_screen = None
                     for i in range(1, 11):
+                        before_tap_screen = last_verify_screen if last_verify_screen is not None else screen
                         tx, ty = self.get_click_point(close_match, ((i - 1) % 5) + 1)
                         print(f"👉 [點擊] 執行第 {i}/10 次點擊")
                         self._safe_tap(tx, ty)
                         self.sleep_or_esc(0.5)
                         
                         v_screen = self._safe_screenshot()
+                        last_verify_screen = v_screen
                         if v_screen is not None:
                             bx, by, bw, bh = close_match.bbox
                             roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
@@ -523,15 +749,42 @@ class ReactiveRunner:
                                 v_res = self.matcher.match_template(v_screen, close_match.template_path, threshold=0.85, roi=roi)
                             if not v_res or v_res.confidence < close_match.confidence - 0.10:
                                 print(f"✅ [確認] 關閉按鈕在第 {i} 次點擊後已消失！")
+                                if is_close_glyph_match(close_match):
+                                    proposal_source = "close_glyph"
+                                elif is_geometry_close_match(close_match):
+                                    proposal_source = "geometry_close"
+                                else:
+                                    proposal_source = "close_template"
+                                self._record_click_success_if_changed(
+                                    before_screen=before_tap_screen,
+                                    after_screen=v_screen,
+                                    click_xy=(tx, ty),
+                                    proposal_source=proposal_source,
+                                    verified_success=True,
+                                    match=close_match,
+                                    extra_metadata={"tap_index": i},
+                                )
                                 disappeared = True
                                 break
                                 
                     if not disappeared:
                         print(f"\n⏭️ [跳過] 關閉按鈕 '{name}' 連點 10 次仍存在，可能卡死或誤判。")
                         self.save_debug_error(screen, f"Stuck_close_{name}")
+                        if not is_geometry_close_match(close_match):
+                            close_template_glyph_failure_count += 1
+                            if close_template_glyph_failure_count >= self.close_x_classifier_min_failures:
+                                fallback_screen = last_verify_screen if last_verify_screen is not None else screen
+                                changed, classifier_attempted, screen = self._try_close_x_classifier_fallback(fallback_screen, close_roi)
+                                if classifier_attempted:
+                                    close_template_glyph_failure_count = 0
+                                if changed:
+                                    close_successful = True
+                                    continue
+                    else:
+                        close_template_glyph_failure_count = 0
                         
                     matched_anything = True
-                    close_successful = True
+                    close_successful = disappeared
                     # 不回頭，重截一張最新畫面交給下一關
                     screen = self._safe_screenshot()
                     if screen is None: continue
@@ -555,19 +808,31 @@ class ReactiveRunner:
                     print(f"\n🎁 [比對成功] 找到獲得道具按鈕: '{name}' (信心值: {got_match.confidence:.2f})")
                     
                     disappeared = False
+                    last_verify_screen = None
                     for i in range(1, 11):
+                        before_tap_screen = last_verify_screen if last_verify_screen is not None else screen
                         tx, ty = self.get_click_point(got_match, ((i - 1) % 5) + 1)
                         print(f"👉 [點擊] 執行第 {i}/10 次點擊")
                         self._safe_tap(tx, ty)
                         self.sleep_or_esc(0.5)
                         
                         v_screen = self._safe_screenshot()
+                        last_verify_screen = v_screen
                         if v_screen is not None:
                             bx, by, bw, bh = got_match.bbox
                             roi = (max(0, bx-20), max(0, by-20), bw+40, bh+40)
                             v_res = self.matcher.match_template(v_screen, got_match.template_path, threshold=0.70, roi=roi)
                             if not v_res or v_res.confidence < got_match.confidence - 0.10:
                                 print(f"✅ [確認] 獲得道具按鈕在第 {i} 次點擊後已消失！")
+                                self._record_click_success_if_changed(
+                                    before_screen=before_tap_screen,
+                                    after_screen=v_screen,
+                                    click_xy=(tx, ty),
+                                    proposal_source="got_template",
+                                    verified_success=True,
+                                    match=got_match,
+                                    extra_metadata={"tap_index": i},
+                                )
                                 disappeared = True
                                 break
                                 

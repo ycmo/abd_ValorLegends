@@ -458,18 +458,10 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
         print(f"錯誤：找不到帳號 '{account_name}'。支援的帳號有：{', '.join(list(ACCOUNTS.keys()) + list(MACRO_RESOLVERS.keys()) + special_commands)}")
         return False
     
-    # 自動偵測已連線的 ADB 設備
-    devices = DeviceController.list_devices()
-    if not devices:
-        print("錯誤：找不到任何已連線的模擬器，請先執行 reset_adb.bat 或開啟模擬器！")
-        return False
-        
-    # 預設使用第一個找到的設備
-    serial = devices[0]
-    controller = DeviceController(serial=serial)
+    controller = DeviceController()
     
     if not controller.connect():
-        print(f"錯誤：無法連接到模擬器 ({serial})")
+        print("錯誤：無法連接到模擬器")
         return False
 
     matcher = VisionMatcher(debug_mode=debug_mode)

@@ -108,7 +108,10 @@ def build_axis_cache(args):
 
 
 def read_bgr(path: Path):
-    raw = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    try:
+        raw = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    except FileNotFoundError:
+        return None
     if raw is None:
         return None
     if raw.ndim == 2:
@@ -599,6 +602,14 @@ def fit_cross_axes_fast(mask, args, *, offset=(0, 0)):
             continue
         if core_profile["axis_core_balance"] < args.min_axis_core_balance:
             continue
+        if two_stroke_profile["fit_error"] > args.max_fit_error:
+            continue
+        if two_stroke_profile["extra_error"] > args.max_extra_error:
+            continue
+        if two_stroke_profile["missing_error"] > args.max_missing_error:
+            continue
+        if two_stroke_profile["center_extra_error"] > args.max_center_extra_error:
+            continue
 
         orth_delta = 0.0
         if angle_delta > args.max_angle_delta or orth_delta > args.max_orth_delta:
@@ -904,6 +915,46 @@ def make_sheet(rows, output_path: Path, *, max_items: int, roi_top_ratio: float,
     write_png(output_path, sheet)
 
 
+def safe_stem(path: Path) -> str:
+    text = path.as_posix().replace("/", "__").replace("\\", "__").replace(":", "_")
+    keep = []
+    for ch in text:
+        if ch.isalnum() or ch in "._-":
+            keep.append(ch)
+        else:
+            keep.append("_")
+    return "".join(keep)[-170:]
+
+
+def save_candidate_crops(rows, output_dir: Path, *, crop_pad: int, roi_top_ratio: float) -> None:
+    crop_dir = output_dir / "candidate_crops"
+    crop_dir.mkdir(parents=True, exist_ok=True)
+    manifest = [
+        "| crop | score | gate | box | source |",
+        "|---|---:|---|---|---|",
+    ]
+    for index, row in enumerate(rows, start=1):
+        image = read_bgr(row["path"])
+        if image is None:
+            continue
+        h, w = image.shape[:2]
+        x, y, bw, bh = row["box"]
+        x0 = max(0, x - crop_pad)
+        y0 = max(0, y - crop_pad)
+        x1 = min(w, x + bw + crop_pad)
+        y1 = min(int(h * roi_top_ratio), y + bh + crop_pad)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        crop = image[y0:y1, x0:x1]
+        name = f"{index:06d}_score_{row['score']:.3f}_x{x}_y{y}_w{bw}_h{bh}_{safe_stem(row['path'])}.png"
+        crop_path = crop_dir / name
+        write_png(crop_path, crop)
+        manifest.append(
+            f"| `{crop_path.relative_to(output_dir).as_posix()}` | {row['score']:.3f} | {row['gate']} | `{row['box']}` | `{row['path'].as_posix()}` |"
+        )
+    (output_dir / "candidate_crops_manifest.md").write_text("\n".join(manifest) + "\n", encoding="utf-8")
+
+
 def run_threaded(paths, args):
     worker_count = args.workers
     if worker_count <= 0:
@@ -953,6 +1004,8 @@ def main() -> int:
     parser.add_argument("--progress-interval", type=int, default=250)
     parser.add_argument("--sheet-items", type=int, default=100)
     parser.add_argument("--debug-sheet", action="store_true")
+    parser.add_argument("--save-crops", action="store_true")
+    parser.add_argument("--crop-pad", type=int, default=48)
     parser.add_argument("--max-per-image", type=int, default=2)
     parser.add_argument("--dedupe-distance", type=int, default=8)
 
@@ -995,6 +1048,10 @@ def main() -> int:
     parser.add_argument("--min-axis-core-union", type=float, default=0.0)
     parser.add_argument("--min-axis-core-balance", type=float, default=0.0)
     parser.add_argument("--two-stroke-fit", action="store_true")
+    parser.add_argument("--max-fit-error", type=float, default=999.0)
+    parser.add_argument("--max-extra-error", type=float, default=999.0)
+    parser.add_argument("--max-missing-error", type=float, default=999.0)
+    parser.add_argument("--max-center-extra-error", type=float, default=999.0)
     parser.add_argument("--weight-axis-union", type=float, default=0.30)
     parser.add_argument("--weight-axis-balance", type=float, default=0.22)
     parser.add_argument("--weight-length-ratio", type=float, default=0.23)
@@ -1041,6 +1098,7 @@ def main() -> int:
         f"Continuity: bins={args.continuity_bins}, min_continuity={args.min_continuity}, max_gap_ratio={args.max_gap_ratio}",
         f"Profile filters: min_axis_span_px={args.min_axis_span_px}, min_arm_extent_px={args.min_arm_extent_px}, min_arm_coverage={args.min_arm_coverage}, max_center_thickness_ratio={args.max_center_thickness_ratio}, min_axis_core_union={args.min_axis_core_union}, min_axis_core_balance={args.min_axis_core_balance}",
         f"Two-stroke fit: {args.two_stroke_fit}",
+        f"Two-stroke filters: max_fit_error={args.max_fit_error}, max_extra_error={args.max_extra_error}, max_missing_error={args.max_missing_error}, max_center_extra_error={args.max_center_extra_error}",
         f"Score weights: union={args.weight_axis_union}, balance={args.weight_axis_balance}, length={args.weight_length_ratio}, angle={args.weight_angle}, center={args.weight_center}, continuity={args.weight_continuity}",
         f"Prefilter: min_score={args.prefilter_min_score}, min_diag_each={args.prefilter_min_diag_each}, min_union={args.prefilter_min_union}",
         "",
@@ -1066,6 +1124,8 @@ def main() -> int:
         )
     (args.output_dir / "scan_report.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
     make_sheet(rows, args.output_dir / "hits_top100.png", max_items=args.sheet_items, roi_top_ratio=args.roi_top_ratio)
+    if args.save_crops:
+        save_candidate_crops(rows, args.output_dir, crop_pad=args.crop_pad, roi_top_ratio=args.roi_top_ratio)
     if args.debug_sheet:
         make_sheet(
             rows,
@@ -1078,6 +1138,9 @@ def main() -> int:
     print(args.output_dir.resolve())
     print("report:", (args.output_dir / "scan_report.md").resolve())
     print("sheet:", (args.output_dir / "hits_top100.png").resolve())
+    if args.save_crops:
+        print("candidate crops:", (args.output_dir / "candidate_crops").resolve())
+        print("candidate crops manifest:", (args.output_dir / "candidate_crops_manifest.md").resolve())
     if args.debug_sheet:
         print("debug sheet:", (args.output_dir / "hits_debug_top100.png").resolve())
     return 0

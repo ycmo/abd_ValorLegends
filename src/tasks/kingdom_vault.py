@@ -46,6 +46,7 @@ class KingdomVaultTask(BaseTask):
     TITLE_ROI: Roi = (60, 0, 180, 65)
     DAILY_FREE_BADGE_ROI: Roi = (430, 200, 45, 35)
     AD_PLAY_ICON_ROI: Roi = (300, 250, 550, 85)
+    SIDE_MENU_BADGE_ROI: Roi = (150, 70, 45, 420)
     SIDE_TAB_ROI: Roi = (25, 70, 120, 410)
     SIDE_BATTLE_PASS_FALLBACK_POINT = (80, 100)
     SIDE_SPECIAL_OFFER_FALLBACK_POINT = (82, 399)
@@ -64,14 +65,19 @@ class KingdomVaultTask(BaseTask):
     CLAIM_REASONS = {"daily_free", "ad_free", "battle_pass_collect_all", "battle_pass_reward"}
     RESET_REASONS = {"battle_pass_reset", "reset_confirm"}
     TAB_REASONS = {"top_tab", "battle_pass_tab", "special_offer_tab"}
-    SECTION_REASONS = {"battle_pass_side_section", "special_offer_side_section"}
+    SECTION_REASONS = {"side_badge_section", "battle_pass_side_section", "special_offer_side_section"}
     MAX_CLEAR_STEPS = 40
     BADGE_TEMPLATE_THRESHOLD = 0.84
     BADGE_TEMPLATE_NAMES = ("exclamation_badge.png", "event_exclamation_badge.png")
     ENABLE_COLOR_BADGE_FALLBACK = False
     SIDE_MENU_SEARCH_SWIPES = (
-        (86, 430, 86, 130),
-        (86, 130, 86, 430),
+        (86, 420, 86, 150),
+        (86, 420, 86, 150),
+        (86, 420, 86, 150),
+        (86, 150, 86, 420),
+        (86, 150, 86, 420),
+        (86, 150, 86, 420),
+        (86, 150, 86, 420),
     )
 
     task_scene_anchors = (
@@ -272,23 +278,16 @@ class KingdomVaultTask(BaseTask):
         )
 
     def plan_next_side_section(self, screen: np.ndarray) -> Optional[KingdomVaultClickPlan]:
-        plans = []
-        for section in self.sections():
-            badge = self._best_badge_candidate(screen, section.badge_roi, include_color=False)
-            if badge is None:
-                continue
-            tap_point = self._side_section_tap_point(screen, section)
-            plans.append(
-                KingdomVaultClickPlan(
-                    reason=section.reason,
-                    badge_center=badge.center,
-                    tap_point=tap_point,
-                    confidence=badge.confidence,
-                )
-            )
-        if not plans:
+        candidates = self._badge_candidates(screen, self.SIDE_MENU_BADGE_ROI, include_color=False)
+        if not candidates:
             return None
-        return min(plans, key=lambda plan: plan.badge_center[1])
+        badge = min(candidates, key=lambda item: item.center[1])
+        return KingdomVaultClickPlan(
+            reason="side_badge_section",
+            badge_center=badge.center,
+            tap_point=self._clamp_point((80, badge.center[1] + 22)),
+            confidence=badge.confidence,
+        )
 
     def plan_next_battle_pass_tab(
         self,

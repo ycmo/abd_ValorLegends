@@ -25,11 +25,14 @@ REWARD_ACQUIRED_TITLE_TEMPLATE = SHARED_ASSETS_DIR / "reward_acquired_title.png"
 REWARD_ACQUIRED_TITLE_ROI = (330, 110, 330, 100)
 REWARD_ACQUIRED_TITLE_THRESHOLD = 0.74
 REWARD_ACQUIRED_CYAN_ROI = (330, 120, 330, 100)
-REWARD_ACQUIRED_CYAN_THRESHOLD = 0.10
+REWARD_ACQUIRED_CYAN_THRESHOLD = 0.30
 REWARD_ACQUIRED_MAX_TAPS = 3
 BLOCKER_TEMPLATE_SPECS = (
     ("gift_pack_label.png", GIFT_PACK_LABEL_ROI, GIFT_PACK_LABEL_THRESHOLD),
     ("equipment_pack_label.png", (520, 0, 380, 150), 0.82),
+)
+POPUP_CLOSE_TEMPLATE_SPECS = (
+    ("island_signin_close_x.png", (840, 0, 120, 110), 0.82),
 )
 
 
@@ -47,6 +50,17 @@ class BlockerHandler:
         reward_match = self.match_reward_acquired(screen)
         if reward_match is not None:
             return self._dismiss_reward_acquired(reward_match)
+
+        close_match = self.match_popup_close(screen)
+        if close_match is not None:
+            template_name, confidence, center = close_match
+            print(
+                f"[Blocker] close popup "
+                f"({template_name} confidence={confidence:.2f}, center={center}); tapping close."
+            )
+            self.controller.tap(*center)
+            time.sleep(1.0)
+            return True
 
         match = self.match_gift_pack(screen)
         if match is None:
@@ -66,6 +80,16 @@ class BlockerHandler:
             return None
 
         for template_name, roi, threshold in self._template_specs():
+            match = self._match_template(screen, template_name, roi, threshold)
+            if match is not None:
+                return match
+        return None
+
+    def match_popup_close(self, screen: np.ndarray | None) -> Optional[tuple[str, float, tuple[int, int]]]:
+        if screen is None:
+            return None
+
+        for template_name, roi, threshold in self._popup_close_specs():
             match = self._match_template(screen, template_name, roi, threshold)
             if match is not None:
                 return match
@@ -122,11 +146,25 @@ class BlockerHandler:
                 return True
             current_match = next_match
 
-        return True
+        template_name, confidence, center = current_match
+        print(
+            f"[Blocker] reward acquired overlay still visible after "
+            f"{REWARD_ACQUIRED_MAX_TAPS} taps "
+            f"({template_name} confidence={confidence:.2f}, center={center}); "
+            "leaving it for normal route handling."
+        )
+        return False
 
     def _template_specs(self):
         specs = []
         for template_name, roi, threshold in BLOCKER_TEMPLATE_SPECS:
+            template_path = self.template_dir / template_name
+            specs.append((template_path, roi, threshold))
+        return specs
+
+    def _popup_close_specs(self):
+        specs = []
+        for template_name, roi, threshold in POPUP_CLOSE_TEMPLATE_SPECS:
             template_path = self.template_dir / template_name
             specs.append((template_path, roi, threshold))
         return specs

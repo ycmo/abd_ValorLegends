@@ -7,7 +7,11 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from src.blocker_handler import BlockerHandler
+from src.blocker_handler import (
+    REWARD_ACQUIRED_CYAN_ROI,
+    REWARD_ACQUIRED_MAX_TAPS,
+    BlockerHandler,
+)
 
 
 def _read_image(path: Path) -> np.ndarray:
@@ -34,7 +38,58 @@ class FakeController:
         return self._screens[0]
 
 
+def _cyan_ratio_screen(ratio: float) -> np.ndarray:
+    screen = np.zeros((540, 960, 3), dtype=np.uint8)
+    x, y, w, h = REWARD_ACQUIRED_CYAN_ROI
+    roi = np.zeros((h, w, 3), dtype=np.uint8)
+    flat = roi.reshape(-1, 3)
+    cyan_pixels = int(flat.shape[0] * ratio)
+    flat[:cyan_pixels] = (200, 160, 50)
+    screen[y : y + h, x : x + w] = roi
+    return screen
+
+
 class BlockerHandlerTests(unittest.TestCase):
+    def test_island_signin_popup_close_x_is_handled(self):
+        template_path = (
+            Path("AwayFromKeyboard")
+            / "integration_task"
+            / "templates"
+            / "blockers"
+            / "island_signin_close_x.png"
+        )
+        if not template_path.exists():
+            self.skipTest("island signin close template is not available")
+        template = _read_image(template_path)
+        screen = np.zeros((540, 960, 3), dtype=np.uint8)
+        th, tw = template.shape[:2]
+        screen[24 : 24 + th, 894 : 894 + tw] = template
+        controller = FakeController()
+        handler = BlockerHandler(controller)
+
+        with patch("src.blocker_handler.time.sleep"):
+            handled = handler.handle_known_blocker(screen)
+
+        self.assertTrue(handled)
+        self.assertEqual(controller.taps, [(916, 45)])
+
+    def test_reward_acquired_cyan_ignores_card_pack_banner_ratio(self):
+        screen = _cyan_ratio_screen(0.27)
+        handler = BlockerHandler(FakeController())
+
+        self.assertIsNone(handler._match_reward_acquired_by_color(screen))
+
+    def test_reward_acquired_returns_false_when_overlay_survives_all_taps(self):
+        screen = _cyan_ratio_screen(0.35)
+        controller = FakeController(screens=[screen])
+        handler = BlockerHandler(controller)
+
+        with patch("src.blocker_handler.time.sleep"):
+            handled = handler.handle_known_blocker(screen)
+
+        self.assertFalse(handled)
+        self.assertEqual(len(controller.taps), REWARD_ACQUIRED_MAX_TAPS)
+
     def test_reward_acquired_overlay_from_kingdom_vault_log_is_handled(self):
         path = (
             Path("log")
