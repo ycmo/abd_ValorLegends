@@ -1,0 +1,60 @@
+{
+  "folds": 18,
+  "heldout_success": 13,
+  "heldout_fail": 5,
+  "negative_fp_total": 55,
+  "negative_tn_total": 737,
+  "repeated_false_positives": [
+    [
+      "stage0_6_00222_not_close.png",
+      18
+    ],
+    [
+      "stage0_6_00028_not_close.png",
+      16
+    ],
+    [
+      "stage0_6_00029_not_close.png",
+      16
+    ],
+    [
+      "stage0_6_00071_not_close.png",
+      2
+    ],
+    [
+      "stage0_6_00190_not_close.png",
+      1
+    ],
+    [
+      "stage0_6_00096_not_close.png",
+      1
+    ],
+    [
+      "stage0_6_00125_not_close.png",
+      1
+    ]
+  ],
+  "crop_style": {
+    "close": {
+      "legacy_tight_positive": 17,
+      "manifest_bbox_positive": 1
+    },
+    "not_close": {
+      "manifest_bbox_negative": 218
+    }
+  },
+  "negative_test_sessions": [
+    "20260710_125824_2204",
+    "20260711_015138_after",
+    "20260711_083159_41740",
+    "20260711_084610_10484",
+    "20260711_085840_33128",
+    "20260711_085849_37020",
+    "20260711_093806_46808",
+    "20260711_095223_69352",
+    "20260711_100541_44936",
+    "20260711_104622_54288",
+    "20260711_105305_54776",
+    "20260711_111910_56400"
+  ]
+}

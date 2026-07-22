@@ -1,0 +1,91 @@
+{
+  "event_id": "20260711_234002_024",
+  "source_session": "runtime_20260711_234002_024",
+  "timestamp": "20260711_234002_024",
+  "full_screenshot": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_dryrun_2\\runtime_20260711_234002_024\\screen.png",
+  "threshold": 0.5,
+  "selected_candidate": "cand_001",
+  "whether_clicked": true,
+  "candidates": [
+    {
+      "candidate_id": "cand_001",
+      "bbox": [
+        2177,
+        55,
+        36,
+        36
+      ],
+      "center": [
+        2195,
+        73
+      ],
+      "geometry_score": 1.0,
+      "p_close": 0.9938287138938904,
+      "rank": 1,
+      "crop_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_dryrun_2\\runtime_20260711_234002_024\\candidates\\cand_001.png",
+      "clicked": true,
+      "screen_changed": true,
+      "after_screenshot_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_dryrun_2\\runtime_20260711_234002_024\\after_cand_001.png"
+    },
+    {
+      "candidate_id": "cand_002",
+      "bbox": [
+        2017,
+        75,
+        15,
+        13
+      ],
+      "center": [
+        2024,
+        81
+      ],
+      "geometry_score": 0.896120298854534,
+      "p_close": 0.9173749685287476,
+      "rank": 2,
+      "crop_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_dryrun_2\\runtime_20260711_234002_024\\candidates\\cand_002.png",
+      "clicked": false,
+      "screen_changed": null,
+      "after_screenshot_path": ""
+    },
+    {
+      "candidate_id": "cand_004",
+      "bbox": [
+        301,
+        234,
+        13,
+        15
+      ],
+      "center": [
+        307,
+        241
+      ],
+      "geometry_score": 0.8234451055128724,
+      "p_close": 0.540135383605957,
+      "rank": 3,
+      "crop_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_dryrun_2\\runtime_20260711_234002_024\\candidates\\cand_004.png",
+      "clicked": false,
+      "screen_changed": null,
+      "after_screenshot_path": ""
+    },
+    {
+      "candidate_id": "cand_003",
+      "bbox": [
+        2073,
+        55,
+        32,
+        33
+      ],
+      "center": [
+        2089,
+        71
+      ],
+      "geometry_score": 0.8369749224076477,
+      "p_close": 0.021386096253991127,
+      "rank": 4,
+      "crop_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_dryrun_2\\runtime_20260711_234002_024\\candidates\\cand_003.png",
+      "clicked": false,
+      "screen_changed": null,
+      "after_screenshot_path": ""
+    }
+  ]
+}

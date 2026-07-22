@@ -1,0 +1,44 @@
+{
+  "manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family\\dataset\\manifest.csv",
+  "rows": 1092,
+  "families": [
+    "next",
+    "google_play"
+  ],
+  "device": "cuda",
+  "reference_counts": {
+    "next": 6,
+    "google_play": 9
+  },
+  "best_thresholds": [
+    {
+      "family": "next",
+      "threshold": 0.88,
+      "support": 6,
+      "tp": 4,
+      "fp": 4,
+      "tn": 1082,
+      "fn": 2,
+      "precision": 0.5,
+      "recall": 0.6666666666666666,
+      "f1": 0.5714285714285715
+    },
+    {
+      "family": "google_play",
+      "threshold": 0.94,
+      "support": 9,
+      "tp": 7,
+      "fp": 0,
+      "tn": 1083,
+      "fn": 2,
+      "precision": 1.0,
+      "recall": 0.7777777777777778,
+      "f1": 0.8750000000000001
+    }
+  ],
+  "outputs": {
+    "scores": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\embedding_reference_next_google\\embedding_reference_scores.csv",
+    "threshold_sweep": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\embedding_reference_next_google\\threshold_sweep.csv",
+    "best_thresholds": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\embedding_reference_next_google\\best_thresholds.csv"
+  }
+}

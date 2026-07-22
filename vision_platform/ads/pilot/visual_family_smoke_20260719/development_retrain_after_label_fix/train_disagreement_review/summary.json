@@ -1,0 +1,23 @@
+{
+  "all_train_disagreement_instances": 396,
+  "selected_for_review": 119,
+  "selected_hard_negatives": 27,
+  "selected_wrong_all_3_seeds": 69,
+  "families_selected": {
+    "negative": 40,
+    "x_mark": 27,
+    "arrow|next": 3,
+    "arrow": 18,
+    "got": 23,
+    "free|got|x_mark": 1,
+    "next": 1,
+    "play_triangle": 3,
+    "free": 3
+  },
+  "outputs": {
+    "review_candidates_csv": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\train_disagreement_review\\train_disagreement_review_candidates.csv",
+    "all_disagreements_csv": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\train_disagreement_review\\all_train_disagreement_instances.csv",
+    "contact_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\train_disagreement_review\\train_disagreement_review_contact_sheet.png",
+    "review_config_note": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\train_disagreement_review\\review_config_note.json"
+  }
+}

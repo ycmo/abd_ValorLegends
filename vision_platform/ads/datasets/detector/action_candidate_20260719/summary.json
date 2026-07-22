@@ -1,0 +1,26 @@
+{
+  "dataset_kind": "ads_detector_fullscreen_bbox",
+  "db": "vision_platform\\vision_assets\\review\\vision_review.db",
+  "domains": [
+    "ads",
+    "shared"
+  ],
+  "screens_queried": 340,
+  "screens_exported": 340,
+  "annotations_exported": 367,
+  "screen_state_counts": {
+    "actionable": 323,
+    "returned_to_game": 12,
+    "waiting": 5
+  },
+  "domain_counts": {
+    "ads": 167,
+    "shared": 173
+  },
+  "representation_counts": {
+    "raw": 340
+  },
+  "skipped": {},
+  "detector_class": "action_candidate",
+  "note": "This exports a detector dataset only. No learned detector trainer is invoked by this tool."
+}

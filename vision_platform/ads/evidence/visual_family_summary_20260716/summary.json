@@ -1,0 +1,165 @@
+{
+  "total_reviewed": 880,
+  "family_counts": {
+    "google_play": 9,
+    "arrow": 59,
+    "uncertain": 6,
+    "x_mark": 78,
+    "next": 26,
+    "free": 40,
+    "play_triangle": 45,
+    "got": 93,
+    "other": 2,
+    "negative": 554
+  },
+  "combo_counts": {
+    "google_play": 9,
+    "arrow": 37,
+    "uncertain": 6,
+    "x_mark": 70,
+    "next": 4,
+    "free": 38,
+    "play_triangle": 44,
+    "got": 85,
+    "other": 2,
+    "free|play_triangle": 1,
+    "negative": 554,
+    "arrow|next": 22,
+    "got|x_mark": 7,
+    "free|got|x_mark": 1
+  },
+  "by_role_scope": {
+    "('template', 'crop')": 80,
+    "('candidate_crop', 'crop')": 558,
+    "('runtime_collection', 'crop')": 242
+  },
+  "by_representation": {
+    "edge_glyph": 3,
+    "raw": 877
+  },
+  "by_source_root": {
+    "ads2\\assets\\1_templates": 80,
+    "vision_platform\\ads\\hard_negative_mining": 558,
+    "vision_platform\\ads\\runtime_collection": 242
+  },
+  "new_hard_negative_batch_combo_counts": {
+    "negative": 553,
+    "uncertain": 5
+  },
+  "suspect_count": 3,
+  "family_by_representation": {
+    "google_play": {
+      "edge_glyph": 1,
+      "raw": 8
+    },
+    "arrow": {
+      "edge_glyph": 1,
+      "raw": 58
+    },
+    "uncertain": {
+      "edge_glyph": 1,
+      "raw": 5
+    },
+    "x_mark": {
+      "raw": 78
+    },
+    "next": {
+      "raw": 26
+    },
+    "free": {
+      "raw": 40
+    },
+    "play_triangle": {
+      "raw": 45
+    },
+    "got": {
+      "raw": 93
+    },
+    "other": {
+      "raw": 2
+    },
+    "negative": {
+      "raw": 554
+    }
+  },
+  "family_by_role_scope": {
+    "google_play": {
+      "('template', 'crop')": 9
+    },
+    "arrow": {
+      "('template', 'crop')": 22,
+      "('runtime_collection', 'crop')": 37
+    },
+    "uncertain": {
+      "('template', 'crop')": 1,
+      "('candidate_crop', 'crop')": 5
+    },
+    "x_mark": {
+      "('template', 'crop')": 25,
+      "('runtime_collection', 'crop')": 53
+    },
+    "next": {
+      "('template', 'crop')": 4,
+      "('runtime_collection', 'crop')": 22
+    },
+    "free": {
+      "('template', 'crop')": 4,
+      "('runtime_collection', 'crop')": 36
+    },
+    "play_triangle": {
+      "('template', 'crop')": 6,
+      "('runtime_collection', 'crop')": 39
+    },
+    "got": {
+      "('template', 'crop')": 8,
+      "('runtime_collection', 'crop')": 85
+    },
+    "other": {
+      "('template', 'crop')": 2
+    },
+    "negative": {
+      "('candidate_crop', 'crop')": 553,
+      "('runtime_collection', 'crop')": 1
+    }
+  },
+  "family_by_source_root": {
+    "google_play": {
+      "ads2\\assets\\1_templates": 9
+    },
+    "arrow": {
+      "ads2\\assets\\1_templates": 22,
+      "vision_platform\\ads\\runtime_collection": 37
+    },
+    "uncertain": {
+      "ads2\\assets\\1_templates": 1,
+      "vision_platform\\ads\\hard_negative_mining": 5
+    },
+    "x_mark": {
+      "ads2\\assets\\1_templates": 25,
+      "vision_platform\\ads\\runtime_collection": 53
+    },
+    "next": {
+      "ads2\\assets\\1_templates": 4,
+      "vision_platform\\ads\\runtime_collection": 22
+    },
+    "free": {
+      "ads2\\assets\\1_templates": 4,
+      "vision_platform\\ads\\runtime_collection": 36
+    },
+    "play_triangle": {
+      "ads2\\assets\\1_templates": 6,
+      "vision_platform\\ads\\runtime_collection": 39
+    },
+    "got": {
+      "ads2\\assets\\1_templates": 8,
+      "vision_platform\\ads\\runtime_collection": 85
+    },
+    "other": {
+      "ads2\\assets\\1_templates": 2
+    },
+    "negative": {
+      "vision_platform\\ads\\hard_negative_mining": 553,
+      "vision_platform\\ads\\runtime_collection": 1
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "collection_name": "close_x_proposal_collection_pilot",
+  "input_dir": "vision_platform\\ads\\collections\\input_preclick_latest30_20260720",
+  "output_dir": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30",
+  "max_screens": 30,
+  "proposal_sources": {
+    "close_template": {
+      "enabled": true,
+      "threshold": 0.72,
+      "expected_visual_families": [
+        "x_mark",
+        "google_play",
+        "next",
+        "arrow"
+      ]
+    },
+    "close_glyph": {
+      "enabled": true,
+      "expected_visual_families": [
+        "google_play",
+        "next"
+      ]
+    },
+    "geometry_x": {
+      "enabled": true,
+      "threshold": 0.45,
+      "expected_visual_families": [
+        "x_mark"
+      ]
+    }
+  },
+  "nms_iou_threshold": 0.45,
+  "max_candidates_per_screen": 20,
+  "classifier_checkpoint": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\run_seed42\\best.pt",
+  "classifier_probabilities_in_manifest_only": true
+}

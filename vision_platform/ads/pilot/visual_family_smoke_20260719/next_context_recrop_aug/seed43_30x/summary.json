@@ -1,0 +1,12 @@
+{
+  "assigned_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family_epochs20\\run_seed43\\assigned_manifest.csv",
+  "bbox_csv": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\next_tight_bbox\\next_tight_bbox.csv",
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\next_context_recrop_aug\\seed43_30x",
+  "seed": 43,
+  "samples_per_source": 30,
+  "train_next_sources": 4,
+  "synthetic_rows": 120,
+  "total_rows": 1212,
+  "manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\next_context_recrop_aug\\seed43_30x\\manifest.csv",
+  "contact_sheet": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\next_context_recrop_aug\\seed43_30x\\synthetic_next_context_contact_sheet.png"
+}

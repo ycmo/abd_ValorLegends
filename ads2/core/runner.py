@@ -21,6 +21,7 @@ from src.paint_cropper import find_blue_boxes, crop_inside_blue_box
 from ads2.core.close_glyph import is_close_glyph_match, match_close_glyphs
 from ads2.core.close_x_classifier_runtime import CloseXClassifierRuntime
 from ads2.core.click_success_collection import ClickSuccessCollector
+from ads2.core.screen_collection import AdsScreenCollector
 from ads2.core.geometry_close import (
     GeometryCloseSpec,
     is_geometry_close_match,
@@ -75,6 +76,9 @@ class ReactiveRunner:
         enable_click_success_collection=False,
         click_success_change_threshold=2.0,
         click_success_collection_dir=None,
+        enable_ads_screen_collection=False,
+        ads_screen_collection_dir=None,
+        ads_screen_collection_min_interval=0.0,
     ):
         self.device = DeviceController(serial=serial)
         self.matcher = VisionMatcher()
@@ -89,6 +93,8 @@ class ReactiveRunner:
         self.enable_click_success_collection = enable_click_success_collection
         self.click_success_change_threshold = click_success_change_threshold
         self.click_success_collector = None
+        self.enable_ads_screen_collection = enable_ads_screen_collection
+        self.ads_screen_collector = None
         self.force_esc_trigger = False
         self.profile: AdsProfile | None = None
         
@@ -109,6 +115,11 @@ class ReactiveRunner:
             if click_success_collection_dir
             else Path(_PROJECT_ROOT) / "vision_platform" / "ads" / "runtime_collection" / "click_success"
         )
+        self.ads_screen_collection_dir = (
+            Path(ads_screen_collection_dir)
+            if ads_screen_collection_dir
+            else Path(_PROJECT_ROOT) / "vision_platform" / "ads" / "runtime_collection" / "screens"
+        )
         checkpoint_path = (
             Path(close_x_classifier_checkpoint)
             if close_x_classifier_checkpoint
@@ -125,6 +136,11 @@ class ReactiveRunner:
             self.click_success_collector = ClickSuccessCollector(
                 collection_dir=self.click_success_collection_dir,
                 change_threshold=self.click_success_change_threshold,
+            )
+        if self.enable_ads_screen_collection:
+            self.ads_screen_collector = AdsScreenCollector(
+                collection_dir=self.ads_screen_collection_dir,
+                min_interval_seconds=ads_screen_collection_min_interval,
             )
         self.profile = load_ads_profile(profile, project_root=Path(_PROJECT_ROOT), ads2_dir=self.base_dir)
         self.ad_wait = self.profile.ad_wait if self.profile and self.profile.ad_wait is not None else ad_wait
@@ -330,7 +346,16 @@ class ReactiveRunner:
 
     def _safe_screenshot(self):
         try:
-            return self.device.screenshot()
+            screen = self.device.screenshot()
+            if self.ads_screen_collector is not None:
+                try:
+                    self.ads_screen_collector.maybe_record(
+                        screen,
+                        capture_reason="safe_screenshot",
+                    )
+                except Exception as e:
+                    print(f"[AdsScreenCollection] save failed: {type(e).__name__}: {e}")
+            return screen
         except Exception as e:
             print(f"\n⚠️ [警告] 截圖發生異常 ({type(e).__name__}): {e}")
             raise AppRecoveryNeeded(reason="ScreenshotError")

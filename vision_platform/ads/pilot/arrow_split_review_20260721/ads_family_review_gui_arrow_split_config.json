@@ -1,0 +1,43 @@
+{
+  "instance_list_csv": "vision_platform\\ads\\pilot\\arrow_split_review_20260721\\arrow_split_instances.csv",
+  "instance_list_column": "instance_id",
+  "family_options": [
+    "play_triangle",
+    "double_triangle",
+    "single_chevron",
+    "double_chevron",
+    "double_chevron_text",
+    "back_arrow",
+    "next_button",
+    "arrow_other",
+    "x_mark",
+    "negative",
+    "other",
+    "uncertain"
+  ],
+  "default_filter": {
+    "status": "all",
+    "family": "all",
+    "source": "all",
+    "path_contains": "",
+    "search": "",
+    "sort": "review_list",
+    "selection_mode": "single",
+    "default_pick": "previous saved"
+  },
+  "arrow_split_options": [
+    "play_triangle",
+    "double_triangle",
+    "single_chevron",
+    "double_chevron",
+    "double_chevron_text",
+    "back_arrow",
+    "next_button",
+    "arrow_other",
+    "x_mark",
+    "negative",
+    "other",
+    "uncertain"
+  ],
+  "note": "Review current arrow/next-like crops into arrow subfamilies. Training currently maps arrow_* labels back to the parent arrow head."
+}

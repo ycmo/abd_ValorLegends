@@ -52,6 +52,18 @@ class FakeBlocker:
         return self.handled
 
 
+class VisibleButUnclearedBlocker:
+    def __init__(self):
+        self.calls = 0
+
+    def match_reward_acquired(self, _screen):
+        return ("reward_acquired_cyan", 0.35, (495, 170))
+
+    def handle_known_blocker(self, _screen=None):
+        self.calls += 1
+        return False
+
+
 class FakeSceneTask(BaseTask):
     spec = TASK_SPECS["time_travel"]
     required_assets = ()
@@ -142,6 +154,16 @@ class CurrentSceneRunnerTests(unittest.TestCase):
 
         self.assertEqual(context.blocker.calls, 1)
         self.assertEqual(context.controller.taps, [])
+
+    def test_before_scan_blocker_gate_retries_when_visible_but_not_cleared(self):
+        context = FakeContext()
+        context.blocker = VisibleButUnclearedBlocker()
+        task = FakeSceneTask(context, in_scene=True)
+
+        handled = task.handle_known_blocker_before_scan(object())
+
+        self.assertTrue(handled)
+        self.assertEqual(context.blocker.calls, 1)
 
     def test_reward_blank_tap_helper_raises_when_still_open(self):
         context = FakeContext()

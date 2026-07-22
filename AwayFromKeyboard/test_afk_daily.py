@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import tempfile
 import unittest
@@ -53,6 +54,36 @@ class AfkDailyCompletionTests(unittest.TestCase):
         self.assertEqual(afk_daily.parse_duration_to_seconds("90"), 90)
         self.assertEqual(afk_daily.parse_duration_to_seconds("00:02:30"), 150)
         self.assertIsNone(afk_daily.parse_duration_to_seconds(""))
+
+    def test_run_with_direct_retry_then_recovery_skips_recovery_when_direct_retry_succeeds(self):
+        action = MagicMock(side_effect=[RuntimeError("adb wobble"), "ok"])
+        recovery = MagicMock()
+
+        result = afk_daily.run_with_direct_retry_then_recovery(
+            action,
+            label="unit task",
+            retry_exceptions=(RuntimeError,),
+            recovery_action=recovery,
+        )
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(action.call_count, 2)
+        recovery.assert_not_called()
+
+    def test_run_with_direct_retry_then_recovery_recovers_after_direct_retry_fails(self):
+        action = MagicMock(side_effect=[RuntimeError("first"), RuntimeError("second"), "ok"])
+        recovery = MagicMock()
+
+        result = afk_daily.run_with_direct_retry_then_recovery(
+            action,
+            label="unit task",
+            retry_exceptions=(RuntimeError,),
+            recovery_action=recovery,
+        )
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(action.call_count, 3)
+        recovery.assert_called_once_with()
 
     def test_ini_start_time_delays_until_today_when_future(self):
         now = datetime(2026, 6, 27, 7, 0, 0)
@@ -186,6 +217,37 @@ class AfkDailyCompletionTests(unittest.TestCase):
             ["tiger", "311"],
         )
 
+    def test_replan_account_order_from_detected_uses_actual_account(self):
+        with patch.dict(
+            afk_daily.ACCOUNTS,
+            {
+                "em3": {"type": "google"},
+                "311": {"type": "google"},
+                "tiger": {"type": "email"},
+                "14": {"type": "email"},
+            },
+            clear=True,
+        ):
+            order = afk_daily.replan_account_order_from_detected(
+                "14",
+                {"date": "2026-06-26", "completed": {}},
+                ["每日任務"],
+                force=False,
+            )
+
+        self.assertEqual(order, ["14", "tiger", "em3", "311"])
+
+    def test_replan_account_order_from_detected_ignores_unknown_account(self):
+        with patch.dict(afk_daily.ACCOUNTS, {"311": {"type": "google"}}, clear=True):
+            order = afk_daily.replan_account_order_from_detected(
+                "unknown",
+                {"date": "2026-06-26", "completed": {}},
+                ["每日任務"],
+                force=False,
+            )
+
+        self.assertIsNone(order)
+
     def test_account_execution_order_force_keeps_completed_accounts(self):
         accounts = {
             "em3": {"type": "google"},
@@ -219,8 +281,132 @@ class AfkDailyCompletionTests(unittest.TestCase):
 
                 afk_daily.mark_route_completed(state, "em3", "每日任務")
                 loaded = afk_daily.load_completion_state("2026-06-26")
+                path = afk_daily.completion_file_for_date("2026-06-26")
 
         self.assertTrue(afk_daily.is_route_completed(loaded, "em3", "每日任務"))
+        self.assertEqual(path.suffix, ".jsonc")
+
+    def test_completion_state_jsonc_writes_account_comments_and_reloads(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                state = {
+                    "date": "2026-06-26",
+                    "completed": {
+                        "14": {"每日任務": "2026-06-26T08:00:00+08:00"},
+                        "311": {"深淵": "2026-06-26T08:05:00+08:00"},
+                    },
+                }
+
+                afk_daily.save_completion_state(state)
+                path = afk_daily.completion_file_for_date("2026-06-26")
+                text = path.read_text(encoding="utf-8")
+                loaded = afk_daily.load_completion_state("2026-06-26")
+
+        self.assertIn("}, // account: 14", text)
+        self.assertIn("} // account: 311", text)
+        self.assertEqual(loaded, state)
+
+    def test_completion_state_reads_legacy_json_when_jsonc_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                state = {
+                    "date": "2026-06-26",
+                    "completed": {"em3": {"每日任務": "2026-06-26T08:00:00+08:00"}},
+                }
+                afk_daily.legacy_completion_file_for_date("2026-06-26").write_text(
+                    json.dumps(state, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+
+                loaded = afk_daily.load_completion_state("2026-06-26")
+
+        self.assertEqual(loaded, state)
+
+    def test_completion_state_prefers_jsonc_over_newer_legacy_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                jsonc_state = {
+                    "date": "2026-06-26",
+                    "completed": {"em3": {"每日任務": "2026-06-26T08:00:00+08:00"}},
+                }
+                legacy_state = {
+                    "date": "2026-06-26",
+                    "completed": {"311": {"深淵": "2026-06-26T08:05:00+08:00"}},
+                }
+                afk_daily.save_completion_state(jsonc_state)
+                legacy_path = afk_daily.legacy_completion_file_for_date("2026-06-26")
+                legacy_path.write_text(json.dumps(legacy_state, ensure_ascii=False), encoding="utf-8")
+                os.utime(legacy_path, (legacy_path.stat().st_atime + 5, legacy_path.stat().st_mtime + 5))
+
+                loaded = afk_daily.load_completion_state("2026-06-26")
+                afk_daily.save_completion_state(loaded)
+
+                self.assertFalse(legacy_path.exists())
+
+        self.assertEqual(loaded, jsonc_state)
+
+    def test_completion_state_save_backs_up_existing_file_before_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                old_state = {
+                    "date": "2026-06-26",
+                    "completed": {"em3": {"old": "2026-06-26T08:00:00+08:00"}},
+                }
+                new_state = {
+                    "date": "2026-06-26",
+                    "completed": {"em3": {"new": "2026-06-26T08:05:00+08:00"}},
+                }
+                afk_daily.save_completion_state(old_state)
+
+                afk_daily.save_completion_state(new_state)
+
+                backups = list((Path(tmpdir) / "backups").glob("route_completion_2026-06-26_*_before_save.jsonc"))
+                backup_text = backups[0].read_text(encoding="utf-8")
+
+        self.assertEqual(len(backups), 1)
+        self.assertIn('"old"', backup_text)
+
+    def test_completion_state_save_refuses_to_overwrite_invalid_existing_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                path = afk_daily.completion_file_for_date("2026-06-26")
+                path.write_text("", encoding="utf-8")
+                state = {
+                    "date": "2026-06-26",
+                    "completed": {"em3": {"new": "2026-06-26T08:05:00+08:00"}},
+                }
+
+                with self.assertRaises(afk_daily.CompletionStateError):
+                    afk_daily.save_completion_state(state)
+
+                backups = list((Path(tmpdir) / "backups").glob("route_completion_2026-06-26_*_invalid_before_save.jsonc"))
+                text_after_save_attempt = path.read_text(encoding="utf-8")
+
+        self.assertEqual(text_after_save_attempt, "")
+        self.assertEqual(len(backups), 1)
+
+    def test_completion_state_parse_error_preserves_file_and_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                path = afk_daily.completion_file_for_date("2026-06-26")
+                path.write_text('{"date": "2026-06-26", "completed": {', encoding="utf-8")
+
+                with self.assertRaises(afk_daily.CompletionStateError):
+                    afk_daily.load_completion_state("2026-06-26")
+
+                self.assertEqual(path.read_text(encoding="utf-8"), '{"date": "2026-06-26", "completed": {')
+
+    def test_completion_state_date_mismatch_raises_instead_of_rebuilding(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                path = afk_daily.completion_file_for_date("2026-06-26")
+                path.write_text(
+                    json.dumps({"date": "2026-06-25", "completed": {}}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+
+                with self.assertRaises(afk_daily.CompletionStateError):
+                    afk_daily.load_completion_state("2026-06-26")
 
     def test_failed_this_round_is_written_and_cleared_without_completing_route(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -591,6 +777,49 @@ class AfkDailyCompletionTests(unittest.TestCase):
             with patch.dict("os.environ", {"AFK_TASKS_INI": str(config_path)}):
                 self.assertEqual(task_config.get_task_timeout("route_a"), "00:03:00")
                 self.assertEqual(task_config.get_task_hard_timeout("route_a"), "00:07:00")
+
+    def test_task_config_reads_account_filters_from_ini(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "custom.ini"
+            config_path.write_text(
+                "[route_a]\n"
+                "enable = Y\n"
+                "skip_accounts = 14, tiger\n"
+                "only_accounts = em3 311\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {"AFK_TASKS_INI": str(config_path)}):
+                self.assertEqual(task_config.get_skip_accounts("route_a"), {"14", "tiger"})
+                self.assertEqual(task_config.get_only_accounts("route_a"), {"em3", "311"})
+                self.assertTrue(task_config.is_task_allowed_for_account("route_a", "em3"))
+                self.assertFalse(task_config.is_task_allowed_for_account("route_a", "14"))
+                self.assertFalse(task_config.is_task_allowed_for_account("route_a", "missing"))
+
+    def test_pending_tasks_respects_account_filters_even_when_forced(self):
+        with patch("AwayFromKeyboard.task_config.is_task_allowed_for_account") as allowed:
+            allowed.side_effect = lambda task_name, account: not (
+                account == "14" and task_name == "廣告時間沙漏"
+            )
+
+            state = {
+                "date": "2026-06-26",
+                "completed": {
+                    "14": {
+                        "每日任務": "2026-06-26T08:00:00+08:00",
+                    }
+                },
+            }
+            tasks = ["每日任務", "廣告時間沙漏", "深淵"]
+
+            self.assertEqual(
+                afk_daily.pending_tasks_for_account(state, "14", tasks, force=False),
+                ["深淵"],
+            )
+            self.assertEqual(
+                afk_daily.pending_tasks_for_account(state, "14", tasks, force=True),
+                ["每日任務", "深淵"],
+            )
 
     def test_cleanup_previous_day_logs_removes_only_yesterday_log_items(self):
         with tempfile.TemporaryDirectory() as tmpdir:

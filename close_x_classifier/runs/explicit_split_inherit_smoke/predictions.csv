@@ -1,0 +1,2 @@
+image_path,label,p_close,source_session,source_screen,ad_source,icon_family,reject_type,candidate_score,geometry_score,bbox
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_044717_roi_0.png,close,0.512643,inherit_session_4,screen_4,x,x,,,,

@@ -1,0 +1,5 @@
+image_path,label,p_close,source_session,source_screen,ad_source,icon_family,reject_type,candidate_score,geometry_score,bbox
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_052302_roi_0.png,close,0.827517,validation_session_6,validation_screen_6,unknown_ad_source,ad_issue_20260606_052302,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\close_12.png,close,0.460467,validation_session_7,validation_screen_7,unknown_ad_source,close_12,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\close_14.png,close,0.523593,validation_session_8,validation_screen_8,unknown_ad_source,close_14,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\close_17.png,close,0.553326,validation_session_9,validation_screen_9,unknown_ad_source,close_17,,,,

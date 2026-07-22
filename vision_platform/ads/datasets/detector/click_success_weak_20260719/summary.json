@@ -1,0 +1,15 @@
+{
+  "dataset_kind": "ads_detector_click_success_weak_positive",
+  "collection_root": "vision_platform\\ads\\runtime_collection\\click_success",
+  "date": "20260719",
+  "min_screen_change": 2.0,
+  "screens_exported": 111,
+  "annotations_exported": 111,
+  "proposal_source_counts": {
+    "free_ad_template": 32,
+    "close_template": 40,
+    "got_template": 39
+  },
+  "skipped": {},
+  "note": "Weak positives must be reviewed or isolated from final holdout before production training."
+}

@@ -1,0 +1,26 @@
+{
+  "mode": "split_only",
+  "split_summary": {
+    "train": {
+      "screens": 238,
+      "positive_screens": 225,
+      "negative_screens": 13,
+      "boxes": 261,
+      "groups": 233
+    },
+    "val": {
+      "screens": 50,
+      "positive_screens": 47,
+      "negative_screens": 3,
+      "boxes": 52,
+      "groups": 50
+    },
+    "test": {
+      "screens": 52,
+      "positive_screens": 51,
+      "negative_screens": 1,
+      "boxes": 54,
+      "groups": 50
+    }
+  }
+}

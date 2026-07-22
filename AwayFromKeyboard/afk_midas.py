@@ -22,7 +22,7 @@ if str(project_root) not in sys.path:
 
 from switch_account.switch_account import detect_current_account, switch_account, load_accounts
 from src.daily_runner import build_context
-from src.exceptions import TaskFailedError
+from src.exceptions import BotError, TaskFailedError
 from src.account_state import TAIPEI_TZ, clear_activity_state, write_activity_state, write_current_account
 from src.tasks.midas import MidasAutoResult, MidasTask
 from src.vision_matcher import write_image
@@ -37,6 +37,7 @@ from AwayFromKeyboard.afk_daily import (
     TaskWatchdogConfig,
     build_action_debug_label,
     parse_duration_to_seconds,
+    run_with_direct_retry_then_recovery,
     switch_account_with_recovery,
 )
 
@@ -45,6 +46,7 @@ AUTO_OCR_FAILURE_SLEEP_SECONDS = 2 * 60 * 60
 AUTO_WAKEUP_BUFFER_SECONDS = 4 * 60
 AUTO_ALL_ACCOUNT_ORDER = ("em3", "311", "tiger", "14")
 MIDAS_POPUP_RECOVERY_ATTEMPTS = 3
+MIDAS_TASK_RETRY_ATTEMPTS = 1
 MIDAS_TITLE_ROI = MidasTask.TITLE_ROI
 MIDAS_ACTIVITY_NAME = "midas_auto"
 DEFAULT_RECOVERY_BLUESTACKS_BOOT_WAIT_SECONDS = 180.0
@@ -294,10 +296,10 @@ def choose_next_account(
 def format_schedule_table(schedule: dict, accounts_order: list[str], *, now: datetime | None = None) -> str:
     current = _taipei_now(now)
     lines = ["Midas schedule:"]
+    account_width = max((len(account) for account in accounts_order), default=0)
     for account, ready_at in sorted(schedule_entries(schedule, accounts_order, now=current), key=lambda item: item[1]):
         delta = max(0, int((ready_at - current).total_seconds()))
-        source = schedule.get("accounts", {}).get(account, {}).get("cooldown_source", "unknown")
-        lines.append(f"{account}: ready {ready_at.strftime('%H:%M:%S')} ({_format_seconds(delta)}) source={source}")
+        lines.append(f"- {account:<{account_width}} : ready {ready_at.strftime('%H:%M:%S')} ({_format_seconds(delta)})")
     return "\n".join(lines)
 
 
@@ -311,17 +313,17 @@ def format_schedule_decision(
 ) -> str:
     current = _taipei_now(now)
     lines = ["Midas schedule from file:"]
+    account_width = max((len(account) for account in accounts_order), default=0)
     for account in accounts_order:
         account_state = schedule.get("accounts", {}).get(account, {})
         ready_at = _parse_time(account_state.get("ready_at"))
         if ready_at is None:
-            lines.append(f"- {account}: no ready_at; treated ready now")
+            lines.append(f"- {account:<{account_width}} : no ready_at; treated ready now")
             continue
         delta = max(0, int((ready_at - current).total_seconds()))
-        source = account_state.get("cooldown_source", "unknown")
         lines.append(
-            f"- {account}: ready={ready_at.strftime('%Y-%m-%d %H:%M:%S')} "
-            f"({_format_seconds(delta)}) source={source}"
+            f"- {account:<{account_width}} : ready = {ready_at.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"({_format_seconds(delta)})"
         )
     selected, start_at, switch_estimate = choose_next_account(
         schedule,
@@ -378,7 +380,15 @@ def _handle_wakeup_exceptions_if_available(recovery) -> bool:
     handler = getattr(recovery, "handle_wakeup_exceptions", None)
     if handler is None:
         return False
-    return bool(handler())
+    return bool(
+        run_with_direct_retry_then_recovery(
+            handler,
+            label="wakeup exception check",
+            retry_exceptions=(BotError,),
+            direct_retries=1,
+            recovery_action=lambda: _recover_or_restart(recovery),
+        )
+    )
 
 
 def _record_current_account(account: str | None, source: str) -> None:
@@ -880,12 +890,54 @@ def execute_scheduled_midas_account(
     print(f"\n💰 [Auto] 排程執行帳號 【{account}】 點金手")
     notify_status("Midas", "開始", account=account, route="點金手", enabled=notify_enabled)
     started = time.monotonic()
-    result = run_midas_auto_with_ocr_retry(
-        context,
-        recovery,
-        account=account,
-        notify_enabled=notify_enabled,
-        midas_debug_actions=midas_debug_actions,
+    def _run_midas_action() -> MidasAutoResult:
+        return run_midas_auto_with_ocr_retry(
+            context,
+            recovery,
+            account=account,
+            notify_enabled=notify_enabled,
+            midas_debug_actions=midas_debug_actions,
+        )
+
+    def _notify_direct_retry(exc: BaseException, attempt: int, total: int) -> None:
+        notify_status(
+            "Midas",
+            "task retry",
+            account=account,
+            route="midas",
+            detail=f"retrying same account after error ({attempt}/{total}): {exc}",
+            enabled=notify_enabled,
+        )
+
+    def _notify_recovery(exc: BaseException) -> None:
+        notify_status(
+            "Midas",
+            "task recovery",
+            account=account,
+            route="midas",
+            detail=f"direct retry failed; recovering then retrying same account: {exc}",
+            enabled=notify_enabled,
+        )
+
+    def _notify_failure(exc: BaseException) -> None:
+        notify_status(
+            "Midas",
+            "failed",
+            account=account,
+            route="midas",
+            detail=f"Midas task failed after direct retry and recovery: {exc}",
+            enabled=notify_enabled,
+        )
+
+    result = run_with_direct_retry_then_recovery(
+        _run_midas_action,
+        label="Midas task",
+        retry_exceptions=(BotError,),
+        direct_retries=MIDAS_TASK_RETRY_ATTEMPTS,
+        recovery_action=lambda: _recover_or_restart(recovery),
+        on_retry=_notify_direct_retry,
+        on_recovery=_notify_recovery,
+        on_failure=_notify_failure,
     )
     elapsed = time.monotonic() - started
     update_timing_average(schedule, "midas_run", elapsed)
@@ -1026,7 +1078,7 @@ def run_auto_initial_round(
     midas_debug_actions: bool = False,
 ) -> int:
     print("\n🌅 [Auto] 初始輪啟動，先檢查異地登入與登入畫面...")
-    if recovery.handle_wakeup_exceptions():
+    if _handle_wakeup_exceptions_if_available(recovery):
         print("✅ [Auto] 初始輪喚醒異常狀態已排除。")
     _recover_or_restart(recovery)
 
@@ -1073,7 +1125,7 @@ def run_auto_sweep_first_round(
     midas_debug_actions: bool = False,
 ) -> int:
     print("\n🌅 [Auto] sweep-first 初始輪啟動，先檢查異地登入與登入畫面...")
-    if recovery.handle_wakeup_exceptions():
+    if _handle_wakeup_exceptions_if_available(recovery):
         print("✅ [Auto] sweep-first 初始輪喚醒異常狀態已排除。")
     _recover_or_restart(recovery)
 
@@ -1131,7 +1183,7 @@ def run_auto_round(
     midas_debug_actions: bool = False,
 ) -> int:
     print("\n🌅 [Auto] 新一輪啟動，先檢查異地登入與登入畫面...")
-    if recovery.handle_wakeup_exceptions():
+    if _handle_wakeup_exceptions_if_available(recovery):
         print("✅ [Auto] 喚醒異常狀態已排除。")
     _recover_or_restart(recovery)
 

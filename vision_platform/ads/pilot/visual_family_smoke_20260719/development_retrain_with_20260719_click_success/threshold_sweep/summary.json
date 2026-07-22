@@ -1,0 +1,80 @@
+{
+  "prediction_files": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\run_seed42\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\run_seed43\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\run_seed44\\test_predictions.csv"
+  ],
+  "thresholds": [
+    0.05,
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95
+  ],
+  "best_thresholds": {
+    "x_mark": {
+      "threshold": 0.55,
+      "precision": 0.9014,
+      "recall": 0.7333,
+      "f1": 0.8083,
+      "none_false_activation_rate": 0.0
+    },
+    "play_triangle": {
+      "threshold": 0.45,
+      "precision": 0.9333,
+      "recall": 0.875,
+      "f1": 0.9032,
+      "none_false_activation_rate": 0.0
+    },
+    "google_play": {
+      "threshold": 0.6,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "none_false_activation_rate": 0.0
+    },
+    "next": {
+      "threshold": 0.7,
+      "precision": 0.3333,
+      "recall": 0.3333,
+      "f1": 0.3333,
+      "none_false_activation_rate": 0.0
+    },
+    "free": {
+      "threshold": 0.75,
+      "precision": 1.0,
+      "recall": 0.8889,
+      "f1": 0.9412,
+      "none_false_activation_rate": 0.0
+    },
+    "got": {
+      "threshold": 0.3,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "none_false_activation_rate": 0.0
+    },
+    "arrow": {
+      "threshold": 0.7,
+      "precision": 0.963,
+      "recall": 0.7879,
+      "f1": 0.8667,
+      "none_false_activation_rate": 0.0032
+    }
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\threshold_sweep"
+}

@@ -153,30 +153,136 @@ def today_key(now: datetime | None = None) -> str:
     return reset_adjusted.strftime("%Y-%m-%d")
 
 def completion_file_for_date(date_key: str) -> Path:
+    return STATE_DIR / f"route_completion_{date_key}.jsonc"
+
+def legacy_completion_file_for_date(date_key: str) -> Path:
     return STATE_DIR / f"route_completion_{date_key}.json"
+
+def _strip_jsonc_line_comments(text: str) -> str:
+    stripped_lines = []
+    for line in text.splitlines():
+        in_string = False
+        escaped = False
+        cut_at = None
+        for index in range(len(line) - 1):
+            char = line[index]
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = in_string
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if not in_string and char == "/" and line[index + 1] == "/":
+                cut_at = index
+                break
+        stripped_lines.append(line if cut_at is None else line[:cut_at].rstrip())
+    return "\n".join(stripped_lines)
+
+def _read_completion_jsonc(path: Path) -> dict:
+    return json.loads(_strip_jsonc_line_comments(path.read_text(encoding="utf-8")))
+
+
+class CompletionStateError(RuntimeError):
+    pass
+
+
+def _completion_backup_dir() -> Path:
+    return STATE_DIR / "backups"
+
+
+def _backup_completion_file(path: Path, reason: str) -> Path | None:
+    if not path.exists():
+        return None
+    backup_dir = _completion_backup_dir()
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(TAIPEI_TZ).strftime("%Y%m%d_%H%M%S_%f")
+    safe_reason = re.sub(r"[^a-zA-Z0-9_.-]+", "_", reason).strip("_") or "backup"
+    backup_path = backup_dir / f"{path.stem}_{timestamp}_{safe_reason}{path.suffix}"
+    shutil.copy2(path, backup_path)
+    return backup_path
+
+
+def _prune_completion_backups(date_key: str, keep: int = 20) -> None:
+    backup_dir = _completion_backup_dir()
+    if not backup_dir.exists():
+        return
+    backups = sorted(
+        backup_dir.glob(f"route_completion_{date_key}_*"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_backup in backups[keep:]:
+        old_backup.unlink()
+
+
+def _dump_completion_jsonc(state: dict) -> str:
+    text = json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True)
+    lines = text.splitlines()
+    completed = state.get("completed") if isinstance(state.get("completed"), dict) else {}
+    failed = state.get("failed_this_round") if isinstance(state.get("failed_this_round"), dict) else {}
+    account_stack: list[str] = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        match = re.match(r'"([^"]+)": \{', stripped)
+        if match:
+            key = match.group(1)
+            if key in completed or key in failed:
+                account_stack.append(key)
+            continue
+        if stripped in ("}", "},") and account_stack:
+            account = account_stack.pop()
+            suffix = "," if stripped.endswith(",") else ""
+            lines[index] = f"{line[:-len(suffix)]}{suffix} // account: {account}" if suffix else f"{line} // account: {account}"
+    return "\n".join(lines) + "\n"
 
 def load_completion_state(date_key: str) -> dict:
     path = completion_file_for_date(date_key)
+    legacy_path = legacy_completion_file_for_date(date_key)
+    if not path.exists():
+        path = legacy_path if legacy_path.exists() else path
     if not path.exists():
         return {"date": date_key, "completed": {}}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        print(f"⚠️ [警告] 完成紀錄格式錯誤，將重新建立: {path}")
-        return {"date": date_key, "completed": {}}
+        data = _read_completion_jsonc(path)
+    except json.JSONDecodeError as exc:
+        raise CompletionStateError(
+            f"完成紀錄格式錯誤，已保留原檔且不會自動重建: {path}; "
+            f"line={exc.lineno}, column={exc.colno}, detail={exc.msg}"
+        ) from exc
     if data.get("date") != date_key or not isinstance(data.get("completed"), dict):
-        return {"date": date_key, "completed": {}}
+        raise CompletionStateError(
+            f"完成紀錄內容不符合預期，已保留原檔且不會自動重建: {path}; "
+            f"expected date={date_key} and completed object"
+        )
     return data
 
 def save_completion_state(state: dict) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     path = completion_file_for_date(state["date"])
+    if path.exists():
+        try:
+            _read_completion_jsonc(path)
+        except json.JSONDecodeError as exc:
+            backup_path = _backup_completion_file(path, "invalid_before_save")
+            raise CompletionStateError(
+                f"refusing to overwrite invalid completion state: {path}; "
+                f"backup={backup_path}; line={exc.lineno}, column={exc.colno}, detail={exc.msg}"
+            ) from exc
+        _backup_completion_file(path, "before_save")
     tmp_path = path.with_suffix(".tmp")
     tmp_path.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
+        _dump_completion_jsonc(state),
         encoding="utf-8",
     )
     tmp_path.replace(path)
+    legacy_path = legacy_completion_file_for_date(state["date"])
+    if legacy_path.exists():
+        _backup_completion_file(legacy_path, "legacy_removed")
+        legacy_path.unlink()
+    _prune_completion_backups(state["date"])
 
 def is_route_completed(state: dict, account: str, route_name: str) -> bool:
     value = state.get("completed", {}).get(account, {}).get(route_name)
@@ -211,6 +317,34 @@ def record_current_account(account: str | None, source: str) -> None:
     if account:
         write_current_account(account, source=source)
 
+
+def detect_and_record_current_account(
+    controller: DeviceController,
+    matcher: VisionMatcher,
+    source: str,
+) -> str | None:
+    account = detect_current_account(controller, matcher)
+    record_current_account(account, source)
+    return account
+
+
+def replan_account_order_from_detected(
+    detected_account: str | None,
+    completion_state: dict,
+    configured_tasks: list[str],
+    *,
+    force: bool,
+) -> list[str] | None:
+    if not detected_account or detected_account not in ACCOUNTS:
+        return None
+    return build_account_execution_order(
+        ACCOUNTS,
+        detected_account,
+        completion_state,
+        configured_tasks,
+        force=force,
+    )
+
 def pending_tasks_for_account(
     state: dict,
     account: str,
@@ -218,11 +352,18 @@ def pending_tasks_for_account(
     *,
     force: bool,
 ) -> list[str]:
-    if force:
-        return list(configured_tasks)
-    return [
+    from AwayFromKeyboard import task_config
+
+    allowed_tasks = [
         task_name
         for task_name in configured_tasks
+        if task_config.is_task_allowed_for_account(task_name, account)
+    ]
+    if force:
+        return allowed_tasks
+    return [
+        task_name
+        for task_name in allowed_tasks
         if not is_route_completed(state, account, task_name)
         and not is_route_failed_this_round(state, account, task_name)
     ]
@@ -645,6 +786,46 @@ def restart_bluestacks_and_reenter(
     except Exception as exc:
         print(f"[AFK recovery] BlueStacks restart failed: {exc}")
         return False
+
+def run_with_direct_retry_then_recovery(
+    action,
+    *,
+    label: str,
+    retry_exceptions: tuple[type[BaseException], ...] = (Exception,),
+    direct_retries: int = 1,
+    recovery_action=None,
+    on_retry=None,
+    on_recovery=None,
+    on_failure=None,
+):
+    last_error: BaseException | None = None
+    for failure_count in range(direct_retries + 1):
+        try:
+            return action()
+        except retry_exceptions as exc:
+            last_error = exc
+            if failure_count >= direct_retries:
+                break
+            attempt = failure_count + 1
+            print(f"[AFK recovery] {label} failed; retrying once without recovery ({attempt}/{direct_retries}): {exc}")
+            if on_retry is not None:
+                on_retry(exc, attempt, direct_retries)
+
+    if recovery_action is None:
+        if on_failure is not None and last_error is not None:
+            on_failure(last_error)
+        raise last_error or RuntimeError(f"{label} failed")
+
+    print(f"[AFK recovery] {label} direct retry failed; recovering then retrying: {last_error}")
+    if on_recovery is not None and last_error is not None:
+        on_recovery(last_error)
+    recovery_action()
+    try:
+        return action()
+    except retry_exceptions as exc:
+        if on_failure is not None:
+            on_failure(exc)
+        raise
 
 def run_switch_account_command(
     *,
@@ -1097,8 +1278,11 @@ def main():
                 print("❌ [錯誤] 處理登入異常後仍無法回到主城。")
                 sys.exit(1)
 
-        current_account = detect_current_account(controller, matcher)
-        record_current_account(current_account, "afk.loop.detect")
+        current_account = detect_and_record_current_account(
+            controller,
+            matcher,
+            "afk.loop.detect",
+        )
         account_order = build_account_execution_order(
             ACCOUNTS,
             current_account,
@@ -1118,7 +1302,10 @@ def main():
             )
             return
 
-        for i, account_name in enumerate(account_order):
+        i = 0
+        while i < len(account_order):
+            account_name = account_order[i]
+            replan_requested = False
             pending_tasks = pending_tasks_for_account(
                 completion_state,
                 account_name,
@@ -1137,6 +1324,7 @@ def main():
                     detail="今日所有 route 已完成",
                     enabled=notify_enabled,
                 )
+                i += 1
                 continue
 
             print("\n" + "="*50)
@@ -1145,6 +1333,43 @@ def main():
             print("="*50 + "\n")
             
             try:
+                expected_current_account = current_account
+                detected_account = detect_and_record_current_account(
+                    controller,
+                    matcher,
+                    "afk.loop.before_account",
+                )
+                if (
+                    detected_account
+                    and expected_current_account
+                    and detected_account != expected_current_account
+                ):
+                    replanned_order = replan_account_order_from_detected(
+                        detected_account,
+                        completion_state,
+                        configured_tasks,
+                        force=args.force,
+                    )
+                    if replanned_order is not None:
+                        print(
+                            f"[AFK] account drift detected before account loop: "
+                            f"expected_current={expected_current_account}, actual={detected_account}; replanning"
+                        )
+                        notify_status(
+                            "AFK",
+                            "account drift detected; replanning",
+                            account=detected_account,
+                            detail=f"expected_current={expected_current_account}",
+                            enabled=notify_enabled,
+                        )
+                        current_account = detected_account
+                        account_order = replanned_order
+                        accounts_per_round = len(account_order)
+                        i = 0
+                        continue
+                if detected_account:
+                    current_account = detected_account
+
                 if current_account != account_name:
                     print(f"\n⏳ 準備切換至帳號 【{account_name}】...")
                     notify_status(
@@ -1192,8 +1417,44 @@ def main():
                             enabled=notify_enabled,
                         )
                         sys.exit(1)
+                    verified_account = detect_and_record_current_account(
+                        controller,
+                        matcher,
+                        "afk.loop.switch.verify",
+                    )
+                    if verified_account != account_name:
+                        print(
+                            f"\n[AFK] account switch verification failed: "
+                            f"target={account_name}, actual={verified_account or 'unknown'}"
+                        )
+                        replanned_order = replan_account_order_from_detected(
+                            verified_account,
+                            completion_state,
+                            configured_tasks,
+                            force=args.force,
+                        )
+                        if replanned_order is None:
+                            notify_status(
+                                "AFK",
+                                "account switch verification failed",
+                                account=account_name,
+                                detail=f"actual={verified_account or 'unknown'}",
+                                enabled=notify_enabled,
+                            )
+                            sys.exit(1)
+                        notify_status(
+                            "AFK",
+                            "account switch verification mismatch; replanning",
+                            account=verified_account,
+                            detail=f"target={account_name}",
+                            enabled=notify_enabled,
+                        )
+                        current_account = verified_account
+                        account_order = replanned_order
+                        accounts_per_round = len(account_order)
+                        i = 0
+                        continue
                     current_account = account_name
-                    record_current_account(account_name, "afk.loop.switch")
                     print("🎉 帳號切換成功！")
                     notify_status(
                         "AFK",
@@ -1242,6 +1503,48 @@ def main():
                         notify_enabled=notify_enabled,
                         estimated_task_seconds=watchdog.hard_timeout_seconds,
                     )
+                    verified_account = detect_and_record_current_account(
+                        controller,
+                        matcher,
+                        "afk.loop.before_task",
+                    )
+                    if verified_account != account_name:
+                        print(
+                            f"\n[AFK] account verification failed before task: "
+                            f"target={account_name}, actual={verified_account or 'unknown'}, "
+                            f"task={task_name}"
+                        )
+                        replanned_order = replan_account_order_from_detected(
+                            verified_account,
+                            completion_state,
+                            configured_tasks,
+                            force=args.force,
+                        )
+                        if replanned_order is None:
+                            notify_status(
+                                "AFK",
+                                "account verification failed before task",
+                                account=account_name,
+                                route=task_name,
+                                detail=f"actual={verified_account or 'unknown'}",
+                                enabled=notify_enabled,
+                            )
+                            sys.exit(1)
+                        notify_status(
+                            "AFK",
+                            "account drift before task; replanning",
+                            account=verified_account,
+                            route=task_name,
+                            detail=f"target={account_name}",
+                            enabled=notify_enabled,
+                        )
+                        current_account = verified_account
+                        account_order = replanned_order
+                        accounts_per_round = len(account_order)
+                        i = 0
+                        replan_requested = True
+                        break
+                    current_account = account_name
                     task_cmd = [python_exe, str(run_router_script)] + router_argv
                     print("\n" + "-" * 50)
                     print("🛠️ [Debug] 若此 Router 任務卡住，可複製以下指令單獨測試：")
@@ -1304,6 +1607,9 @@ def main():
                             enabled=notify_enabled,
                         )
                             
+                if replan_requested:
+                    continue
+
                 print("🔍 子任務結束，交由 UIRecovery 強制驗證主城狀態...")
                 if not recovery.recover_to_main():
                     print("⚠️ [系統] 畫面卡死或無法自動回到主城。啟動浴火重生(強制重啟)機制...")
@@ -1328,6 +1634,8 @@ def main():
                     except Exception as e:
                         print(f"❌ [錯誤] 執行強制重啟時發生異常: {e}")
                         sys.exit(1)
+
+                i += 1
                     
             except SystemExit:
                 raise

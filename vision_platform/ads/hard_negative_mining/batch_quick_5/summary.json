@@ -1,0 +1,12 @@
+{
+  "scanned_screens": 5,
+  "reviewed_actionable_screens": 138,
+  "candidates_exported": 33,
+  "skipped_positive_overlap": 2,
+  "threshold": 0.55,
+  "scan_scale": 0.35,
+  "max_screens": 5,
+  "exclude_iou": 0.05,
+  "exclude_center_pad": 4.0,
+  "output_dir": "D:\\Projects\\adb_vl\\vision_platform\\ads\\hard_negative_mining\\batch_quick_5"
+}

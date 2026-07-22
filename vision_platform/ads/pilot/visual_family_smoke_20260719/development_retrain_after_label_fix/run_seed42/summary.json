@@ -1,0 +1,221 @@
+{
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "threshold": 0.5,
+  "seed": 42,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15,
+  "source_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\training_pool\\manifest.csv",
+  "source_manifest_sha256": "82031064dfb222bf01a4659f144e1eafc7e740f3c22198bf2a6178384a624e92",
+  "trainer_path": "D:\\Projects\\adb_vl\\vision_platform\\ads\\tools\\train_visual_family_smoke.py",
+  "trainer_sha256": "07b79033ee4aa76d7e52101e03201be67ec26ab373f662fec9052cafc0b3aa49",
+  "split_counts": {
+    "train": {
+      "rows": 764,
+      "family_counts": {
+        "x_mark": 93,
+        "arrow": 51,
+        "next": 8,
+        "google_play": 5,
+        "free": 34,
+        "play_triangle": 74,
+        "got": 107,
+        "negative": 400
+      },
+      "groups": 419,
+      "contents": 419,
+      "strong_negative_rows": 28,
+      "strong_negative_contents": 12
+    },
+    "val": {
+      "rows": 172,
+      "family_counts": {
+        "google_play": 1,
+        "arrow": 15,
+        "next": 7,
+        "x_mark": 17,
+        "got": 21,
+        "play_triangle": 28,
+        "free": 8,
+        "negative": 81
+      },
+      "groups": 87,
+      "contents": 87,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    },
+    "test": {
+      "rows": 156,
+      "family_counts": {
+        "google_play": 3,
+        "x_mark": 10,
+        "arrow": 14,
+        "play_triangle": 28,
+        "got": 23,
+        "next": 5,
+        "free": 5,
+        "negative": 73
+      },
+      "groups": 87,
+      "contents": 87,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    }
+  },
+  "strong_negative_weight": 1.0,
+  "strong_negative_content_ids_file": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\training_pool\\confirmed_strong_hard_negative_content_ids.txt",
+  "manifest_strong_negative_content_ids_count": 12,
+  "assigned_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\run_seed42\\assigned_manifest.csv",
+  "device": "cuda",
+  "test_metrics": [
+    {
+      "family": "x_mark",
+      "support": 10,
+      "tp": 8,
+      "fp": 16,
+      "tn": 130,
+      "fn": 2,
+      "precision": 0.3333,
+      "recall": 0.8,
+      "f1": 0.4706
+    },
+    {
+      "family": "play_triangle",
+      "support": 28,
+      "tp": 28,
+      "fp": 12,
+      "tn": 116,
+      "fn": 0,
+      "precision": 0.7,
+      "recall": 1.0,
+      "f1": 0.8235
+    },
+    {
+      "family": "google_play",
+      "support": 3,
+      "tp": 2,
+      "fp": 0,
+      "tn": 153,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.6667,
+      "f1": 0.8
+    },
+    {
+      "family": "next",
+      "support": 5,
+      "tp": 0,
+      "fp": 12,
+      "tn": 139,
+      "fn": 5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "family": "free",
+      "support": 5,
+      "tp": 5,
+      "fp": 5,
+      "tn": 146,
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667
+    },
+    {
+      "family": "got",
+      "support": 23,
+      "tp": 16,
+      "fp": 2,
+      "tn": 131,
+      "fn": 7,
+      "precision": 0.8889,
+      "recall": 0.6957,
+      "f1": 0.7805
+    },
+    {
+      "family": "arrow",
+      "support": 14,
+      "tp": 14,
+      "fp": 6,
+      "tn": 136,
+      "fn": 0,
+      "precision": 0.7,
+      "recall": 1.0,
+      "f1": 0.8235
+    }
+  ],
+  "test_none_of_the_above": {
+    "support": 73,
+    "false_activation_count": 7,
+    "correct_abstain_count": 66,
+    "false_activation_rate": 0.0959
+  },
+  "test_none_of_the_above_family": [
+    {
+      "family": "x_mark",
+      "none_support": 73,
+      "false_activation_count": 3,
+      "false_activation_rate": 0.0411,
+      "mean_prob_on_none": 0.24271,
+      "max_prob_on_none": 0.67652
+    },
+    {
+      "family": "play_triangle",
+      "none_support": 73,
+      "false_activation_count": 4,
+      "false_activation_rate": 0.0548,
+      "mean_prob_on_none": 0.12384,
+      "max_prob_on_none": 0.6785
+    },
+    {
+      "family": "google_play",
+      "none_support": 73,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.08949,
+      "max_prob_on_none": 0.46467
+    },
+    {
+      "family": "next",
+      "none_support": 73,
+      "false_activation_count": 2,
+      "false_activation_rate": 0.0274,
+      "mean_prob_on_none": 0.16635,
+      "max_prob_on_none": 0.5234
+    },
+    {
+      "family": "free",
+      "none_support": 73,
+      "false_activation_count": 2,
+      "false_activation_rate": 0.0274,
+      "mean_prob_on_none": 0.10581,
+      "max_prob_on_none": 0.64548
+    },
+    {
+      "family": "got",
+      "none_support": 73,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.07544,
+      "max_prob_on_none": 0.39965
+    },
+    {
+      "family": "arrow",
+      "none_support": 73,
+      "false_activation_count": 2,
+      "false_activation_rate": 0.0274,
+      "mean_prob_on_none": 0.17349,
+      "max_prob_on_none": 0.57068
+    }
+  ],
+  "best_checkpoint": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_label_fix\\run_seed42\\best.pt"
+}

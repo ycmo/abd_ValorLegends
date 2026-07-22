@@ -1,0 +1,78 @@
+{
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "threshold": 0.5,
+  "seed": 42,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15,
+  "source_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\training_pool\\manifest.csv",
+  "source_manifest_sha256": "6aed00112136d8cac733d2de09d629fa63ff513d5ee01594411d7565c96a4825",
+  "trainer_path": "D:\\Projects\\adb_vl\\vision_platform\\ads\\tools\\train_visual_family_smoke.py",
+  "trainer_sha256": "076843e2d45172eeb86c71d65b9d2c6050286cf350f286ac8ef0226a08ad8955",
+  "split_counts": {
+    "train": {
+      "rows": 818,
+      "family_counts": {
+        "google_play": 7,
+        "x_mark": 101,
+        "arrow": 66,
+        "next": 4,
+        "free": 37,
+        "play_triangle": 107,
+        "got": 132,
+        "negative": 364
+      },
+      "groups": 491,
+      "contents": 463,
+      "strong_negative_rows": 28,
+      "strong_negative_contents": 12
+    },
+    "val": {
+      "rows": 183,
+      "family_counts": {
+        "arrow": 13,
+        "google_play": 1,
+        "x_mark": 20,
+        "got": 30,
+        "next": 1,
+        "free": 23,
+        "negative": 87,
+        "play_triangle": 8
+      },
+      "groups": 107,
+      "contents": 96,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    },
+    "test": {
+      "rows": 202,
+      "family_counts": {
+        "x_mark": 25,
+        "arrow": 11,
+        "google_play": 1,
+        "play_triangle": 16,
+        "free": 18,
+        "got": 27,
+        "next": 1,
+        "negative": 103
+      },
+      "groups": 104,
+      "contents": 96,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    }
+  },
+  "strong_negative_weight": 1.0,
+  "strong_negative_content_ids_file": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\training_pool\\confirmed_strong_hard_negative_content_ids.txt",
+  "family_hard_negative_specs": [],
+  "manifest_strong_negative_content_ids_count": 12,
+  "assigned_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_with_20260719_click_success\\split_validation_seed42\\assigned_manifest.csv",
+  "mode": "split_only"
+}

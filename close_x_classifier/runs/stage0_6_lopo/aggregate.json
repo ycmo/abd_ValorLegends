@@ -1,0 +1,31 @@
+{
+  "folds": 18,
+  "heldout_success": 16,
+  "heldout_fail": 2,
+  "negative_fp_total": 0,
+  "negative_tn_total": 522,
+  "repeated_false_positives": [],
+  "crop_style": {
+    "close": {
+      "legacy_tight_positive": 17,
+      "manifest_bbox_positive": 1
+    },
+    "not_close": {
+      "manifest_bbox_negative": 218
+    }
+  },
+  "negative_test_sessions": [
+    "20260711_010520_33712",
+    "20260711_011142_36488",
+    "20260711_080034_68848",
+    "20260711_081443_41084",
+    "20260711_090430_12456",
+    "20260711_093513_29888",
+    "20260711_093806_46808",
+    "20260711_093821_38292",
+    "20260711_095500_69352",
+    "20260711_095611_39776",
+    "20260711_101501_60008",
+    "20260711_104207_50836"
+  ]
+}

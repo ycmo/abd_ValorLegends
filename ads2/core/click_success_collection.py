@@ -116,6 +116,8 @@ class ClickSuccessCollector:
             "source_session": f"ads2_click_success_{event_id}",
             "weak_label": "weak_action_target",
             "review_status": "pending",
+            "primary_review_image": str(before_path.resolve()) if before_screen is not None else "",
+            "primary_review_scope": "fullscreen",
             "verified_success": bool(verified_success),
             "screen_change_score": screen_change_score,
             "screen_change_threshold": self.change_threshold,
@@ -128,6 +130,18 @@ class ClickSuccessCollector:
             "bbox_context_crop": bbox_context_path,
             "metadata": _json_safe(metadata),
         }
+        if bbox is not None:
+            payload["detector_training_candidate"] = {
+                "dataset_role": "weak_positive",
+                "category": "action_candidate",
+                "bbox": [int(v) for v in bbox],
+                "bbox_format": "xywh",
+                "parent_image": str(before_path.resolve()) if before_screen is not None else "",
+                "proposal_source": proposal_source,
+                "verified_success": bool(verified_success),
+                "screen_change_score": screen_change_score,
+                "review_required": True,
+            }
         event_json = event_dir / "event.json"
         event_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return ClickSuccessRecord(event_dir=event_dir, event_json=event_json)

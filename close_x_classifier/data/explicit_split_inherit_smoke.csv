@@ -1,0 +1,7 @@
+image_path,label,review_status,source_screen,source_session,ad_source,icon_family,reject_type,candidate_score,geometry_score,bbox,split
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_042353_roi_0.png,close,reviewed,screen_0,inherit_session_a,x,x,,,,,val
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_042429_roi_0.png,close,reviewed,screen_1,inherit_session_a,x,x,,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_043419_roi_0.png,close,reviewed,screen_2,inherit_session_a,x,x,,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_044653_roi_0.png,close,reviewed,screen_3,inherit_session_3,x,x,,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_044717_roi_0.png,close,reviewed,screen_4,inherit_session_4,x,x,,,,,
+D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\ad_issue_20260606_052002_roi_15.png,close,reviewed,screen_5,inherit_session_5,x,x,,,,,

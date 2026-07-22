@@ -1,0 +1,15 @@
+{
+  "review_list_csv": "vision_platform/ads/pilot/visual_family_smoke_20260719/development_retrain_after_label_fix/train_disagreement_review/train_disagreement_review_candidates.csv",
+  "instance_list_column": "instance_id",
+  "default_filter": {
+    "status": "all",
+    "family": "all",
+    "source": "all",
+    "sort": "review_list",
+    "default_pick": "previous saved",
+    "selection_mode": "single",
+    "path_contains": "",
+    "search": ""
+  },
+  "exclude_path_contains": []
+}

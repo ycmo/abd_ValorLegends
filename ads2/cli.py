@@ -80,6 +80,21 @@ def main():
         help="Directory for weak click-success collection. Defaults to vision_platform/ads/runtime_collection/click_success.",
     )
     run_parser.add_argument(
+        "--enable-ads-screen-collection",
+        action="store_true",
+        help="Save every Ads runtime screenshot for detector review. Disabled by default.",
+    )
+    run_parser.add_argument(
+        "--ads-screen-collection-dir",
+        help="Directory for raw Ads screen collection. Defaults to vision_platform/ads/runtime_collection/screens.",
+    )
+    run_parser.add_argument(
+        "--ads-screen-collection-min-interval",
+        type=float,
+        default=0.0,
+        help="Minimum seconds between saved raw Ads screenshots. 0 saves every screenshot.",
+    )
+    run_parser.add_argument(
         "--profile",
         help="讀取 ads2/profiles/<name>.json，加入任務專用的正常結束條件",
     )
@@ -104,6 +119,9 @@ def main():
         )
         click_success_change_threshold = args.click_success_change_threshold if hasattr(args, 'click_success_change_threshold') else 2.0
         click_success_collection_dir = args.click_success_collection_dir if hasattr(args, 'click_success_collection_dir') else None
+        enable_ads_screen_collection = bool(getattr(args, "enable_ads_screen_collection", False))
+        ads_screen_collection_dir = args.ads_screen_collection_dir if hasattr(args, 'ads_screen_collection_dir') else None
+        ads_screen_collection_min_interval = args.ads_screen_collection_min_interval if hasattr(args, 'ads_screen_collection_min_interval') else 0.0
         runner = ReactiveRunner(
             serial=serial,
             ad_wait=ad_wait,
@@ -119,6 +137,9 @@ def main():
             enable_click_success_collection=enable_click_success_collection,
             click_success_change_threshold=click_success_change_threshold,
             click_success_collection_dir=click_success_collection_dir,
+            enable_ads_screen_collection=enable_ads_screen_collection,
+            ads_screen_collection_dir=ads_screen_collection_dir,
+            ads_screen_collection_min_interval=ads_screen_collection_min_interval,
         )
         runner.run()
 

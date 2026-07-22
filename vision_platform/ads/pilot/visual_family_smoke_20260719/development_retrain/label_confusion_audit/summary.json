@@ -1,0 +1,14 @@
+{
+  "manifest_rows": 1092,
+  "exact_content_label_conflicts": 1,
+  "train_model_disagreement_instances": 443,
+  "train_model_disagreement_wrong_all_3_seeds": 88,
+  "near_duplicate_label_conflicts_dhash_le_5": 8604,
+  "outputs": {
+    "exact_content_label_conflicts": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\label_confusion_audit\\exact_content_label_conflicts.csv",
+    "train_model_disagreement_suspects": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\label_confusion_audit\\train_model_disagreement_suspects.csv",
+    "near_duplicate_label_conflicts": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\label_confusion_audit\\near_duplicate_label_conflicts.csv",
+    "train_contact_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\label_confusion_audit\\train_model_disagreement_top80.png",
+    "near_duplicate_contact_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\label_confusion_audit\\near_duplicate_label_conflicts_top40.png"
+  }
+}

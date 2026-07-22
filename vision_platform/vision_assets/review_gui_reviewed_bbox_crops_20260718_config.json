@@ -1,0 +1,17 @@
+{
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "candidate_crop",
+    "scope": "crop",
+    "source": "vision_platform\\ads\\collections",
+    "status": "all",
+    "visual_status": "unreviewed",
+    "visual_family": "all",
+    "search": "reviewed_bbox_crops_20260718",
+    "sort": "visual_family",
+    "exclude_path_any": [
+      "context_1_5x"
+    ]
+  },
+  "sort_mode": "visual_family"
+}

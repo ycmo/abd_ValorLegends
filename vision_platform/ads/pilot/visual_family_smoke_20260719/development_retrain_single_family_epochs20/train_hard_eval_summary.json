@@ -1,0 +1,542 @@
+[
+  {
+    "seed": 42,
+    "subset": "train",
+    "rows": 764,
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 90,
+        "tp": 90,
+        "fp": 8,
+        "tn": 666,
+        "fn": 0,
+        "precision": 0.9184,
+        "recall": 1.0,
+        "f1": 0.9574
+      },
+      {
+        "family": "play_triangle",
+        "support": 75,
+        "tp": 75,
+        "fp": 3,
+        "tn": 686,
+        "fn": 0,
+        "precision": 0.9615,
+        "recall": 1.0,
+        "f1": 0.9804
+      },
+      {
+        "family": "google_play",
+        "support": 5,
+        "tp": 5,
+        "fp": 6,
+        "tn": 753,
+        "fn": 0,
+        "precision": 0.4545,
+        "recall": 1.0,
+        "f1": 0.625
+      },
+      {
+        "family": "next",
+        "support": 4,
+        "tp": 4,
+        "fp": 8,
+        "tn": 752,
+        "fn": 0,
+        "precision": 0.3333,
+        "recall": 1.0,
+        "f1": 0.5
+      },
+      {
+        "family": "free",
+        "support": 33,
+        "tp": 33,
+        "fp": 7,
+        "tn": 724,
+        "fn": 0,
+        "precision": 0.825,
+        "recall": 1.0,
+        "f1": 0.9041
+      },
+      {
+        "family": "got",
+        "support": 106,
+        "tp": 106,
+        "fp": 1,
+        "tn": 657,
+        "fn": 0,
+        "precision": 0.9907,
+        "recall": 1.0,
+        "f1": 0.9953
+      },
+      {
+        "family": "arrow",
+        "support": 51,
+        "tp": 51,
+        "fp": 22,
+        "tn": 691,
+        "fn": 0,
+        "precision": 0.6986,
+        "recall": 1.0,
+        "f1": 0.8226
+      }
+    ],
+    "none": {
+      "support": 400,
+      "false_activation_count": 5,
+      "correct_abstain_count": 395,
+      "false_activation_rate": 0.0125
+    }
+  },
+  {
+    "seed": 42,
+    "subset": "hard_train",
+    "rows": 28,
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "play_triangle",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "google_play",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "next",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "free",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "got",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "arrow",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ],
+    "none": {
+      "support": 28,
+      "false_activation_count": 2,
+      "correct_abstain_count": 26,
+      "false_activation_rate": 0.0714
+    }
+  },
+  {
+    "seed": 43,
+    "subset": "train",
+    "rows": 725,
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 89,
+        "tp": 89,
+        "fp": 10,
+        "tn": 626,
+        "fn": 0,
+        "precision": 0.899,
+        "recall": 1.0,
+        "f1": 0.9468
+      },
+      {
+        "family": "play_triangle",
+        "support": 46,
+        "tp": 46,
+        "fp": 2,
+        "tn": 677,
+        "fn": 0,
+        "precision": 0.9583,
+        "recall": 1.0,
+        "f1": 0.9787
+      },
+      {
+        "family": "google_play",
+        "support": 4,
+        "tp": 4,
+        "fp": 2,
+        "tn": 719,
+        "fn": 0,
+        "precision": 0.6667,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "family": "next",
+        "support": 4,
+        "tp": 4,
+        "fp": 12,
+        "tn": 709,
+        "fn": 0,
+        "precision": 0.25,
+        "recall": 1.0,
+        "f1": 0.4
+      },
+      {
+        "family": "free",
+        "support": 31,
+        "tp": 31,
+        "fp": 13,
+        "tn": 681,
+        "fn": 0,
+        "precision": 0.7045,
+        "recall": 1.0,
+        "f1": 0.8267
+      },
+      {
+        "family": "got",
+        "support": 102,
+        "tp": 102,
+        "fp": 1,
+        "tn": 622,
+        "fn": 0,
+        "precision": 0.9903,
+        "recall": 1.0,
+        "f1": 0.9951
+      },
+      {
+        "family": "arrow",
+        "support": 64,
+        "tp": 63,
+        "fp": 26,
+        "tn": 635,
+        "fn": 1,
+        "precision": 0.7079,
+        "recall": 0.9844,
+        "f1": 0.8235
+      }
+    ],
+    "none": {
+      "support": 385,
+      "false_activation_count": 11,
+      "correct_abstain_count": 374,
+      "false_activation_rate": 0.0286
+    }
+  },
+  {
+    "seed": 43,
+    "subset": "hard_train",
+    "rows": 28,
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "play_triangle",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "google_play",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "next",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "free",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "got",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "arrow",
+        "support": 0,
+        "tp": 0,
+        "fp": 6,
+        "tn": 22,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ],
+    "none": {
+      "support": 28,
+      "false_activation_count": 6,
+      "correct_abstain_count": 22,
+      "false_activation_rate": 0.2143
+    }
+  },
+  {
+    "seed": 44,
+    "subset": "train",
+    "rows": 729,
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 73,
+        "tp": 69,
+        "fp": 24,
+        "tn": 632,
+        "fn": 4,
+        "precision": 0.7419,
+        "recall": 0.9452,
+        "f1": 0.8313
+      },
+      {
+        "family": "play_triangle",
+        "support": 63,
+        "tp": 63,
+        "fp": 2,
+        "tn": 664,
+        "fn": 0,
+        "precision": 0.9692,
+        "recall": 1.0,
+        "f1": 0.9844
+      },
+      {
+        "family": "google_play",
+        "support": 7,
+        "tp": 7,
+        "fp": 3,
+        "tn": 719,
+        "fn": 0,
+        "precision": 0.7,
+        "recall": 1.0,
+        "f1": 0.8235
+      },
+      {
+        "family": "next",
+        "support": 2,
+        "tp": 2,
+        "fp": 32,
+        "tn": 695,
+        "fn": 0,
+        "precision": 0.0588,
+        "recall": 1.0,
+        "f1": 0.1111
+      },
+      {
+        "family": "free",
+        "support": 23,
+        "tp": 23,
+        "fp": 29,
+        "tn": 677,
+        "fn": 0,
+        "precision": 0.4423,
+        "recall": 1.0,
+        "f1": 0.6133
+      },
+      {
+        "family": "got",
+        "support": 114,
+        "tp": 113,
+        "fp": 5,
+        "tn": 610,
+        "fn": 1,
+        "precision": 0.9576,
+        "recall": 0.9912,
+        "f1": 0.9741
+      },
+      {
+        "family": "arrow",
+        "support": 53,
+        "tp": 52,
+        "fp": 46,
+        "tn": 630,
+        "fn": 1,
+        "precision": 0.5306,
+        "recall": 0.9811,
+        "f1": 0.6887
+      }
+    ],
+    "none": {
+      "support": 394,
+      "false_activation_count": 10,
+      "correct_abstain_count": 384,
+      "false_activation_rate": 0.0254
+    }
+  },
+  {
+    "seed": 44,
+    "subset": "hard_train",
+    "rows": 28,
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 0,
+        "tp": 0,
+        "fp": 3,
+        "tn": 25,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "play_triangle",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "google_play",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "next",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "free",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "got",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "arrow",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ],
+    "none": {
+      "support": 28,
+      "false_activation_count": 3,
+      "correct_abstain_count": 25,
+      "false_activation_rate": 0.1071
+    }
+  }
+]

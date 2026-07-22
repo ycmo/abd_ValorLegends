@@ -1,0 +1,226 @@
+{
+  "rows": 222,
+  "status_counts": {
+    "pending": 188,
+    "reviewed": 34
+  },
+  "missing_predictions": 0,
+  "exact_match": 186,
+  "overlap_not_exact": 0,
+  "no_overlap": 36,
+  "exact_match_rate": 0.8378378378378378,
+  "any_overlap_rate": 0.8378378378378378,
+  "model_suggestion_counts": {
+    "play_triangle": 27,
+    "free": 52,
+    "x_mark": 53,
+    "got": 51,
+    "uncertain": 28,
+    "arrow": 11
+  },
+  "human_family_counts": {
+    "play_triangle": 26,
+    "free": 40,
+    "x_mark": 46,
+    "got": 58,
+    "uncertain": 28,
+    "": 1,
+    "arrow": 21,
+    "next": 1,
+    "google_play": 1
+  },
+  "top_prob_stats_all": {
+    "min": 0.111,
+    "p25": 0.2028,
+    "median": 0.28684,
+    "p75": 0.43403,
+    "max": 0.81615,
+    "mean": 0.3476958108108108
+  },
+  "top_prob_stats_exact": {
+    "min": 0.111,
+    "p25": 0.2028,
+    "median": 0.26168,
+    "p75": 0.41663,
+    "max": 0.80921,
+    "mean": 0.31275075268817204
+  },
+  "top_prob_stats_mismatch": {
+    "min": 0.17723,
+    "p25": 0.36954,
+    "median": 0.57668,
+    "p75": 0.67498,
+    "max": 0.81615,
+    "mean": 0.5282452777777777
+  },
+  "top_prob_buckets": {
+    "0.2-0.35": 90,
+    "<0.2": 45,
+    "0.35-0.5": 38,
+    ">=0.5": 49
+  },
+  "top_size_counts": [
+    {
+      "size": "121x36",
+      "count": 54
+    },
+    {
+      "size": "97x27",
+      "count": 28
+    },
+    {
+      "size": "82x33",
+      "count": 14
+    },
+    {
+      "size": "86x30",
+      "count": 12
+    },
+    {
+      "size": "80x27",
+      "count": 10
+    },
+    {
+      "size": "83x31",
+      "count": 10
+    },
+    {
+      "size": "89x30",
+      "count": 6
+    },
+    {
+      "size": "39x37",
+      "count": 6
+    },
+    {
+      "size": "74x30",
+      "count": 6
+    },
+    {
+      "size": "42x33",
+      "count": 6
+    },
+    {
+      "size": "88x43",
+      "count": 6
+    },
+    {
+      "size": "48x42",
+      "count": 5
+    },
+    {
+      "size": "51x39",
+      "count": 5
+    },
+    {
+      "size": "73x30",
+      "count": 5
+    },
+    {
+      "size": "39x40",
+      "count": 4
+    },
+    {
+      "size": "92x51",
+      "count": 4
+    },
+    {
+      "size": "57x31",
+      "count": 4
+    },
+    {
+      "size": "131x42",
+      "count": 4
+    },
+    {
+      "size": "61x42",
+      "count": 3
+    },
+    {
+      "size": "97x43",
+      "count": 3
+    }
+  ],
+  "top_confusions": [
+    {
+      "model": "got",
+      "human": "got",
+      "count": 50
+    },
+    {
+      "model": "free",
+      "human": "free",
+      "count": 40
+    },
+    {
+      "model": "x_mark",
+      "human": "x_mark",
+      "count": 34
+    },
+    {
+      "model": "uncertain",
+      "human": "uncertain",
+      "count": 28
+    },
+    {
+      "model": "play_triangle",
+      "human": "play_triangle",
+      "count": 26
+    },
+    {
+      "model": "x_mark",
+      "human": "arrow",
+      "count": 12
+    },
+    {
+      "model": "free",
+      "human": "x_mark",
+      "count": 9
+    },
+    {
+      "model": "arrow",
+      "human": "arrow",
+      "count": 8
+    },
+    {
+      "model": "x_mark",
+      "human": "got",
+      "count": 5
+    },
+    {
+      "model": "free",
+      "human": "got",
+      "count": 3
+    },
+    {
+      "model": "arrow",
+      "human": "x_mark",
+      "count": 3
+    },
+    {
+      "model": "x_mark",
+      "human": "",
+      "count": 1
+    },
+    {
+      "model": "x_mark",
+      "human": "next",
+      "count": 1
+    },
+    {
+      "model": "got",
+      "human": "google_play",
+      "count": 1
+    },
+    {
+      "model": "play_triangle",
+      "human": "arrow",
+      "count": 1
+    }
+  ],
+  "outputs": {
+    "mismatches_csv": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_prefill\\reviewed_bbox_crops_20260718_top1\\post_review_audit\\mismatches.csv",
+    "mismatch_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_prefill\\reviewed_bbox_crops_20260718_top1\\post_review_audit\\mismatch_top120.png",
+    "no_overlap_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_prefill\\reviewed_bbox_crops_20260718_top1\\post_review_audit\\mismatch_no_overlap_top120.png"
+  }
+}

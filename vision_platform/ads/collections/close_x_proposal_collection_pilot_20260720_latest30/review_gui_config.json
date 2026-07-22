@@ -1,0 +1,19 @@
+{
+  "review_mode": "detector",
+  "detector_proposals_csv": "vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30\\manifest.csv",
+  "default_bbox_source": "model",
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "candidate_crop",
+    "scope": "all",
+    "source": "vision_platform\\ads\\collections",
+    "status": "unreviewed",
+    "visual_status": "all",
+    "search": "close_x_proposal_collection_pilot_20260720_latest30",
+    "sort": "image_signature",
+    "include_path_any": [
+      "close_x_proposal_collection_pilot_20260720_latest30\\screens"
+    ]
+  },
+  "sort_mode": "image_signature"
+}

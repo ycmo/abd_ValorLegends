@@ -7,7 +7,8 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from src.blocker_handler import (
+from src.ui.blockers import (
+    BLOCKER_POLICY_SAFE,
     REWARD_ACQUIRED_CYAN_ROI,
     REWARD_ACQUIRED_MAX_TAPS,
     BlockerHandler,
@@ -50,6 +51,31 @@ def _cyan_ratio_screen(ratio: float) -> np.ndarray:
 
 
 class BlockerHandlerTests(unittest.TestCase):
+    def test_reward_acquired_template_pool_paths_include_reviewed_got_assets(self):
+        handler = BlockerHandler(FakeController())
+
+        names = {path.name for path in handler._reward_acquired_template_paths()}
+
+        self.assertIn("001_got2.png", names)
+        self.assertIn("018_reward_title.png", names)
+
+    def test_reward_acquired_template_pool_matches_alpha_template(self):
+        template_path = Path("assets") / "shared" / "got" / "001_got2.png"
+        if not template_path.exists():
+            self.skipTest("reviewed got alpha template is not available")
+        template = cv2.imdecode(np.fromfile(str(template_path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        screen = np.zeros((540, 960, 3), dtype=np.uint8)
+        th, tw = template.shape[:2]
+        screen[130 : 130 + th, 410 : 410 + tw] = template[:, :, :3]
+        handler = BlockerHandler(FakeController())
+
+        match = handler.match_reward_acquired(screen)
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match[0], "001_got2.png")
+        self.assertGreaterEqual(match[1], 0.99)
+
     def test_island_signin_popup_close_x_is_handled(self):
         template_path = (
             Path("AwayFromKeyboard")
@@ -67,11 +93,28 @@ class BlockerHandlerTests(unittest.TestCase):
         controller = FakeController()
         handler = BlockerHandler(controller)
 
-        with patch("src.blocker_handler.time.sleep"):
-            handled = handler.handle_known_blocker(screen)
+        with patch("src.ui.blockers.time.sleep"):
+            handled = handler.handle_known_blocker(screen, policy=BLOCKER_POLICY_SAFE)
 
         self.assertTrue(handled)
         self.assertEqual(controller.taps, [(916, 45)])
+
+    def test_safe_policy_does_not_dismiss_reward_acquired_overlay(self):
+        screen = _cyan_ratio_screen(0.35)
+        controller = FakeController(screens=[screen])
+        handler = BlockerHandler(controller)
+
+        with patch("src.ui.blockers.time.sleep"):
+            handled = handler.handle_known_blocker(screen, policy=BLOCKER_POLICY_SAFE)
+
+        self.assertFalse(handled)
+        self.assertEqual(controller.taps, [])
+
+    def test_unknown_policy_is_rejected(self):
+        handler = BlockerHandler(FakeController())
+
+        with self.assertRaises(ValueError):
+            handler.handle_known_blocker(np.zeros((540, 960, 3), dtype=np.uint8), policy="unknown")
 
     def test_reward_acquired_cyan_ignores_card_pack_banner_ratio(self):
         screen = _cyan_ratio_screen(0.27)
@@ -84,7 +127,7 @@ class BlockerHandlerTests(unittest.TestCase):
         controller = FakeController(screens=[screen])
         handler = BlockerHandler(controller)
 
-        with patch("src.blocker_handler.time.sleep"):
+        with patch("src.ui.blockers.time.sleep"):
             handled = handler.handle_known_blocker(screen)
 
         self.assertFalse(handled)
@@ -102,7 +145,7 @@ class BlockerHandlerTests(unittest.TestCase):
         controller = FakeController()
         handler = BlockerHandler(controller)
 
-        with patch("src.blocker_handler.time.sleep"):
+        with patch("src.ui.blockers.time.sleep"):
             handled = handler.handle_known_blocker(screen)
 
         self.assertTrue(handled)
@@ -128,12 +171,30 @@ class BlockerHandlerTests(unittest.TestCase):
         controller = FakeController(screens=[normal])
         handler = BlockerHandler(controller)
 
-        with patch("src.blocker_handler.time.sleep"):
+        with patch("src.ui.blockers.time.sleep"):
             handled = handler.handle_known_blocker(overlay)
 
         self.assertTrue(handled)
         self.assertEqual(len(controller.taps), 1)
         self.assertLess(controller.taps[0][1], 250)
+
+    def test_reward_acquired_overlay_from_latest_vault_swipe_log_is_detected(self):
+        matches = sorted(
+            Path("log").glob(
+                "20260716_135415_*王國金庫_task/000021_*before_swipe_86_420_86_150_420.png"
+            )
+        )
+        if not matches:
+            self.skipTest("latest kingdom vault reward overlay before-swipe screenshot is not available")
+        screen = _read_image(matches[0])
+        handler = BlockerHandler(FakeController())
+
+        match = handler.match_reward_acquired(screen)
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertIn(match[0], {"020_006_got.png", "reward_acquired_cyan"})
+        self.assertLess(match[2][1], 220)
 
 
 if __name__ == "__main__":

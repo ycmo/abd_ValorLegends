@@ -1,0 +1,62 @@
+{
+  "dataset": {
+    "screens": "vision_platform\\ads\\datasets\\detector\\visual_candidate_v2_20260721_after_click_success_review\\screens.csv",
+    "annotations": "vision_platform\\ads\\datasets\\detector\\visual_candidate_v2_20260721_after_click_success_review\\annotations.csv"
+  },
+  "device": "cuda",
+  "epochs": 3,
+  "batch_size": 1,
+  "max_screens": 0,
+  "split_summary": {
+    "train": {
+      "screens": 736,
+      "positive_screens": 736,
+      "negative_screens": 0,
+      "boxes": 791,
+      "groups": 695
+    },
+    "val": {
+      "screens": 74,
+      "positive_screens": 74,
+      "negative_screens": 0,
+      "boxes": 89,
+      "groups": 71
+    },
+    "test": {
+      "screens": 132,
+      "positive_screens": 132,
+      "negative_screens": 0,
+      "boxes": 143,
+      "groups": 71
+    }
+  },
+  "eval": {
+    "score_threshold": 0.2,
+    "iou_threshold": 0.3,
+    "positive_screens": 132,
+    "positive_hit_screens": 105,
+    "positive_screen_recall": 0.7955,
+    "gt_boxes": 143,
+    "gt_boxes_covered": 116,
+    "gt_box_recall": 0.8112,
+    "negative_screens": 0,
+    "negative_false_positive_screens": 0,
+    "negative_fp_screen_rate": 0.0
+  },
+  "checkpoint": "vision_platform\\ads\\pilot\\detector_smoke\\visual_candidate_v2_20260721_seed42_epochs3\\best.pt",
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.19102132097190327
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.3787321984089668
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.5312504753693128
+    }
+  ],
+  "warning": "Smoke trainer only. Uses randomly initialized detector weights unless this script is extended with pretrained detection weights."
+}

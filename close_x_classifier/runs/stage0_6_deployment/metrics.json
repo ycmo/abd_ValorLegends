@@ -1,0 +1,101 @@
+{
+  "manifest": "close_x_classifier\\data\\stage0_6_canonical_object_poc\\manifest.csv",
+  "rows": 236,
+  "class_counts": {
+    "not_close": 218,
+    "close": 18
+  },
+  "threshold": 0.5,
+  "train_metrics": {
+    "tp": 18,
+    "fp": 0,
+    "tn": 218,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "fpr": 0.0
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.4056671092570838
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.14354055133348298
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.08227830233399645
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.023878575665718417
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.02367712200571925
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.0295877581209702
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.02842878348241418
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.024143034868510597
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.03991328044478797
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.005184953809336965
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.005370834967618713
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.017620285843712103
+    },
+    {
+      "epoch": 13,
+      "train_loss": 0.014795250289923496
+    },
+    {
+      "epoch": 14,
+      "train_loss": 0.025216524252447033
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.05431677075842853
+    },
+    {
+      "epoch": 16,
+      "train_loss": 0.007853026555602487
+    },
+    {
+      "epoch": 17,
+      "train_loss": 0.007034831816504188
+    },
+    {
+      "epoch": 18,
+      "train_loss": 0.0014861271544251101
+    },
+    {
+      "epoch": 19,
+      "train_loss": 0.005570966473896988
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.008677969745295448
+    }
+  ],
+  "note": "Training-set metrics only; this is a deployment checkpoint, not a generalization benchmark."
+}

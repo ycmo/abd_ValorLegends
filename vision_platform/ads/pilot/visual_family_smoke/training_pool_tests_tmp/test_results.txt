@@ -1,0 +1,5 @@
+PASS same_content_cross_split: conflicting explicit split for connected component component:000000: train vs test; group=group_2; content=asset_same
+PASS same_group_key_cross_split: conflicting explicit split for connected component component:000000: train vs test; group=group_same; content=asset_2
+PASS hard_negative_positive_family_label: confirmed hard-negative content has positive family label: [{'instance_id': 'file_1', 'content_id': 'asset_hard', 'families': 'x_mark'}]
+PASS missing_confirmed_hard_negative_content: confirmed hard-negative content missing from manifest: ['asset_missing']
+PASS deterministic_assignments: 870 rows

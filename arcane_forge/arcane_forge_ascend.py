@@ -13,6 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from src.adb_controller import DeviceController
+from src.config import EXPECTED_SCREEN_SIZE
 from src.ocr_utils import get_cached_easyocr_reader, parse_compact_number, read_texts_easyocr
 from src.vision_matcher import VisionMatcher, read_image
 
@@ -237,6 +238,9 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
     ctrl = DeviceController(debug_actions=args.debug_actions)
+    if not ctrl.connect():
+        raise SystemExit("Cannot connect to ADB device")
+    ctrl.ensure_screen_size(EXPECTED_SCREEN_SIZE)
     vm = VisionMatcher()
 
     task = ArcaneForgeAscendTask(ctrl, vm, target_max_stats=args.target_max_stats)

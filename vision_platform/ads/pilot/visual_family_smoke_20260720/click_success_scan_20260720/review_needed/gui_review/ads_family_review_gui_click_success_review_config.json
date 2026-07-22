@@ -1,0 +1,14 @@
+{
+  "instance_list_csv": "vision_platform\\ads\\pilot\\visual_family_smoke_20260720\\click_success_scan_20260720\\review_needed\\gui_review\\review_needed_instances.csv",
+  "instance_list_column": "instance_id",
+  "default_filter": {
+    "status": "all",
+    "family": "all",
+    "source": "all",
+    "path_contains": "",
+    "search": "",
+    "sort": "review_list",
+    "selection_mode": "single",
+    "default_pick": "model suggestion"
+  }
+}

@@ -65,6 +65,8 @@ class AdvancedArenaTests(unittest.TestCase):
         self.assertEqual(parse_season_days("918"), 9)
         self.assertEqual(parse_season_days("10 18"), 10)
         self.assertEqual(parse_season_days("1018"), 10)
+        self.assertEqual(parse_season_days("1371445"), 13)
+        self.assertEqual(parse_season_days("91745"), 9)
 
     def test_execute_fails_and_returns_on_last_day(self):
         controller = FakeController()
@@ -163,6 +165,7 @@ class AdvancedArenaTests(unittest.TestCase):
             ("010.png", "reward_exit_text.png", AdvancedArenaTask.REWARD_EXIT_TEXT_ROI),
             ("011.png", "continue_button.png", AdvancedArenaTask.CONTINUE_ROI),
             ("012.png", "challenge_dialog_close_button.png", AdvancedArenaTask.POPUP_CLOSE_ROI),
+            ("006.png", "season_day_marker.png", AdvancedArenaTask.SEASON_COUNTDOWN_ROI),
         ]
 
         for screenshot_name, asset_name, roi in cases:

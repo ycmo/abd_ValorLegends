@@ -1,0 +1,77 @@
+{
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "threshold": 0.5,
+  "seed": 42,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15,
+  "source_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke\\training_pool\\manifest.csv",
+  "source_manifest_sha256": "d3772b7befd948659052fc7095ab365cfa97c50a1ab4e41f779d65866f147e9e",
+  "trainer_path": "D:\\Projects\\adb_vl\\vision_platform\\ads\\tools\\train_visual_family_smoke.py",
+  "trainer_sha256": "07b79033ee4aa76d7e52101e03201be67ec26ab373f662fec9052cafc0b3aa49",
+  "split_counts": {
+    "train": {
+      "rows": 622,
+      "family_counts": {
+        "google_play": 5,
+        "x_mark": 56,
+        "arrow": 44,
+        "next": 19,
+        "play_triangle": 18,
+        "free": 23,
+        "got": 67,
+        "negative": 412
+      },
+      "groups": 329,
+      "contents": 329,
+      "strong_negative_rows": 50,
+      "strong_negative_contents": 14
+    },
+    "val": {
+      "rows": 136,
+      "family_counts": {
+        "next": 2,
+        "google_play": 2,
+        "arrow": 7,
+        "x_mark": 11,
+        "negative": 82,
+        "play_triangle": 12,
+        "got": 10,
+        "free": 13
+      },
+      "groups": 67,
+      "contents": 67,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    },
+    "test": {
+      "rows": 112,
+      "family_counts": {
+        "x_mark": 9,
+        "arrow": 7,
+        "next": 3,
+        "google_play": 1,
+        "free": 4,
+        "play_triangle": 15,
+        "got": 16,
+        "negative": 60
+      },
+      "groups": 67,
+      "contents": 67,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    }
+  },
+  "strong_negative_weight": 1.0,
+  "strong_negative_content_ids_file": "vision_platform\\ads\\pilot\\visual_family_smoke\\training_pool\\confirmed_strong_hard_negative_content_ids.txt",
+  "manifest_strong_negative_content_ids_count": 14,
+  "assigned_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke\\training_pool\\split_validation_seed42_external_check\\assigned_manifest.csv",
+  "mode": "split_only"
+}

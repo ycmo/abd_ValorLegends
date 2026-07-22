@@ -1,0 +1,28 @@
+{
+  "threshold": 0.5,
+  "prediction_files": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed42\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed43\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed44\\test_predictions.csv"
+  ],
+  "mismatch_rows": 246,
+  "unique_all_mismatches": 82,
+  "unique_false_positive": 73,
+  "unique_false_negative": 39,
+  "mismatches_by_type_family": {
+    "false_negative:arrow": 7,
+    "false_negative:google_play": 4,
+    "false_negative:got": 33,
+    "false_negative:negative": 9,
+    "false_negative:play_triangle": 3,
+    "false_negative:x_mark": 24,
+    "false_positive:arrow": 33,
+    "false_positive:free": 35,
+    "false_positive:google_play": 9,
+    "false_positive:negative": 33,
+    "false_positive:next": 17,
+    "false_positive:play_triangle": 1,
+    "false_positive:x_mark": 38
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke\\review_mismatches"
+}

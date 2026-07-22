@@ -1,0 +1,30 @@
+{
+  "collection_root": "vision_platform\\ads\\runtime_collection\\click_success",
+  "date": "20260719",
+  "device": "cuda",
+  "checkpoints": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family_epochs20\\run_seed42\\best.pt",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family_epochs20\\run_seed43\\best.pt",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family_epochs20\\run_seed44\\best.pt"
+  ],
+  "events_found": 111,
+  "scored_events": 111,
+  "error_events": 0,
+  "proposal_source_counts": {
+    "close_template": 40,
+    "free_ad_template": 32,
+    "got_template": 39
+  },
+  "top_family_counts": {
+    "arrow": 11,
+    "free": 32,
+    "got": 39,
+    "x_mark": 29
+  },
+  "expected_low_confidence_count": 10,
+  "expected_top_disagreement_count": 11,
+  "outputs": {
+    "predictions": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\click_success_scan_20260719_epochs20\\click_success_predictions.csv",
+    "contact_sheets": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\click_success_scan_20260719_epochs20\\contact_sheets"
+  }
+}

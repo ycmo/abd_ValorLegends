@@ -3,6 +3,8 @@ import cv2
 import numpy as np
 from pathlib import Path
 from src.adb_controller import DeviceController
+from src.ui.blockers import BLOCKER_POLICY_SAFE, BlockerHandler
+from src.ui.wait import BLOCKER_PHASE_AFTER_MISS, ScreenWaitDecision, wait_for_screen
 from src.vision_matcher import VisionMatcher
 from src.scene_detector import SceneDetector, Scene
 from src.config import SHARED_ASSETS_DIR, SHARED_BACK_ASSETS_DIR
@@ -17,6 +19,7 @@ class UIRecovery:
         self.controller = controller
         self.matcher = matcher
         self.detector = detector
+        self.blocker = BlockerHandler(controller)
         
         project_root = Path(__file__).resolve().parent.parent
         template_path = project_root / "AwayFromKeyboard" / "assets" / "main_anchor_artifact.png"
@@ -53,6 +56,9 @@ class UIRecovery:
         screen = self.controller.screenshot()
         if screen is None:
             return False
+        if self.blocker.handle_known_blocker(screen, policy=BLOCKER_POLICY_SAFE):
+            print("[UI Recovery] cleared safe blocker before wakeup/login checks")
+            return True
             
         if img_01.exists():
             # 1. 提取綠框 (字樣) 與紅框 (按鈕)
@@ -134,49 +140,55 @@ class UIRecovery:
         return False
 
     def recover_to_main(self, max_attempts=15) -> bool:
-        """
-        嘗試關閉任何彈窗，直到畫面確認為 Scene.MAIN
-        """
+        """Try to return to Scene.MAIN by using normal close/back controls."""
         back_buttons = sorted(SHARED_BACK_ASSETS_DIR.glob("*.png"))
         close_btn = SHARED_ASSETS_DIR / "dialog_close_button.png"
-        
-        for attempt in range(max_attempts):
-            screen = self.controller.screenshot()
+
+        def check_main_or_step_back(screen: np.ndarray, attempt: int) -> ScreenWaitDecision:
             detected = self.detector.detect(screen)
-            
+
             if detected.scene == Scene.MAIN or self._is_artifact_present(screen):
                 print("✅ 成功回到主城 (Scene.MAIN)")
-                return True
-                
-            print(f"[{attempt+1}/{max_attempts}] 目前場景: {detected.scene.value}，嘗試尋找關閉/返回按鈕...")
-            
-            # 優先嘗試 Dialog Close (因為登入後通常是一堆關閉視窗)
+                return ScreenWaitDecision.found(True)
+
+            print(
+                f"[{attempt}/{max_attempts}] current scene: {detected.scene.value}; "
+                "trying close/back route..."
+            )
+
             if close_btn.exists():
                 match = self.matcher.match_template(screen, close_btn, threshold=MATCH_THRESHOLD)
                 if match:
-                    print(f"👉 點擊關閉按鈕 {match.center}")
+                    print(f"[UI Recovery] tapping dialog close {match.center}")
                     self.controller.tap(*match.center)
-                    time.sleep(UI_WAIT_SEC)
-                    continue
+                    return ScreenWaitDecision.retry(sleep_seconds=UI_WAIT_SEC, allow_blocker=False)
 
-            # 其次嘗試 Back Button
             for back_btn in back_buttons:
                 match = self.matcher.match_template(screen, back_btn, threshold=MATCH_THRESHOLD)
                 if match:
-                    print(f"👉 點擊返回按鈕 {match.center}")
+                    print(f"[UI Recovery] tapping back button {match.center}")
                     self.controller.tap(*match.center)
-                    time.sleep(UI_WAIT_SEC)
-                    break
-            else:
-                match = None
-            if match:
-                continue
-                    
-            # 如果都找不到明確的按鈕，就等待一下（動畫或載入中）
-            print(f"⏳ 找不到明確的關閉按鈕，等待 {UI_WAIT_SEC} 秒...")
-            time.sleep(UI_WAIT_SEC)
-            
-        print("❌ 無法自動回到主城")
+                    return ScreenWaitDecision.retry(sleep_seconds=UI_WAIT_SEC, allow_blocker=False)
+
+            print(f"[UI Recovery] no close/back match; waiting {UI_WAIT_SEC:.1f}s")
+            return ScreenWaitDecision.retry(sleep_seconds=UI_WAIT_SEC)
+
+        result = wait_for_screen(
+            self.controller,
+            check_main_or_step_back,
+            label="recover_to_main",
+            max_attempts=max_attempts,
+            poll_seconds=UI_WAIT_SEC,
+            blocker=self.blocker,
+            blocker_policy=BLOCKER_POLICY_SAFE,
+            blocker_phase=BLOCKER_PHASE_AFTER_MISS,
+            blocker_sleep_seconds=UI_WAIT_SEC,
+            sleeper=time.sleep,
+        )
+        if result.matched:
+            return True
+
+        print("[UI Recovery] failed to recover to main")
         return False
 
     def restart_game_app_and_reenter(self, launch_wait_seconds: float = 10.0) -> bool:

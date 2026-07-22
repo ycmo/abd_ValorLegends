@@ -1,0 +1,4 @@
+source_screen,source_session,candidate_count,has_close,top1_true_label,top1_p_close,top1_predicted_close,would_click,top1_correct_for_positive_screen,positive_screen_miss_or_abstain,correct_abstain_on_negative_screen,false_click_on_negative_screen,top1_image_path,top1_bbox,top1_geometry_score
+validation_screen_7,validation_session_7,1,1,close,0.460467,0,0,0,1,0,0,D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\close_12.png,,
+validation_screen_8,validation_session_8,1,1,close,0.523593,1,1,1,0,0,0,D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\close_14.png,,
+validation_screen_9,validation_session_9,1,1,close,0.553326,1,1,1,0,0,0,D:\Projects\adb_vl\ads2\assets\review_crops\close_glyph_candidates\sample\x_rule_calibration\samples\close_17.png,,

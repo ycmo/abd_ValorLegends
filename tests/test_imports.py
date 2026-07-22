@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,7 +27,10 @@ class ImportTests(unittest.TestCase):
 
         independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
         self.assertEqual(set(TASK_ORDER), set(TASK_CLASSES) - independent)
-        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest", "kingdom_vault"})
+        self.assertEqual(
+            independent,
+            {"abyss", "advanced_arena", "hero_contest", "hero_reroll_loop", "kingdom_vault", "wild_treasure"},
+        )
 
     def test_task_specs_are_configured(self):
         from src.config import (
@@ -39,7 +43,10 @@ class ImportTests(unittest.TestCase):
 
         independent = {key for key, spec in TASK_SPECS.items() if spec.kind == "independent"}
         self.assertEqual(set(TASK_ORDER), set(TASK_SPECS) - independent)
-        self.assertEqual(independent, {"abyss", "advanced_arena", "hero_contest", "kingdom_vault"})
+        self.assertEqual(
+            independent,
+            {"abyss", "advanced_arena", "hero_contest", "hero_reroll_loop", "kingdom_vault", "wild_treasure"},
+        )
         self.assertLessEqual(set(RUN_ALL_TASK_ORDER), set(TASK_ORDER))
         self.assertLessEqual(set(RUN_ALL_GO_FIRST_TASK_ORDER), set(TASK_ORDER))
         self.assertNotIn("endless_trial", RUN_ALL_TASK_ORDER)
@@ -97,6 +104,69 @@ class ImportTests(unittest.TestCase):
 
         args = parser.parse_args(["run-all", "--arena-mode", "tickets_20"])
         self.assertEqual(args.arena_mode, "tickets_20")
+
+    def test_arena_mode_override_is_cleared_when_argument_is_omitted(self):
+        from src import main as src_main
+
+        calls = []
+
+        def fake_set_arena_mode_override(mode):
+            calls.append(mode)
+
+        with (
+            unittest.mock.patch("src.account_state.warn_if_midas_activity_active"),
+            unittest.mock.patch("src.tasks.arena.set_arena_mode_override", side_effect=fake_set_arena_mode_override),
+            unittest.mock.patch("src.main.cmd_run_all", return_value=0),
+        ):
+            self.assertEqual(src_main.main(["run-all", "--arena-mode", "daily"]), 0)
+            self.assertEqual(src_main.main(["run-all"]), 0)
+
+        self.assertEqual(calls, ["daily", None])
+
+    def test_bounty_pass_refresh_argument_is_available_on_run_commands(self):
+        from src.main import _build_parser
+
+        parser = _build_parser()
+
+        args = parser.parse_args(["run-current-scene-task", "bounty", "--bounty-use-pass-refresh"])
+        self.assertTrue(args.bounty_use_pass_refresh)
+
+        args = parser.parse_args(["run-all", "--bounty-use-pass-refresh"])
+        self.assertTrue(args.bounty_use_pass_refresh)
+
+    def test_wild_treasure_start_argument_is_available_on_current_scene_command(self):
+        from src.main import _build_parser
+
+        parser = _build_parser()
+
+        args = parser.parse_args([
+            "run-current-scene-task",
+            "wild_treasure",
+            "--wild-treasure-start",
+            "hero-upgrade",
+        ])
+        self.assertEqual(args.wild_treasure_start, "hero-upgrade")
+
+        args = parser.parse_args([
+            "run-current-scene-task",
+            "wild_treasure",
+            "--wild-treasure-start",
+            "skip-upgrade",
+        ])
+        self.assertEqual(args.wild_treasure_start, "skip-upgrade")
+
+    def test_target_count_argument_is_available_on_current_scene_command(self):
+        from src.main import _build_parser
+
+        parser = _build_parser()
+
+        args = parser.parse_args([
+            "run-current-scene-task",
+            "hero_reroll_loop",
+            "--target-count",
+            "7",
+        ])
+        self.assertEqual(args.target_count, 7)
 
 
 if __name__ == "__main__":

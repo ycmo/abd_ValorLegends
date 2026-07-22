@@ -1,0 +1,76 @@
+{
+  "review_count": 1075,
+  "reviewed_count": 1074,
+  "bbox_count": 246,
+  "suspect_count": 29,
+  "distributions": {
+    "domain": {
+      "ads": 918,
+      "game": 35,
+      "shared": 99,
+      "unknown": 22
+    },
+    "image_scope": {
+      "crop": 869,
+      "fullscreen": 177,
+      "unknown": 24,
+      "sheet_or_composite": 4
+    },
+    "representation": {
+      "raw": 1070,
+      "unknown": 1,
+      "edge_glyph": 3
+    },
+    "screen_state": {
+      "uncertain": 881,
+      "actionable": 169,
+      "waiting": 8,
+      "returned_to_game": 16
+    },
+    "sample_role": {
+      "action_target": 164,
+      "uncertain": 199,
+      "non_action_target": 682,
+      "reference_only": 29
+    },
+    "sub_role": {
+      "(blank)": 984,
+      "主城": 8,
+      "王國事件": 3,
+      "play": 38,
+      "free": 8,
+      "禮物屋": 2,
+      "continue": 2,
+      "確定": 2,
+      "got": 18,
+      "back": 1,
+      "異界奇聞": 1,
+      "探寶鏟": 2,
+      "時間沙漏": 3,
+      "王國金庫": 1,
+      "免費": 1
+    },
+    "review_status": {
+      "reviewed": 1074,
+      "pending": 1
+    }
+  },
+  "visual_summary": {
+    "sample_count": 875,
+    "outliers": 30,
+    "contradict_pairs": 40
+  },
+  "pilot_summary": {
+    "manifest": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\action_classifier_dataset\\manifest.csv",
+    "counts": {
+      "close": 119,
+      "not_close": 678
+    },
+    "rows": 797,
+    "annotated_images_exported_into_training": 2
+  },
+  "red_frame_bbox_with_clean_pair": 33,
+  "red_frame_bbox_without_clean_pair": 95,
+  "annotated_images_currently_exported_into_training": 2,
+  "model_disagreement_count": 5
+}

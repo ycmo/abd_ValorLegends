@@ -1,0 +1,10 @@
+﻿weight,seed,none_support,none_false_activation_count,none_false_activation_rate,strong_negative_train_rows,run_dir
+1.0,42,88,15,0.1705,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_1_seed42
+1.0,43,88,13,0.1477,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_1_seed43
+1.0,44,88,37,0.4205,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_1_seed44
+2.0,42,88,15,0.1705,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_2_seed42
+2.0,43,88,13,0.1477,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_2_seed43
+2.0,44,88,37,0.4205,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_2_seed44
+3.0,42,88,15,0.1705,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_3_seed42
+3.0,43,88,13,0.1477,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_3_seed43
+3.0,44,88,37,0.4205,0,D:\Projects\adb_vl\vision_platform\ads\pilot\visual_family_smoke\strong_negative_ablation\weight_3_seed44

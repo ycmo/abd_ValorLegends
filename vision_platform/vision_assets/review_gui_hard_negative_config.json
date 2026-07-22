@@ -1,0 +1,13 @@
+{
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "candidate_crop",
+    "scope": "crop",
+    "source": "vision_platform\\ads\\hard_negative_mining",
+    "status": "all",
+    "visual_status": "unreviewed",
+    "search": "batch_visual_negative_20260714",
+    "sort": "image_signature"
+  },
+  "sort_mode": "image_signature"
+}

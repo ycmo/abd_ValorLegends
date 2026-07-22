@@ -1,0 +1,180 @@
+{
+  "base_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719",
+  "runs": [
+    "run_seed42_cuda",
+    "run_seed43_cuda",
+    "run_seed44_cuda"
+  ],
+  "dataset_summary": {
+    "rows": 1092,
+    "families": [
+      "x_mark",
+      "play_triangle",
+      "google_play",
+      "next",
+      "free",
+      "got",
+      "arrow"
+    ],
+    "family_counts": {
+      "google_play": 9,
+      "x_mark": 122,
+      "arrow": 80,
+      "next": 26,
+      "free": 133,
+      "play_triangle": 45,
+      "got": 151,
+      "negative": 554
+    },
+    "official_label_counts": {
+      "google_play": 9,
+      "x_mark": 122,
+      "arrow": 80,
+      "next": 26,
+      "free": 133,
+      "play_triangle": 45,
+      "got": 151
+    },
+    "none_of_the_above_rows": 554,
+    "combo_counts": {
+      "google_play": 9,
+      "x_mark": 116,
+      "arrow": 60,
+      "next": 6,
+      "free": 131,
+      "play_triangle": 44,
+      "got": 145,
+      "free|play_triangle": 1,
+      "negative": 554,
+      "arrow|next": 20,
+      "got|x_mark": 5,
+      "free|got|x_mark": 1
+    },
+    "domain_counts": {
+      "ads": 1092
+    },
+    "asset_role_counts": {
+      "template": 75,
+      "candidate_crop": 775,
+      "runtime_collection": 242
+    },
+    "source_root_counts": {
+      "ads2\\assets\\1_templates": 75,
+      "vision_platform\\ads\\collections": 222,
+      "vision_platform\\ads\\hard_negative_mining": 553,
+      "vision_platform\\ads\\runtime_collection": 242
+    },
+    "representation_counts": {
+      "raw": 916,
+      "unknown": 176
+    },
+    "unique_content_ids": 593,
+    "unique_groups": 593,
+    "skipped": {
+      "representation:edge_glyph": 3,
+      "only_excluded_family": 7,
+      "not_visual_reviewed": 2
+    },
+    "output_size": 96,
+    "object_ratio": 0.7,
+    "manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\dataset\\manifest.csv"
+  },
+  "none_of_the_above_false_activation_rates": [
+    0.087,
+    0.15,
+    0.1429
+  ],
+  "none_of_the_above_false_activation_rate_avg": 0.1266,
+  "none_of_the_above_false_activation_rate_worst": 0.15,
+  "family_metrics": [
+    {
+      "family": "x_mark",
+      "support_by_seed": "11/26/25",
+      "precision_avg": 0.4353,
+      "precision_worst": 0.2727,
+      "recall_avg": 0.7421,
+      "recall_worst": 0.3462,
+      "f1_avg": 0.5266,
+      "f1_worst": 0.3051,
+      "fp_total": 56,
+      "fn_total": 20
+    },
+    {
+      "family": "play_triangle",
+      "support_by_seed": "3/1/22",
+      "precision_avg": 0.6667,
+      "precision_worst": 0.0,
+      "recall_avg": 0.6364,
+      "recall_worst": 0.0,
+      "f1_avg": 0.6508,
+      "f1_worst": 0.0,
+      "fp_total": 0,
+      "fn_total": 3
+    },
+    {
+      "family": "google_play",
+      "support_by_seed": "1/3/1",
+      "precision_avg": 0.0476,
+      "precision_worst": 0.0,
+      "recall_avg": 0.3333,
+      "recall_worst": 0.0,
+      "f1_avg": 0.0833,
+      "f1_worst": 0.0,
+      "fp_total": 6,
+      "fn_total": 4
+    },
+    {
+      "family": "next",
+      "support_by_seed": "4/1/3",
+      "precision_avg": 0.1881,
+      "precision_worst": 0.125,
+      "recall_avg": 0.8056,
+      "recall_worst": 0.6667,
+      "f1_avg": 0.2963,
+      "f1_worst": 0.2222,
+      "fp_total": 25,
+      "fn_total": 2
+    },
+    {
+      "family": "free",
+      "support_by_seed": "14/16/14",
+      "precision_avg": 0.65,
+      "precision_worst": 0.5833,
+      "recall_avg": 1.0,
+      "recall_worst": 1.0,
+      "f1_avg": 0.7868,
+      "f1_worst": 0.7368,
+      "fp_total": 24,
+      "fn_total": 0
+    },
+    {
+      "family": "got",
+      "support_by_seed": "23/25/16",
+      "precision_avg": 0.9804,
+      "precision_worst": 0.9412,
+      "recall_avg": 0.4427,
+      "recall_worst": 0.3125,
+      "f1_avg": 0.587,
+      "f1_worst": 0.4762,
+      "fp_total": 1,
+      "fn_total": 35
+    },
+    {
+      "family": "arrow",
+      "support_by_seed": "16/11/15",
+      "precision_avg": 0.4073,
+      "precision_worst": 0.2381,
+      "recall_avg": 0.8836,
+      "recall_worst": 0.8667,
+      "f1_avg": 0.5328,
+      "f1_worst": 0.3774,
+      "fp_total": 67,
+      "fn_total": 5
+    }
+  ],
+  "best_checkpoints": {
+    "run_seed42_cuda": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\run_seed42_cuda\\best.pt",
+    "run_seed43_cuda": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\run_seed43_cuda\\best.pt",
+    "run_seed44_cuda": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\run_seed44_cuda\\best.pt"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "instance_list_csv": "vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30\\family_review_instances.csv",
+  "instance_list_column": "instance_id",
+  "default_filter": {
+    "status": "unreviewed",
+    "family": "all",
+    "source": "all",
+    "path_contains": "",
+    "search": "",
+    "sort": "review_list",
+    "selection_mode": "single",
+    "default_pick": "model suggestion"
+  }
+}

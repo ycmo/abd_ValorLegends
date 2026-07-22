@@ -1,0 +1,80 @@
+{
+  "prediction_files": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\run_seed42\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\run_seed43\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\run_seed44\\test_predictions.csv"
+  ],
+  "thresholds": [
+    0.05,
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95
+  ],
+  "best_thresholds": {
+    "x_mark": {
+      "threshold": 0.7,
+      "precision": 0.9008,
+      "recall": 0.9216,
+      "f1": 0.9074,
+      "none_false_activation_rate": 0.0
+    },
+    "play_triangle": {
+      "threshold": 0.7,
+      "precision": 0.9215,
+      "recall": 0.8958,
+      "f1": 0.9084,
+      "none_false_activation_rate": 0.0
+    },
+    "google_play": {
+      "threshold": 0.65,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "none_false_activation_rate": 0.0
+    },
+    "next": {
+      "threshold": 0.55,
+      "precision": 0.1326,
+      "recall": 0.8333,
+      "f1": 0.226,
+      "none_false_activation_rate": 0.0024
+    },
+    "free": {
+      "threshold": 0.25,
+      "precision": 0.7667,
+      "recall": 0.5333,
+      "f1": 0.6119,
+      "none_false_activation_rate": 0.0024
+    },
+    "got": {
+      "threshold": 0.4,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "none_false_activation_rate": 0.0
+    },
+    "arrow": {
+      "threshold": 0.75,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "none_false_activation_rate": 0.0
+    }
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\threshold_sweep"
+}

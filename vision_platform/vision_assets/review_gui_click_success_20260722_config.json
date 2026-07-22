@@ -1,0 +1,20 @@
+{
+  "review_mode": "detector",
+  "default_bbox_source": "click",
+  "click_success_root": "vision_platform\\ads\\runtime_collection\\click_success",
+  "click_success_date": "20260722",
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "runtime_collection",
+    "scope": "fullscreen",
+    "source": "vision_platform\\ads\\runtime_collection",
+    "status": "unreviewed",
+    "visual_status": "all",
+    "search": "click_success_20260722",
+    "sort": "image_signature",
+    "include_path_any": [
+      "pre_click.png"
+    ]
+  },
+  "sort_mode": "image_signature"
+}

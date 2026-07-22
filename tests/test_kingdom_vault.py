@@ -60,6 +60,18 @@ class FakeBlocker:
         return self.calls <= self.handled_count
 
 
+class VisibleButUnclearedBlocker:
+    def __init__(self):
+        self.calls = 0
+
+    def match_reward_acquired(self, _screen):
+        return ("reward_acquired_cyan", 0.35, (495, 170))
+
+    def handle_known_blocker(self, _screen):
+        self.calls += 1
+        return False
+
+
 class KingdomVaultPlanningTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -285,6 +297,25 @@ class KingdomVaultPlanningTests(unittest.TestCase):
         self.assertLess(plan.tap_point[0], plan.badge_center[0])
         self.assertGreater(plan.tap_point[1], plan.badge_center[1])
 
+    def test_battle_pass_collect_all_badge_can_be_on_button_right_edge(self):
+        matches = sorted(
+            Path("log").glob(
+                "20260716_142600_*王國金庫_task/000005_*before_swipe_86_420_86_150_420.png"
+            )
+        )
+        if not matches:
+            self.skipTest("kingdom vault right-edge collect-all badge screenshot is not available")
+        screen = read_image(matches[0], cv2.IMREAD_COLOR)
+        task = KingdomVaultTask(FakeContext(screen))
+
+        plan = task.plan_next_battle_pass_reward_claim(screen)
+
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual(plan.reason, "battle_pass_collect_all")
+        self.assertLess(abs(plan.badge_center[0] - 679), 8)
+        self.assertLess(abs(plan.badge_center[1] - 482), 8)
+
     def test_current_page_claim_has_priority_over_top_tab_and_side_section(self):
         screen = read_image(self.base / "004.png", cv2.IMREAD_COLOR)
         task = KingdomVaultTask(FakeContext(screen))
@@ -391,6 +422,32 @@ class KingdomVaultPlanningTests(unittest.TestCase):
         )
         self.assertEqual(context.controller.taps, [])
         self.assertEqual(message, "kingdom vault cleared; claims=0; tabs=0; sections=0; resets=0")
+
+    def test_clear_loop_clears_known_blocker_before_side_menu_swipe(self):
+        screen = np.zeros((540, 960, 3), dtype=np.uint8)
+        context = FakeContext(screen)
+        context.blocker = FakeBlocker(handled_count=1)
+        task = KingdomVaultTask(context)
+
+        with patch("src.tasks.kingdom_vault.time.sleep"):
+            with self.assertRaisesRegex(Exception, "exceeded"):
+                task.clear_all_notifications(max_steps=1)
+
+        self.assertEqual(context.blocker.calls, 1)
+        self.assertEqual(context.controller.swipes, [])
+
+    def test_clear_loop_does_not_swipe_when_known_blocker_remains_visible(self):
+        screen = np.zeros((540, 960, 3), dtype=np.uint8)
+        context = FakeContext(screen)
+        context.blocker = VisibleButUnclearedBlocker()
+        task = KingdomVaultTask(context)
+
+        with patch("src.tasks.kingdom_vault.time.sleep"):
+            with self.assertRaisesRegex(Exception, "exceeded"):
+                task.clear_all_notifications(max_steps=1)
+
+        self.assertEqual(context.blocker.calls, 1)
+        self.assertEqual(context.controller.swipes, [])
 
     def test_battle_pass_collect_all_is_tapped_once_per_tab(self):
         screen = read_image(self.base / "004.png", cv2.IMREAD_COLOR)

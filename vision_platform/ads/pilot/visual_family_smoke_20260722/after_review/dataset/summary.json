@@ -1,0 +1,30 @@
+{
+  "base_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\dataset_plus_20260719_20260720_weak\\manifest.csv",
+  "click_success_predictions": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\click_success_scan_20260722\\click_success_predictions.csv",
+  "rows_before_weak_append": 1679,
+  "rows_total": 1679,
+  "weak_rows": 193,
+  "family_counts": {
+    "google_play": 9,
+    "x_mark": 222,
+    "arrow": 66,
+    "play_triangle": 183,
+    "next": 6,
+    "free": 152,
+    "got": 265,
+    "negative": 776
+  },
+  "weak_family_counts": {},
+  "skipped_click_success": {
+    "already_human_reviewed_or_in_base": 121
+  },
+  "weak_label_rules": {
+    "close_template + close_11.png": "arrow",
+    "close_template + other templates": "x_mark",
+    "free_ad_template": "free",
+    "got_template": "got",
+    "google_play_template": "google_play",
+    "next_template": "next"
+  },
+  "manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\dataset\\manifest.csv"
+}

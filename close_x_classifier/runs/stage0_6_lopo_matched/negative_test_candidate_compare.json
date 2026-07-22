@@ -1,0 +1,25 @@
+{
+  "stage0_5_candidate_count": 44,
+  "stage0_6_matched_candidate_count": 44,
+  "common_count": 44,
+  "stage0_5_only_count": 0,
+  "stage0_6_only_count": 0,
+  "stage0_5_only": [],
+  "stage0_6_only": [],
+  "same_negative_test_sessions": true,
+  "negative_test_sessions": [
+    "20260710_125824_2204",
+    "20260711_015138_after",
+    "20260711_083159_41740",
+    "20260711_084610_10484",
+    "20260711_085840_33128",
+    "20260711_085849_37020",
+    "20260711_093806_46808",
+    "20260711_095223_69352",
+    "20260711_100541_44936",
+    "20260711_104622_54288",
+    "20260711_105305_54776",
+    "20260711_111910_56400"
+  ],
+  "missing_reason": "Original Stage 0.6 used Python hash() to rank sessions. Python randomizes hash() per process, so the same seed selected different negative sessions than Stage 0.5. The matched rerun uses stable SHA256 scoring plus the Stage 0.5 session JSON override."
+}

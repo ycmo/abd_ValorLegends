@@ -1,0 +1,16 @@
+{
+  "rows": 123,
+  "current_family_counts": {
+    "arrow": 117,
+    "next": 6
+  },
+  "reason_counts": {
+    "current_arrow": 117,
+    "known_double_chevron_template": 2,
+    "current_next": 6
+  },
+  "instances_csv": "vision_platform\\ads\\pilot\\arrow_split_review_20260721\\arrow_split_instances.csv",
+  "contact_sheet": "vision_platform\\ads\\pilot\\arrow_split_review_20260721\\arrow_split_contact_sheet.png",
+  "label_guide": "vision_platform\\ads\\pilot\\arrow_split_review_20260721\\label_guide.md",
+  "config": "vision_platform\\ads\\pilot\\arrow_split_review_20260721\\ads_family_review_gui_arrow_split_config.json"
+}

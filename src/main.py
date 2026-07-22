@@ -34,6 +34,16 @@ from src.vision_matcher import VisionMatcher
 
 
 ARENA_MODE_CHOICES = ("daily", "tickets_20")
+BOUNTY_PASS_REFRESH_ENV = "VL_BOUNTY_USE_PASS_REFRESH"
+WILD_TREASURE_START_CHOICES = (
+    "full",
+    "hero-upgrade",
+    "explore",
+    "skip-upgrade",
+    "battle-setup",
+    "victory",
+    "activation",
+)
 
 
 def _task_help_text() -> str:
@@ -65,6 +75,30 @@ def _add_arena_mode_argument(parser: argparse.ArgumentParser) -> None:
         "--arena-mode",
         choices=ARENA_MODE_CHOICES,
         help="Override Arena mode for this command. default: config/arena.jsonc",
+    )
+
+
+def _add_bounty_refresh_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--bounty-use-pass-refresh",
+        action="store_true",
+        help="Allow bounty to keep refreshing with pass tickets after free refreshes are exhausted.",
+    )
+
+
+def _add_wild_treasure_start_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--wild-treasure-start",
+        choices=WILD_TREASURE_START_CHOICES,
+        help="Resume Wild Treasure from a specific step. Use hero-upgrade after the first reward overlays.",
+    )
+
+
+def _add_target_count_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--target-count",
+        type=int,
+        help="Target hero count for current-scene farming tasks such as hero_reroll_loop.",
     )
 
 
@@ -141,6 +175,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_task_argument(run_task)
     _add_arena_mode_argument(run_task)
+    _add_bounty_refresh_argument(run_task)
 
     run_task_go_first = sub.add_parser(
         "run-task-go-first",
@@ -150,6 +185,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_task_argument(run_task_go_first)
     _add_arena_mode_argument(run_task_go_first)
+    _add_bounty_refresh_argument(run_task_go_first)
 
     run_current_task = sub.add_parser(
         "run-current-task",
@@ -159,6 +195,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_task_argument(run_current_task)
     _add_arena_mode_argument(run_current_task)
+    _add_bounty_refresh_argument(run_current_task)
 
     run_current_scene_task = sub.add_parser(
         "run-current-scene-task",
@@ -168,11 +205,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_task_argument(run_current_scene_task)
     _add_arena_mode_argument(run_current_scene_task)
+    _add_bounty_refresh_argument(run_current_scene_task)
+    _add_wild_treasure_start_argument(run_current_scene_task)
+    _add_target_count_argument(run_current_scene_task)
 
     run_tested_daily = sub.add_parser("run-tested-daily", help="Run only the live-tested daily-task closed loops")
     _add_arena_mode_argument(run_tested_daily)
+    _add_bounty_refresh_argument(run_tested_daily)
     run_all = sub.add_parser("run-all", help=f"Run configured tasks using Go-first search ({RUN_ALL_TASKS_CONFIG})")
     _add_arena_mode_argument(run_all)
+    _add_bounty_refresh_argument(run_all)
     sub.add_parser(
         "probe-guild-dungeon-target",
         help="From the current guild dungeon map, select the preferred outpost/challenge target",
@@ -540,11 +582,15 @@ def main(argv: list = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     warn_if_midas_activity_active(process_name=f"src.main {args.command}")
-    arena_mode = getattr(args, "arena_mode", None)
-    if arena_mode:
-        from src.tasks.arena import set_arena_mode_override
+    from src.tasks.arena import set_arena_mode_override
+    from src.tasks.hero_reroll_loop import set_hero_reroll_target_count
+    from src.tasks.wild_treasure import set_wild_treasure_start_override
 
-        set_arena_mode_override(arena_mode)
+    set_arena_mode_override(getattr(args, "arena_mode", None))
+    set_hero_reroll_target_count(getattr(args, "target_count", None))
+    set_wild_treasure_start_override(getattr(args, "wild_treasure_start", None))
+    if getattr(args, "bounty_use_pass_refresh", False):
+        os.environ[BOUNTY_PASS_REFRESH_ENV] = "1"
     if args.debug_actions:
         auto_label = _default_debug_label(args)
         if auto_label:

@@ -1,0 +1,5 @@
+group,count,positives,negatives,tp,fp,tn,fn,precision,recall,fpr
+validation_session_6,1,1,0,1,0,0,0,1.0,1.0,0.0
+validation_session_7,1,1,0,0,0,0,1,0.0,0.0,0.0
+validation_session_8,1,1,0,1,0,0,0,1.0,1.0,0.0
+validation_session_9,1,1,0,1,0,0,0,1.0,1.0,0.0

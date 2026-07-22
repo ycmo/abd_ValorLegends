@@ -1,0 +1,143 @@
+{
+  "device": "cpu",
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "threshold": 0.5,
+  "split_counts": {
+    "train": {
+      "rows": 591,
+      "family_counts": {
+        "x_mark": 51,
+        "arrow": 43,
+        "google_play": 3,
+        "next": 18,
+        "free": 27,
+        "play_triangle": 43,
+        "got": 65,
+        "negative": 363
+      },
+      "groups": 325
+    },
+    "val": {
+      "rows": 142,
+      "family_counts": {
+        "x_mark": 14,
+        "google_play": 2,
+        "next": 4,
+        "arrow": 4,
+        "got": 14,
+        "play_triangle": 1,
+        "negative": 103,
+        "free": 4
+      },
+      "groups": 69
+    },
+    "test": {
+      "rows": 137,
+      "family_counts": {
+        "google_play": 3,
+        "arrow": 11,
+        "x_mark": 11,
+        "play_triangle": 1,
+        "got": 14,
+        "negative": 88,
+        "next": 2,
+        "free": 9
+      },
+      "groups": 69
+    }
+  },
+  "test_metrics": [
+    {
+      "family": "x_mark",
+      "support": 11,
+      "tp": 5,
+      "fp": 4,
+      "tn": 122,
+      "fn": 6,
+      "precision": 0.5556,
+      "recall": 0.4545,
+      "f1": 0.5
+    },
+    {
+      "family": "play_triangle",
+      "support": 1,
+      "tp": 0,
+      "fp": 0,
+      "tn": 136,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "family": "google_play",
+      "support": 3,
+      "tp": 2,
+      "fp": 4,
+      "tn": 130,
+      "fn": 1,
+      "precision": 0.3333,
+      "recall": 0.6667,
+      "f1": 0.4444
+    },
+    {
+      "family": "next",
+      "support": 2,
+      "tp": 0,
+      "fp": 6,
+      "tn": 129,
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "family": "free",
+      "support": 9,
+      "tp": 9,
+      "fp": 12,
+      "tn": 116,
+      "fn": 0,
+      "precision": 0.4286,
+      "recall": 1.0,
+      "f1": 0.6
+    },
+    {
+      "family": "got",
+      "support": 14,
+      "tp": 6,
+      "fp": 0,
+      "tn": 123,
+      "fn": 8,
+      "precision": 1.0,
+      "recall": 0.4286,
+      "f1": 0.6
+    },
+    {
+      "family": "arrow",
+      "support": 11,
+      "tp": 9,
+      "fp": 11,
+      "tn": 115,
+      "fn": 2,
+      "precision": 0.45,
+      "recall": 0.8182,
+      "f1": 0.5806
+    }
+  ],
+  "test_none_of_the_above": {
+    "support": 88,
+    "false_activation_count": 15,
+    "correct_abstain_count": 73,
+    "false_activation_rate": 0.1705
+  },
+  "best_checkpoint": "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed42\\best.pt"
+}

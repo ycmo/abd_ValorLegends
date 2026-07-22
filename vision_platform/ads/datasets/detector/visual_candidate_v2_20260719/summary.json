@@ -1,0 +1,92 @@
+{
+  "dataset_kind": "ads_detector_visual_candidate_v2",
+  "target_class": "visual_candidate",
+  "db": "vision_platform\\vision_assets\\review\\vision_review.db",
+  "domains": [
+    "ads",
+    "shared"
+  ],
+  "seed": 42,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15,
+  "screens_total": 707,
+  "bbox_total": 751,
+  "complete_positive_screens": 0,
+  "partial_annotation_screens": 323,
+  "verified_empty_negative_screens": 0,
+  "manual_bbox_count": 367,
+  "weak_positive_bbox_count": 384,
+  "classifier_crops_with_positive_family": 557,
+  "classifier_crops_traceable_parent_bbox": 480,
+  "classifier_crops_untraceable_parent_bbox": 77,
+  "classifier_crops_unable_to_trace_parent_bbox": 77,
+  "screen_dataset_role_counts": {
+    "manual_positive": 323,
+    "weak_positive": 384
+  },
+  "annotation_label_kind_counts": {
+    "manual_positive": 367,
+    "weak_positive": 384
+  },
+  "annotation_completeness_counts": {
+    "partial_annotation": 323,
+    "weak_single_bbox": 384
+  },
+  "split_counts_screens": {
+    "val": 43,
+    "train": 581,
+    "test": 83
+  },
+  "split_counts_annotations": {
+    "val": 48,
+    "train": 611,
+    "test": 92
+  },
+  "split_counts_by_dataset_role": {
+    "manual_positive": {
+      "val": 43,
+      "train": 197,
+      "test": 83
+    },
+    "weak_positive": {
+      "train": 384
+    }
+  },
+  "proposal_source_counts": {
+    "free_ad_template": 118,
+    "close_template": 131,
+    "got_template": 133,
+    "close_glyph": 2
+  },
+  "bbox_stats": {
+    "width": {
+      "count": 751,
+      "min": 20.261,
+      "mean": 78.049,
+      "max": 140.026
+    },
+    "height": {
+      "count": 751,
+      "min": 13.266,
+      "mean": 32.665,
+      "max": 68.322
+    },
+    "area": {
+      "count": 751,
+      "min": 371.425,
+      "mean": 2835.239,
+      "max": 6533.0
+    }
+  },
+  "skipped": {
+    "non_actionable_not_verified_empty_returned_to_game": 12,
+    "non_actionable_not_verified_empty_waiting": 5,
+    "weak_parent_already_has_manual_evidence": 185
+  },
+  "notes": [
+    "Detector target is visual_candidate; action_target/click semantics are retained only as legacy provenance.",
+    "Manual positive screens are marked partial_annotation by default; unlabeled regions must not be used as detector background negatives.",
+    "Click-success bboxes are weak_positive and forced to train split only.",
+    "No verified empty negatives are exported unless the review DB explicitly marks a waiting screen has_no_target=1."
+  ]
+}

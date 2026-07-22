@@ -1,0 +1,11 @@
+{
+  "source_rows": 71,
+  "exported_crops": 71,
+  "skipped": {},
+  "db": "vision_platform\\vision_assets\\review\\vision_review.db",
+  "path_contains": "",
+  "filename": "pre_click.png",
+  "domain": "ads",
+  "output_dir": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\reviewed_bbox_crops_20260719_detector_update",
+  "manifest": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\reviewed_bbox_crops_20260719_detector_update\\manifest.csv"
+}

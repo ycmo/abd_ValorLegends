@@ -1,0 +1,11 @@
+{
+  "source_rows": 222,
+  "exported_crops": 222,
+  "skipped": {},
+  "db": "vision_platform\\vision_assets\\review\\vision_review.db",
+  "path_contains": "click_success_20260718_",
+  "filename": "pre_click.png",
+  "domain": "all",
+  "output_dir": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\reviewed_bbox_crops_20260718",
+  "manifest": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\reviewed_bbox_crops_20260718\\manifest.csv"
+}

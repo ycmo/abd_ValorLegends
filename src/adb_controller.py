@@ -255,7 +255,11 @@ class DeviceController:
             stderr = result.stderr.decode("utf-8", errors="ignore").strip()
             if attempt == 0 and self._reconnect_after_adb_error(stderr):
                 continue
-            raise AdbControllerError(stderr)
+            if stderr:
+                raise AdbControllerError(stderr)
+            raise AdbControllerError(
+                f"screencap failed with returncode {result.returncode}: {' '.join(cmd)}"
+            )
 
         if not result.stdout:
             raise AdbControllerError("screencap returned empty output")
@@ -387,7 +391,7 @@ class DeviceController:
         debug_lines = self._consume_next_tap_debug_lines()
         debug_boxes = self._consume_next_tap_debug_boxes()
         debug_lines = self._action_debug_lines(action_name) + debug_lines
-        self._save_action_debug_screenshot(
+        self._try_save_action_debug_screenshot(
             f"before_{action_name}",
             tap_point=tap_point,
             swipe_points=swipe_points,
@@ -396,7 +400,7 @@ class DeviceController:
         )
         result = self._run(args, timeout=timeout)
         time.sleep(0.6)
-        self._save_action_debug_screenshot(
+        self._try_save_action_debug_screenshot(
             f"after_{action_name}",
             tap_point=tap_point,
             swipe_points=swipe_points,
@@ -404,6 +408,30 @@ class DeviceController:
             debug_boxes=debug_boxes,
         )
         return result
+
+    def _try_save_action_debug_screenshot(
+        self,
+        label: str,
+        *,
+        tap_point: Optional[Tuple[int, int]] = None,
+        swipe_points: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None,
+        debug_lines: Sequence[str] = (),
+        debug_boxes: Sequence[Tuple[int, int, int, int, str]] = (),
+    ) -> Optional[Path]:
+        try:
+            return self._save_action_debug_screenshot(
+                label,
+                tap_point=tap_point,
+                swipe_points=swipe_points,
+                debug_lines=debug_lines,
+                debug_boxes=debug_boxes,
+            )
+        except AdbControllerError as exc:
+            self.logger.log(
+                f"Action debug screenshot skipped ({label}): {exc}",
+                force=True,
+            )
+            return None
 
     def _save_action_debug_screenshot(
         self,

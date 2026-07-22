@@ -12,8 +12,8 @@ if str(PROJECT_ROOT) not in sys.path:
 # 若獨立測試時尚未有 DeviceController，使用延遲載入或在測試中 Mock
 try:
     from src.adb_controller import DeviceController
-    from src.blocker_handler import BlockerHandler
     from src.config import ACTION_DEBUG_ENABLED, SHARED_ASSETS_DIR
+    from src.ui.blockers import BlockerHandler
 except ImportError:
     DeviceController = None
     BlockerHandler = None

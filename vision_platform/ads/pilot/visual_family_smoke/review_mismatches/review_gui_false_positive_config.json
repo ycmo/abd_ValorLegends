@@ -1,0 +1,14 @@
+{
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "all",
+    "scope": "crop",
+    "source": "all",
+    "status": "all",
+    "visual_status": "all",
+    "search": "",
+    "sort": "image_signature",
+    "include_instance_ids_file": "vision_platform\\ads\\pilot\\visual_family_smoke\\review_mismatches\\false_positive_instance_ids.txt"
+  },
+  "sort_mode": "image_signature"
+}

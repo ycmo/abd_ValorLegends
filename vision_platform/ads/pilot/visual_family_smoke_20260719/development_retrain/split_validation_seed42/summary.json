@@ -1,0 +1,77 @@
+{
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "threshold": 0.5,
+  "seed": 42,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15,
+  "source_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\training_pool\\manifest.csv",
+  "source_manifest_sha256": "d57b63b1aaa84679bc411fbeb974507abd4bdf658d9a9881eafae27db0aa5ea6",
+  "trainer_path": "D:\\Projects\\adb_vl\\vision_platform\\ads\\tools\\train_visual_family_smoke.py",
+  "trainer_sha256": "07b79033ee4aa76d7e52101e03201be67ec26ab373f662fec9052cafc0b3aa49",
+  "split_counts": {
+    "train": {
+      "rows": 764,
+      "family_counts": {
+        "x_mark": 95,
+        "arrow": 51,
+        "next": 14,
+        "google_play": 5,
+        "free": 81,
+        "play_triangle": 28,
+        "got": 107,
+        "negative": 400
+      },
+      "groups": 419,
+      "contents": 419,
+      "strong_negative_rows": 28,
+      "strong_negative_contents": 12
+    },
+    "val": {
+      "rows": 172,
+      "family_counts": {
+        "google_play": 1,
+        "arrow": 15,
+        "next": 7,
+        "x_mark": 17,
+        "got": 21,
+        "free": 35,
+        "negative": 81,
+        "play_triangle": 1
+      },
+      "groups": 87,
+      "contents": 87,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    },
+    "test": {
+      "rows": 156,
+      "family_counts": {
+        "google_play": 3,
+        "x_mark": 10,
+        "arrow": 14,
+        "play_triangle": 16,
+        "got": 23,
+        "free": 17,
+        "next": 5,
+        "negative": 73
+      },
+      "groups": 87,
+      "contents": 87,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    }
+  },
+  "strong_negative_weight": 1.0,
+  "strong_negative_content_ids_file": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\training_pool\\confirmed_strong_hard_negative_content_ids.txt",
+  "manifest_strong_negative_content_ids_count": 12,
+  "assigned_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain\\split_validation_seed42\\assigned_manifest.csv",
+  "mode": "split_only"
+}

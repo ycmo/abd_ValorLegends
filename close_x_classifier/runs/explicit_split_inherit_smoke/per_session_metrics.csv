@@ -1,0 +1,2 @@
+group,count,positives,negatives,tp,fp,tn,fn,precision,recall,fpr
+inherit_session_4,1,1,0,1,0,0,0,1.0,1.0,0.0

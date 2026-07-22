@@ -1,0 +1,28 @@
+{
+  "db": "vision_platform\\vision_assets\\review\\vision_review.db",
+  "db_backup": "",
+  "checkpoint": "vision_platform\\ads\\pilot\\visual_family_smoke\\strong_negative_ablation\\weight_3_seed42\\best.pt",
+  "device": "cpu",
+  "threshold": 0.5,
+  "uncertain_low": 0.15,
+  "assignment_policy": "top1",
+  "output_size": 96,
+  "object_ratio": 0.7,
+  "matched_assets": 222,
+  "scored_assets": 222,
+  "written_pending_suggestions": 0,
+  "skipped_reviewed": 0,
+  "suggestion_counts": {
+    "arrow": 21,
+    "free": 172,
+    "google_play": 7,
+    "uncertain": 3,
+    "x_mark": 19
+  },
+  "top_family_counts": {
+    "arrow": 23,
+    "free": 173,
+    "google_play": 7,
+    "x_mark": 19
+  }
+}

@@ -12,6 +12,8 @@ import subprocess
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.adb_controller import DeviceController
 from src.account_state import write_current_account
+from src.ui.blockers import BLOCKER_POLICY_SAFE, BlockerHandler
+from src.ui.wait import BLOCKER_PHASE_AFTER_MISS, ScreenWaitDecision, wait_for_screen
 from src.vision_matcher import VisionMatcher
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -283,30 +285,32 @@ def select_server(controller: DeviceController, matcher: VisionMatcher, server_n
 
 def detect_current_account(controller: DeviceController, matcher: VisionMatcher) -> str:
     print("📸 開始起點辨識：檢查當前帳號...")
+    account_templates = {
+        "14": "000_頭像14.png",
+        "311": "000_頭像311.png",
+        "em3": "000_頭像em3.png",
+        "tiger": "000_頭像tiger.png",
+    }
     current_acc_name = None
 
     for i in range(5):
         screen = controller.screenshot()
-        res_14 = matcher.match_template(screen, TEMPLATES_DIR / "000_頭像14.png", threshold=0.7)
-        res_311 = matcher.match_template(screen, TEMPLATES_DIR / "000_頭像311.png", threshold=0.7)
-        res_em3 = matcher.match_template(screen, TEMPLATES_DIR / "000_頭像em3.png", threshold=0.7)
-        res_tiger = matcher.match_template(screen, TEMPLATES_DIR / "000_頭像tiger.png", threshold=0.7)
+        matches = []
+        for account_name, template_name in account_templates.items():
+            result = matcher.match_template(screen, TEMPLATES_DIR / template_name, threshold=0.7)
+            if result:
+                matches.append((account_name, result))
 
-        if res_em3:
-            current_acc_name = "em3"
-            print(f"✅ 辨識成功！當前帳號為：em3 (信心度: {res_em3.confidence:.4f})")
-            break
-        elif res_311:
-            current_acc_name = "311"
-            print(f"✅ 辨識成功！當前帳號為：311 (信心度: {res_311.confidence:.4f})")
-            break
-        elif res_14:
-            current_acc_name = "14"
-            print(f"✅ 辨識成功！當前帳號為：14 (信心度: {res_14.confidence:.4f})")
-            break
-        elif res_tiger:
-            current_acc_name = "tiger"
-            print(f"✅ 辨識成功！當前帳號為：tiger (信心度: {res_tiger.confidence:.4f})")
+        if matches:
+            matches.sort(key=lambda item: item[1].confidence, reverse=True)
+            current_acc_name, best_result = matches[0]
+            match_detail = ", ".join(
+                f"{name}={result.confidence:.4f}" for name, result in matches
+            )
+            print(
+                f"✅ 辨識成功！當前帳號為：{current_acc_name} "
+                f"(信心度: {best_result.confidence:.4f}; candidates: {match_detail})"
+            )
             break
 
         print(f"⏳ 尚無法辨識當前帳號，等待 1 秒後重試... ({i+1}/5)")
@@ -393,21 +397,18 @@ def login_with_email(controller: DeviceController, matcher: VisionMatcher, accou
 
 def wait_for_game_entry(controller: DeviceController, matcher: VisionMatcher) -> bool:
     print(f"⏳ 開始檢查「進入遊戲」按鈕或「掛機寶箱」 (最大等待 {MAX_GAME_ENTRY_ATTEMPTS} 輪)...")
-    enter_game_success = False
-    
-    for loop_idx in range(MAX_GAME_ENTRY_ATTEMPTS):
-        screen = controller.screenshot()
-        
+    t_009 = TEMPLATES_DIR / "009_登入掛機成功_0.png"
+    t_006 = TEMPLATES_DIR / "006_登入畫面使用者條款_0.png"
+    blocker = BlockerHandler(controller)
+
+    def check_entry_state(screen, attempt: int) -> ScreenWaitDecision:
         # 1. 優先檢查是否已經進入掛機畫面 (009)
-        t_009 = TEMPLATES_DIR / "009_登入掛機成功_0.png"
         res_009 = matcher.match_template(screen, t_009, threshold=0.5)
         if res_009:
             print("🎉 偵測到掛機寶箱畫面，登入成功！")
-            enter_game_success = True
-            break
-            
+            return ScreenWaitDecision.found(True)
+
         # 2. 檢查是否在進入遊戲的畫面 (改為判斷靜態的使用者條款，避免動畫干擾)
-        t_006 = TEMPLATES_DIR / "006_登入畫面使用者條款_0.png"
         res_006 = matcher.match_template(screen, t_006, threshold=0.8, debug_mode=True)
         if res_006:
             print(f"👉 偵測到使用者條款 (確認在登入主畫面)，盲點進入遊戲座標 {COORDS['enter_game']}...")
@@ -427,21 +428,35 @@ def wait_for_game_entry(controller: DeviceController, matcher: VisionMatcher) ->
                 print(f"⚠️ 依舊偵測到使用者條款，再次點擊... ({tap_idx+1}/{max_taps})")
 
             # 結束微迴圈後，直接 continue 交由外層大迴圈繼續偵測掛機寶箱
-            continue
-            
-        # 3. 兩者都沒找到 (轉場動畫、黑屏、載入中)，純等待
-        print(f"👉 載入中 (未找到按鈕與寶箱)，等待 10 秒... (第 {loop_idx+1}/{MAX_GAME_ENTRY_ATTEMPTS} 輪)")
-        time.sleep(10)
+            return ScreenWaitDecision.retry(sleep_seconds=0.0, allow_blocker=False)
 
-    if not enter_game_success:
-        print("⚠️ 等待掛機畫面超時，可能遇到異常彈出視窗或網路卡死，準備截圖並中斷執行！")
+        # 3. 兩者都沒找到 (轉場動畫、黑屏、載入中)，純等待
+        print(f"👉 載入中 (未找到按鈕與寶箱)，等待 10 秒... (第 {attempt}/{MAX_GAME_ENTRY_ATTEMPTS} 輪)")
+        return ScreenWaitDecision.retry()
+
+    def save_timeout_debug(screen) -> None:
         try:
-            debug_screen = controller.screenshot()
             debug_path = TEMPLATES_DIR.parent / "error_debug_timeout_loops.png"
-            save_and_show_debug(debug_screen, debug_path)
+            save_and_show_debug(screen, debug_path)
         except Exception as e:
             print(f"除錯截圖處理失敗: {e}")
-            
+
+    result = wait_for_screen(
+        controller,
+        check_entry_state,
+        label="switch_account.wait_for_game_entry",
+        max_attempts=MAX_GAME_ENTRY_ATTEMPTS,
+        poll_seconds=10,
+        blocker=blocker,
+        blocker_policy=BLOCKER_POLICY_SAFE,
+        blocker_phase=BLOCKER_PHASE_AFTER_MISS,
+        blocker_sleep_seconds=1.0,
+        on_timeout=save_timeout_debug,
+        sleeper=time.sleep,
+    )
+
+    if not result.matched:
+        print("⚠️ 等待掛機畫面超時，可能遇到異常彈出視窗或網路卡死，準備截圖並中斷執行！")
         raise RuntimeError(f"異常卡死：{MAX_GAME_ENTRY_ATTEMPTS}輪等待掛機畫面超時，已中斷流程！")
 
     print("✅ 帳號切換流程結束！")
@@ -530,6 +545,15 @@ def switch_account(account_name: str, debug_mode: bool = False) -> bool:
         
     success = wait_for_game_entry(controller, matcher)
     if success:
+        verified_acc_name = detect_current_account(controller, matcher)
+        if verified_acc_name != account_name:
+            if verified_acc_name:
+                write_current_account(verified_acc_name, source="switch_account.verify_mismatch")
+            print(
+                f"❌ 帳號切換驗證失敗：目標={account_name}，"
+                f"實際辨識={verified_acc_name or 'unknown'}"
+            )
+            return False
         write_current_account(account_name, source="switch_account.switched")
     return success
 

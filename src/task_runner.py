@@ -357,6 +357,33 @@ class BaseTask:
             return False
         return bool(blocker.handle_known_blocker(screen))
 
+    def handle_known_blocker_before_scan(self, screen=None) -> bool:
+        """Handle a visible blocker before task recognition or scrolling.
+
+        If the blocker is visibly present but still reports failure after tapping,
+        callers should still discard the current screen and retry from a fresh
+        screenshot instead of continuing recognition on a blocked view.
+        """
+        blocker = getattr(self.context, "blocker", None)
+        if blocker is None:
+            return False
+        if self._known_blocker_visible(blocker, screen):
+            blocker.handle_known_blocker(screen)
+            return True
+        return bool(blocker.handle_known_blocker(screen))
+
+    @staticmethod
+    def _known_blocker_visible(blocker: object, screen) -> bool:
+        if screen is None:
+            return False
+        for method_name in ("match_reward_acquired", "match_popup_close", "match_gift_pack"):
+            method = getattr(blocker, method_name, None)
+            if method is None:
+                continue
+            if method(screen) is not None:
+                return True
+        return False
+
     def _execute_and_return(self, started: float) -> TaskRunResult:
         result = self.execute_from_current_scene()
         try:

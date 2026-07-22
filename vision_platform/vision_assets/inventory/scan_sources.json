@@ -1,0 +1,31 @@
+{
+  "active_sources": [
+    "manual_screenshots/",
+    "assets/",
+    "ads2/assets/1_templates/",
+    "ads2/assets/2_communication/",
+    "ads2/assets/3_reference_screens/",
+    "ads2/assets/review_crops/",
+    "close_x_classifier/review/",
+    "close_x_classifier/data/review_batch_001/",
+    "close_x_classifier/data/stage0_6_canonical_object_poc/",
+    "close_x_classifier/runtime_collection*",
+    "vision_platform/ads/runtime_collection/",
+    "vision_platform/ads/hard_negative_mining/",
+    "vision_platform/ads/collections/",
+    "log/",
+    "AwayFromKeyboard/route_screenshots/",
+    "AwayFromKeyboard/debug/",
+    "switch_account/templates/",
+    "arcane_forge/assets/manual/",
+    "magic_shop/assets/",
+    "AwayFromKeyboard/integration_task/templates/"
+  ],
+  "deferred_sources": [
+    "ads/",
+    "legacy/",
+    "call_of_the_gale/debug_output/",
+    "close_x_classifier/runs/",
+    "Screw/"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "source_manifest": "vision_platform\\ads\\pilot\\visual_family_smoke\\dataset\\manifest.csv",
+  "source_manifest_sha256": "dd96f62b786f8f7f5ba511c90ae984de66454cd0634904e76f6aafd098c38b97",
+  "false_activation_csv": "vision_platform\\ads\\pilot\\visual_family_smoke\\none_of_the_above_review\\none_of_the_above_false_activations.csv",
+  "false_activation_csv_sha256": "5e28795f15fe8290b5309b7c0fbd950db1a286b4c33b1597d229f7996801ecb0",
+  "tool_sha256": "44cc83c74ebd372aabe9cabf77a4f79997ab9e8b8437dce2b2391804d08b82d2",
+  "rows": 870,
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "family_counts": {
+    "google_play": 8,
+    "x_mark": 76,
+    "arrow": 58,
+    "next": 24,
+    "free": 40,
+    "play_triangle": 45,
+    "got": 93,
+    "negative": 554
+  },
+  "none_of_the_above_rows": 554,
+  "confirmed_strong_hard_negative_contents": 14,
+  "confirmed_strong_hard_negative_rows": 50,
+  "confirmed_strong_hard_negative_instances": 50,
+  "missing_hard_negative_contents": [],
+  "non_negative_hard_rows": 0,
+  "split_counts_in_manifest": {
+    "auto": 820,
+    "train": 50
+  },
+  "false_activation_rows": 65,
+  "false_activation_unique_instances": 50,
+  "false_activation_triggered_by_family": {
+    "google_play": 4,
+    "arrow": 9,
+    "x_mark": 42,
+    "free": 10
+  },
+  "evaluation_status": "development_pool_not_final_holdout",
+  "manifest": "vision_platform\\ads\\pilot\\visual_family_smoke\\training_pool\\manifest.csv"
+}

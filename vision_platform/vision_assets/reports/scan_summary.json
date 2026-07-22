@@ -1,0 +1,68 @@
+{
+  "scan_time": "2026-07-22T05:17:49.485475+00:00",
+  "total_instances": 15558,
+  "unique_instance_ids": 15558,
+  "unique_content_ids": 11832,
+  "total_images": 15558,
+  "total_size_bytes": 3267090526,
+  "successful_images": 15558,
+  "error_images": 0,
+  "unique_hashes": 11832,
+  "files_in_duplicate_groups": 5185,
+  "redundant_copies": 3726,
+  "duplicate_groups": 1459,
+  "reclaimable_bytes": 153074811,
+  "cross_source_duplicate_groups": 196,
+  "cross_role_duplicate_groups": 185,
+  "counts_by_extension": {
+    ".png": 15558
+  },
+  "counts_by_vision_domain": {
+    "ads": 10830,
+    "game": 829,
+    "unknown": 3899
+  },
+  "counts_by_asset_role": {
+    "candidate_crop": 3455,
+    "debug_output": 46,
+    "manual_screenshot": 457,
+    "reference_screen": 106,
+    "review_asset": 707,
+    "runtime_collection": 6519,
+    "runtime_log": 3872,
+    "template": 396
+  },
+  "counts_by_image_scope": {
+    "crop": 9317,
+    "fullscreen": 6188,
+    "sheet_or_composite": 14,
+    "unknown": 39
+  },
+  "counts_by_source_root": {
+    "AwayFromKeyboard\\debug": 46,
+    "AwayFromKeyboard\\integration_task\\templates": 11,
+    "AwayFromKeyboard\\route_screenshots": 65,
+    "ads2\\assets\\1_templates": 95,
+    "ads2\\assets\\2_communication": 240,
+    "ads2\\assets\\3_reference_screens": 41,
+    "ads2\\assets\\review_crops": 562,
+    "arcane_forge\\assets\\manual": 22,
+    "assets": 242,
+    "close_x_classifier\\data\\review_batch_001": 466,
+    "close_x_classifier\\data\\stage0_6_canonical_object_poc": 237,
+    "close_x_classifier\\review": 1,
+    "close_x_classifier\\runtime_collection_dryrun": 6,
+    "close_x_classifier\\runtime_collection_dryrun_2": 6,
+    "close_x_classifier\\runtime_collection_dryrun_abstain": 5,
+    "close_x_classifier\\runtime_collection_dryrun_all": 9,
+    "close_x_classifier\\runtime_collection_dryrun_max3": 8,
+    "close_x_classifier\\runtime_collection_test_x": 4,
+    "log": 3872,
+    "magic_shop\\assets": 19,
+    "manual_screenshots": 435,
+    "switch_account\\templates": 29,
+    "vision_platform\\ads\\collections": 1680,
+    "vision_platform\\ads\\hard_negative_mining": 976,
+    "vision_platform\\ads\\runtime_collection": 6481
+  }
+}

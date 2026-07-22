@@ -1,0 +1,15 @@
+{
+  "selected_rows": 133,
+  "pending_rows": 65,
+  "model_issue_rows": 68,
+  "reason_counts": {
+    "positive_low_mean_prob": 14,
+    "seed_mismatch": 68,
+    "seed_disagreement": 53,
+    "non_truth_high_mean_prob": 37,
+    "none_false_activation": 20,
+    "latest_collection_pending": 65
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260721\\high_value_review_20260721_after_latest30",
+  "gui_config": "vision_platform\\ads\\pilot\\visual_family_smoke_20260721\\high_value_review_20260721_after_latest30\\ads_family_review_gui_config.json"
+}

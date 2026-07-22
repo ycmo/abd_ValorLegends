@@ -1,0 +1,32 @@
+{
+  "eval_split": "test",
+  "splits": {
+    "train": 2,
+    "val": 3,
+    "test": 1
+  },
+  "threshold": 0.5,
+  "confusion": {
+    "tp": 1,
+    "fp": 0,
+    "tn": 0,
+    "fn": 0
+  },
+  "per_screen": {
+    "total_screens": 1,
+    "complete_screens": 1,
+    "excluded_incomplete_screens": 0
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 1.0062047243118286,
+      "val_loss": 0.43057996844066676,
+      "tp": 3,
+      "fp": 0,
+      "tn": 0,
+      "fn": 0
+    }
+  ],
+  "note": "Tiny datasets are smoke tests only; use group-held-out data before trusting deployment."
+}

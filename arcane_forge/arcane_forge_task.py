@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from src.adb_controller import DeviceController
+from src.config import EXPECTED_SCREEN_SIZE
 from src.vision_matcher import VisionMatcher
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,9 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
     ctrl = DeviceController(debug_actions=args.debug_actions)
+    if not ctrl.connect():
+        raise SystemExit("Cannot connect to ADB device")
+    ctrl.ensure_screen_size(EXPECTED_SCREEN_SIZE)
     vm = VisionMatcher()
 
     task = ArcaneForgeTask(ctrl, vm)

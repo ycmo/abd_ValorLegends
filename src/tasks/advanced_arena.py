@@ -24,6 +24,7 @@ class AdvancedArenaTask(BaseTask):
         "reward_exit_text.png",
         "continue_button.png",
         "challenge_dialog_close_button.png",
+        "season_day_marker.png",
     )
 
     MAIN_CHALLENGE_ROI: Roi = (540, 470, 220, 60)
@@ -111,7 +112,13 @@ class AdvancedArenaTask(BaseTask):
     def _read_season_days_or_fail(self) -> int:
         screen = self.context.controller.screenshot()
         combined, confidence = self._read_green_countdown_digits(screen)
-        days = parse_season_days(combined)
+        marker_days, marker_text, marker_confidence = self._read_days_before_day_marker(screen)
+        if marker_days is not None:
+            days = marker_days
+            method = "day_marker"
+        else:
+            days = parse_season_days(combined)
+            method = "full_countdown_ocr"
         self.context.controller.save_annotated_debug(
             "advanced_arena_season_countdown",
             screen,
@@ -120,6 +127,9 @@ class AdvancedArenaTask(BaseTask):
                 f"roi={self.SEASON_COUNTDOWN_ROI}",
                 f"text={combined or '<empty>'}",
                 f"confidence={confidence:.3f}",
+                f"day_marker_text={marker_text or '<empty>'}",
+                f"day_marker_confidence={marker_confidence:.3f}",
+                f"method={method}",
                 f"days={days if days is not None else 'unknown'}",
             ],
             boxes=[(*self.SEASON_COUNTDOWN_ROI, "status_roi")],
@@ -128,6 +138,9 @@ class AdvancedArenaTask(BaseTask):
         self._log(
             "Advanced Arena season countdown "
             f"text={combined or '<empty>'} confidence={confidence:.3f} "
+            f"day_marker_text={marker_text or '<empty>'} "
+            f"day_marker_confidence={marker_confidence:.3f} "
+            f"method={method} "
             f"days={days if days is not None else 'unknown'}"
         )
         if days is None:
@@ -135,7 +148,33 @@ class AdvancedArenaTask(BaseTask):
         return days
 
     def _read_green_countdown_digits(self, screen) -> tuple[str, float]:
-        x, y, w, h = self.SEASON_COUNTDOWN_ROI
+        return self._read_green_digits(screen, self.SEASON_COUNTDOWN_ROI)
+
+    def _read_days_before_day_marker(self, screen) -> tuple[Optional[int], str, float]:
+        marker = self._match_asset_on_screen(
+            screen,
+            "season_day_marker.png",
+            roi=self.SEASON_COUNTDOWN_ROI,
+            threshold=0.82,
+        )
+        if marker is None:
+            return None, "", 0.0
+        countdown_x, countdown_y, _countdown_w, countdown_h = self.SEASON_COUNTDOWN_ROI
+        marker_x, _marker_y, _marker_w, _marker_h = marker.bbox
+        day_digits_width = max(0, marker_x - countdown_x)
+        if day_digits_width <= 0:
+            return None, "", marker.confidence
+        text, confidence = self._read_green_digits(
+            screen,
+            (countdown_x, countdown_y, day_digits_width, countdown_h),
+        )
+        digits = re.findall(r"\d+", text)
+        if not digits:
+            return None, text, max(marker.confidence, confidence)
+        return int("".join(digits)), text, min(marker.confidence, confidence)
+
+    def _read_green_digits(self, screen, roi: Roi) -> tuple[str, float]:
+        x, y, w, h = roi
         crop = screen[y : y + h, x : x + w]
         if crop.size == 0:
             return "", 0.0
@@ -384,6 +423,13 @@ def parse_season_days(text: str) -> Optional[int]:
             digits_only = digit_groups[0]
             if len(digits_only) <= 2 and int(digits_only) <= 24:
                 return 0
+            if len(digits_only) >= 5:
+                two_digit_days = int(digits_only[:2])
+                if 1 <= two_digit_days <= 60:
+                    return two_digit_days
+                one_digit_days = int(digits_only[:1])
+                if 1 <= one_digit_days <= 9:
+                    return one_digit_days
             if len(digits_only) == 3:
                 hours = int(digits_only[-2:])
                 if hours <= 23:

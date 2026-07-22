@@ -1,0 +1,210 @@
+{
+  "device": "cpu",
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "threshold": 0.5,
+  "split_counts": {
+    "train": {
+      "rows": 591,
+      "family_counts": {
+        "x_mark": 51,
+        "arrow": 43,
+        "google_play": 3,
+        "next": 18,
+        "free": 27,
+        "play_triangle": 43,
+        "got": 65,
+        "negative": 363
+      },
+      "groups": 325,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    },
+    "val": {
+      "rows": 142,
+      "family_counts": {
+        "x_mark": 14,
+        "google_play": 2,
+        "next": 4,
+        "arrow": 4,
+        "got": 14,
+        "play_triangle": 1,
+        "negative": 103,
+        "free": 4
+      },
+      "groups": 69,
+      "strong_negative_rows": 0,
+      "strong_negative_contents": 0
+    },
+    "test": {
+      "rows": 137,
+      "family_counts": {
+        "google_play": 3,
+        "arrow": 11,
+        "x_mark": 11,
+        "play_triangle": 1,
+        "got": 14,
+        "negative": 88,
+        "next": 2,
+        "free": 9
+      },
+      "groups": 69,
+      "strong_negative_rows": 50,
+      "strong_negative_contents": 14
+    }
+  },
+  "test_metrics": [
+    {
+      "family": "x_mark",
+      "support": 11,
+      "tp": 9,
+      "fp": 8,
+      "tn": 118,
+      "fn": 2,
+      "precision": 0.5294,
+      "recall": 0.8182,
+      "f1": 0.6429
+    },
+    {
+      "family": "play_triangle",
+      "support": 1,
+      "tp": 0,
+      "fp": 0,
+      "tn": 136,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "family": "google_play",
+      "support": 3,
+      "tp": 1,
+      "fp": 0,
+      "tn": 134,
+      "fn": 2,
+      "precision": 1.0,
+      "recall": 0.3333,
+      "f1": 0.5
+    },
+    {
+      "family": "next",
+      "support": 2,
+      "tp": 2,
+      "fp": 8,
+      "tn": 127,
+      "fn": 0,
+      "precision": 0.2,
+      "recall": 1.0,
+      "f1": 0.3333
+    },
+    {
+      "family": "free",
+      "support": 9,
+      "tp": 9,
+      "fp": 12,
+      "tn": 116,
+      "fn": 0,
+      "precision": 0.4286,
+      "recall": 1.0,
+      "f1": 0.6
+    },
+    {
+      "family": "got",
+      "support": 14,
+      "tp": 0,
+      "fp": 0,
+      "tn": 123,
+      "fn": 14,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "family": "arrow",
+      "support": 11,
+      "tp": 8,
+      "fp": 3,
+      "tn": 123,
+      "fn": 3,
+      "precision": 0.7273,
+      "recall": 0.7273,
+      "f1": 0.7273
+    }
+  ],
+  "test_none_of_the_above": {
+    "support": 88,
+    "false_activation_count": 13,
+    "correct_abstain_count": 75,
+    "false_activation_rate": 0.1477
+  },
+  "test_none_of_the_above_family": [
+    {
+      "family": "x_mark",
+      "none_support": 88,
+      "false_activation_count": 4,
+      "false_activation_rate": 0.0455,
+      "mean_prob_on_none": 0.3005,
+      "max_prob_on_none": 0.59189
+    },
+    {
+      "family": "play_triangle",
+      "none_support": 88,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.17753,
+      "max_prob_on_none": 0.40208
+    },
+    {
+      "family": "google_play",
+      "none_support": 88,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.16848,
+      "max_prob_on_none": 0.33364
+    },
+    {
+      "family": "next",
+      "none_support": 88,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.20894,
+      "max_prob_on_none": 0.46259
+    },
+    {
+      "family": "free",
+      "none_support": 88,
+      "false_activation_count": 9,
+      "false_activation_rate": 0.1023,
+      "mean_prob_on_none": 0.23754,
+      "max_prob_on_none": 0.51013
+    },
+    {
+      "family": "got",
+      "none_support": 88,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.14914,
+      "max_prob_on_none": 0.43485
+    },
+    {
+      "family": "arrow",
+      "none_support": 88,
+      "false_activation_count": 0,
+      "false_activation_rate": 0.0,
+      "mean_prob_on_none": 0.18975,
+      "max_prob_on_none": 0.498
+    }
+  ],
+  "strong_negative_weight": 3.0,
+  "strong_negative_content_ids_file": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke\\strong_negative_ablation\\strong_hard_negative_content_ids.txt",
+  "strong_negative_content_ids_count": 14,
+  "best_checkpoint": "D:\\Projects\\adb_vl\\vision_platform\\ads\\pilot\\visual_family_smoke\\strong_negative_ablation\\weight_3_seed43\\best.pt"
+}

@@ -18,6 +18,7 @@
   - symptom: which detector/action failed or misfired;
   - root cause: why that detector/action had authority over the flow;
   - boundary: whether the logic belongs in the primary path or a recovery path.
+- On this Windows/PowerShell workspace, avoid passing Chinese paths directly through Python here-strings or command-line arguments. PowerShell/codepage handling can corrupt non-ASCII path literals. Prefer discovering paths inside Python with `Path.glob()`/directory iteration, passing ASCII parent directories plus filters, or reading target paths from UTF-8 files. This saves time and avoids false file-not-found/debug churn.
 
 ## Current Workspace Shape
 

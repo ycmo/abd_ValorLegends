@@ -53,7 +53,7 @@ class KingdomVaultTask(BaseTask):
     RIGHT_TOP_TAB_BADGE_ROI: Roi = (200, 20, 730, 80)
     SPECIAL_OFFER_TAB_BADGE_ROI: Roi = (200, 35, 580, 60)
     BATTLE_PASS_TAB_BADGE_ROI: Roi = (220, 20, 690, 70)
-    BATTLE_PASS_COLLECT_ALL_BADGE_ROI: Roi = (540, 455, 85, 55)
+    BATTLE_PASS_COLLECT_ALL_BADGE_ROI: Roi = (540, 455, 160, 55)
     BATTLE_PASS_REWARD_BADGE_ROI: Roi = (180, 100, 740, 360)
     BATTLE_PASS_RESET_BUTTON_ROI: Roi = (555, 470, 130, 45)
     RESET_CONFIRM_DIALOG_ROI: Roi = (240, 95, 485, 350)
@@ -122,6 +122,10 @@ class KingdomVaultTask(BaseTask):
         side_swipes = 0
         for _ in range(max_steps):
             screen = self.context.controller.screenshot()
+            if self.handle_known_blocker_before_scan(screen):
+                side_swipes = 0
+                continue
+
             plan = self.plan_next_action(screen)
             if plan is not None:
                 self._tap_plan(plan)

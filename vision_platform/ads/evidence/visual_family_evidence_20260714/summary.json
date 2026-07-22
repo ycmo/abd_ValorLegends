@@ -1,0 +1,29 @@
+{
+  "total_evidence_rows": 1492,
+  "counts_by_family_label": {
+    "attribute_only::unknown": 149,
+    "close_x::positive": 154,
+    "attribute_only::positive": 116,
+    "attribute_only::negative": 196,
+    "close_x::negative": 877
+  },
+  "counts_by_close_x_negative_type": {
+    "family_unknown": 266,
+    "general_non_action_crop": 195,
+    "confirmed_close_x_negative": 665,
+    "close_x_proposal_hard_negative": 212
+  },
+  "counts_by_evidence_role": {
+    "heuristic": 129,
+    "template reference": 47,
+    "human": 899,
+    "runtime weak evidence": 205,
+    "mined hard negative": 212
+  },
+  "outputs": {
+    "manifest": "D:\\Projects\\adb_vl\\vision_platform\\ads\\evidence\\visual_family_evidence_20260714\\ads_visual_family_evidence.csv",
+    "close_x_positive_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\evidence\\visual_family_evidence_20260714\\contact_sheets\\close_x_positive.png",
+    "close_x_hard_negative_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\evidence\\visual_family_evidence_20260714\\contact_sheets\\close_x_hard_negative.png",
+    "close_x_unknown_sheet": "D:\\Projects\\adb_vl\\vision_platform\\ads\\evidence\\visual_family_evidence_20260714\\contact_sheets\\close_x_unknown.png"
+  }
+}

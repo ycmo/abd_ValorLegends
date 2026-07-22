@@ -1,0 +1,31 @@
+{
+  "collection_name": "close_x_proposal_collection_pilot",
+  "scope_warning": "This first pilot primarily uses close template/glyph/geometry-X proposal sources; it is not a complete seven-family detector evaluation.",
+  "screens_scanned": 30,
+  "raw_proposals": 275,
+  "candidates_kept": 243,
+  "candidates_overflow": 0,
+  "proposal_source_counts": {
+    "geometry_x": 186,
+    "close_template": 89
+  },
+  "expected_family_by_source": {
+    "close_template": [
+      "x_mark",
+      "google_play",
+      "next",
+      "arrow"
+    ],
+    "close_glyph": [
+      "google_play",
+      "next"
+    ],
+    "geometry_x": [
+      "x_mark"
+    ]
+  },
+  "output_dir": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30",
+  "raw_proposals_csv": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30\\raw_proposals.csv",
+  "manifest_csv": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30\\manifest.csv",
+  "overflow_csv": "D:\\Projects\\adb_vl\\vision_platform\\ads\\collections\\close_x_proposal_collection_pilot_20260720_latest30\\overflow.csv"
+}

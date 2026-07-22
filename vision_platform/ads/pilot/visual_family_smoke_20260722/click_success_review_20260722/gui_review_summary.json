@@ -1,0 +1,8 @@
+{
+  "review_needed": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\click_success_scan_20260722\\click_success_predictions.csv",
+  "input_rows": 121,
+  "matched_instances": 121,
+  "missing": [],
+  "instances_csv": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\click_success_review_20260722\\review_needed_instances.csv",
+  "config": "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\click_success_review_20260722\\ads_family_review_gui_click_success_review_config.json"
+}

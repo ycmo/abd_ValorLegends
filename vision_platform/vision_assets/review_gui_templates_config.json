@@ -1,0 +1,17 @@
+{
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "template",
+    "scope": "crop",
+    "source": "ads2\\assets\\1_templates",
+    "status": "all",
+    "visual_status": "unreviewed",
+    "search": "",
+    "sort": "image_signature",
+    "exclude_path_any": [
+      "scene_anchors",
+      "nav_icons"
+    ]
+  },
+  "sort_mode": "image_signature"
+}

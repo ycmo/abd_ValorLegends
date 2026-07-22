@@ -13,6 +13,8 @@ TIMEOUT_KEYS = ("timeout", "task_timeout")
 HARD_TIMEOUT_KEYS = ("hard_timeout", "task_hard_timeout")
 SETTINGS_SECTIONS = ("settings", "設定", "__settings__")
 START_TIME_KEYS = ("start_time", "開始時間", "start")
+SKIP_ACCOUNTS_KEYS = ("skip_accounts", "skip_account", "跳過帳號")
+ONLY_ACCOUNTS_KEYS = ("only_accounts", "only_account", "限定帳號")
 
 def get_config_file() -> Path:
     override = os.environ.get(CONFIG_ENV_VAR)
@@ -110,3 +112,33 @@ def get_task_hard_timeout(task_name: str) -> str | None:
         if value:
             return value
     return None
+
+def _split_account_list(value: str) -> set[str]:
+    normalized = value.replace(",", " ").replace(";", " ")
+    return {item.strip() for item in normalized.split() if item.strip()}
+
+def _get_task_account_list(task_name: str, keys: tuple[str, ...]) -> set[str]:
+    config = _get_config()
+    if not config.has_section(task_name):
+        return set()
+    accounts: set[str] = set()
+    for key in keys:
+        value = config.get(task_name, key, fallback="").strip()
+        if value:
+            accounts.update(_split_account_list(value))
+    return accounts
+
+def get_skip_accounts(task_name: str) -> set[str]:
+    return _get_task_account_list(task_name, SKIP_ACCOUNTS_KEYS)
+
+def get_only_accounts(task_name: str) -> set[str]:
+    return _get_task_account_list(task_name, ONLY_ACCOUNTS_KEYS)
+
+def is_task_allowed_for_account(task_name: str, account: str) -> bool:
+    skip_accounts = get_skip_accounts(task_name)
+    if account in skip_accounts:
+        return False
+    only_accounts = get_only_accounts(task_name)
+    if only_accounts and account not in only_accounts:
+        return False
+    return True

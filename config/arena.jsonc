@@ -1,6 +1,7 @@
 {
   // Active mode. Override per command with --arena-mode if needed.
-  "mode": "daily",
+ "mode": "tickets_20",
+ //"mode": "daily",
 
   // Future account-aware tuning. AFK/switch_account can write this file later.
   "active_account_file": "AwayFromKeyboard/state/current_account.json",

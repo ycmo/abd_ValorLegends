@@ -107,6 +107,38 @@ class AdbControllerDebugAnnotationTests(unittest.TestCase):
             ["before_tap_12_34", "after_tap_12_34"],
         )
 
+    def test_tap_debug_before_screenshot_failure_does_not_skip_tap(self):
+        controller = DeviceController(debug_actions=True)
+
+        with patch.object(
+            controller,
+            "_save_action_debug_screenshot",
+            side_effect=[AdbControllerError("screencap failed"), None],
+        ), patch.object(
+            controller,
+            "_run",
+            return_value=subprocess.CompletedProcess(["adb"], 0, stdout="", stderr=""),
+        ) as run_cmd:
+            controller.tap(12, 34)
+
+        run_cmd.assert_called_once()
+
+    def test_tap_debug_after_screenshot_failure_does_not_fail_tap(self):
+        controller = DeviceController(debug_actions=True)
+
+        with patch.object(
+            controller,
+            "_save_action_debug_screenshot",
+            side_effect=[None, AdbControllerError("screencap failed")],
+        ), patch.object(
+            controller,
+            "_run",
+            return_value=subprocess.CompletedProcess(["adb"], 0, stdout="", stderr=""),
+        ) as run_cmd:
+            controller.tap(12, 34)
+
+        run_cmd.assert_called_once()
+
     def test_shell_input_keyevent_debug_saves_before_and_after_images(self):
         controller = DeviceController(debug_actions=True)
         image = np.zeros((20, 20, 3), dtype=np.uint8)

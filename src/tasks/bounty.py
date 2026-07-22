@@ -7,6 +7,7 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import os
 
 from src.account_state import read_current_account
 from src.config import LOG_DIR, TASK_SPECS, TAP_COOLDOWN_SECONDS
@@ -41,11 +42,16 @@ class BountyTask(BaseTask):
         "task_label.png",
         "bounty_board_anchor.png",
         "claim_all_button.png",
+        "claim_all_button_alt.png",
+        "accept_all_button.png",
         "accept_button.png",
         "accept_button2.png",
         "dispatch_all_button.png",
         "start_button.png",
         "free_refresh_label.png",
+        "pass_refresh_button.png",
+        "insufficient_resource.png",
+        "insufficient_resource2.png",
     )
     task_scene_anchors = (
         TaskSceneAnchor("bounty_board_anchor.png", threshold=0.86, roi=(560, 100, 220, 50)),
@@ -69,15 +75,35 @@ class BountyTask(BaseTask):
     DIRECT_WHITELIST_THRESHOLD = 0.95
     NEAR_WHITELIST_THRESHOLD = 0.74
     BLACKLIST_THRESHOLD = 0.86
+    CLAIM_ALL_SETTLE_SECONDS = 2.0
+    CLAIM_ALL_THRESHOLD = 0.84
+    CLAIM_ALL_MARGIN = 0.08
+    USE_PASS_REFRESH_ENV = "VL_BOUNTY_USE_PASS_REFRESH"
+    INSUFFICIENT_RESOURCE_ROI: Roi = (760, 130, 180, 330)
+
+    def __init__(self, context, *, use_pass_refresh: Optional[bool] = None):
+        super().__init__(context)
+        self.use_pass_refresh = (
+            self._env_flag(self.USE_PASS_REFRESH_ENV)
+            if use_pass_refresh is None
+            else bool(use_pass_refresh)
+        )
 
     def execute(self) -> str:
         claimed = 0
         accepted = 0
         refreshes = 0
+        pass_refreshes = 0
         unknown = 0
 
         for _ in range(self.MAX_STEPS):
             screen = self.context.controller.screenshot()
+            if self._is_resource_insufficient(screen):
+                return (
+                    f"bounty completed; claimed={claimed}; accepted={accepted}; "
+                    f"refreshes={refreshes}; pass_refreshes={pass_refreshes}; "
+                    f"unknown={unknown}; resource_insufficient=1"
+                )
 
             if self._tap_claim_all_if_present(screen):
                 claimed += 1
@@ -99,13 +125,23 @@ class BountyTask(BaseTask):
                     f"refreshes={refreshes}; unknown={unknown}; dispatch_unavailable=1"
                 )
 
-            if refreshes < self.MAX_REFRESHES and self._tap_free_refresh_if_present(screen):
+            refresh = self._tap_refresh_if_present(screen)
+            if refresh == "free":
                 refreshes += 1
                 continue
+            if refresh == "pass":
+                pass_refreshes += 1
+                continue
 
-            return f"bounty completed; claimed={claimed}; accepted={accepted}; refreshes={refreshes}; unknown={unknown}"
+            return (
+                f"bounty completed; claimed={claimed}; accepted={accepted}; "
+                f"refreshes={refreshes}; pass_refreshes={pass_refreshes}; unknown={unknown}"
+            )
 
-        return f"bounty stopped after max steps; claimed={claimed}; accepted={accepted}; refreshes={refreshes}; unknown={unknown}"
+        return (
+            f"bounty stopped after max steps; claimed={claimed}; accepted={accepted}; "
+            f"refreshes={refreshes}; pass_refreshes={pass_refreshes}; unknown={unknown}"
+        )
 
     def plan_row(self, screen: np.ndarray, row: BountyRow) -> BountyDecision:
         stars = self.count_stars(screen, row.star_roi)
@@ -204,23 +240,44 @@ class BountyTask(BaseTask):
         return True
 
     def _tap_claim_all_if_present(self, screen: np.ndarray) -> bool:
-        match = self.context.matcher.match_template(
+        claim = self._best_claim_all_match(screen)
+        accept_all = self.context.matcher.best_template_match(
             screen,
-            self.asset_path("claim_all_button.png"),
-            threshold=0.84,
+            self.asset_path("accept_all_button.png"),
             roi=self.CLAIM_ALL_ROI,
-            check_brightness=False,
         )
-        if match is None:
+        accept_all_confidence = accept_all.confidence if accept_all is not None else 0.0
+        if (
+            claim is None
+            or claim.confidence < self.CLAIM_ALL_THRESHOLD
+            or claim.confidence < accept_all_confidence + self.CLAIM_ALL_MARGIN
+        ):
             return False
         self.context.controller.annotate_next_tap_debug(
-            lines=[f"bounty claim all confidence={match.confidence:.3f}"],
-            boxes=[(*match.bbox, "go")],
+            lines=[
+                f"bounty claim all confidence={claim.confidence:.3f}",
+                f"accept_all={accept_all_confidence:.3f}",
+            ],
+            boxes=[(*claim.bbox, "go")],
         )
-        self.context.controller.tap(*match.center)
-        time.sleep(TAP_COOLDOWN_SECONDS)
+        self.context.controller.tap(*claim.center)
+        time.sleep(self.CLAIM_ALL_SETTLE_SECONDS)
         self.handle_known_blocker_once()
         return True
+
+    def _best_claim_all_match(self, screen: np.ndarray) -> Optional[MatchResult]:
+        best: Optional[MatchResult] = None
+        for asset_name in ("claim_all_button.png", "claim_all_button_alt.png"):
+            match = self.context.matcher.best_template_match(
+                screen,
+                self.asset_path(asset_name),
+                roi=self.CLAIM_ALL_ROI,
+            )
+            if match is None:
+                continue
+            if best is None or match.confidence > best.confidence:
+                best = match
+        return best
 
     def _tap_free_refresh_if_present(self, screen: np.ndarray) -> bool:
         match = self.context.matcher.match_template(
@@ -240,6 +297,51 @@ class BountyTask(BaseTask):
         time.sleep(TAP_COOLDOWN_SECONDS)
         self._confirm_refresh_if_prompted()
         return True
+
+    def _tap_refresh_if_present(self, screen: np.ndarray) -> Optional[str]:
+        if self._is_resource_insufficient(screen):
+            return None
+        if self._tap_free_refresh_if_present(screen):
+            return "free"
+        if not self.use_pass_refresh:
+            return None
+        if self._tap_pass_refresh_if_present(screen):
+            return "pass"
+        return None
+
+    def _tap_pass_refresh_if_present(self, screen: np.ndarray) -> bool:
+        if self._is_resource_insufficient(screen):
+            return False
+        match = self.context.matcher.match_template(
+            screen,
+            self.asset_path("pass_refresh_button.png"),
+            threshold=0.84,
+            roi=self.FREE_REFRESH_ROI,
+            check_brightness=False,
+        )
+        if match is None:
+            return False
+        self.context.controller.annotate_next_tap_debug(
+            lines=[f"bounty pass refresh confidence={match.confidence:.3f}"],
+            boxes=[(*match.bbox, "go")],
+        )
+        self.context.controller.tap(850, 492)
+        time.sleep(TAP_COOLDOWN_SECONDS)
+        self._confirm_refresh_if_prompted()
+        return True
+
+    def _is_resource_insufficient(self, screen: np.ndarray) -> bool:
+        for asset_name in ("insufficient_resource.png", "insufficient_resource2.png"):
+            match = self.context.matcher.match_template(
+                screen,
+                self.asset_path(asset_name),
+                threshold=0.84,
+                roi=self.INSUFFICIENT_RESOURCE_ROI,
+                check_brightness=False,
+            )
+            if match is not None:
+                return True
+        return False
 
     def _confirm_refresh_if_prompted(self) -> bool:
         screen = self.context.controller.screenshot()
@@ -404,3 +506,7 @@ class BountyTask(BaseTask):
         if match is None:
             return "none"
         return f"{match.template_path.name}:{match.confidence:.3f}"
+
+    @staticmethod
+    def _env_flag(name: str) -> bool:
+        return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}

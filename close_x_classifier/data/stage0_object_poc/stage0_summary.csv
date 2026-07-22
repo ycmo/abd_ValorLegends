@@ -1,0 +1,6 @@
+seed,train_close,train_not_close,val_close,val_not_close,test_close,test_not_close,tp,fp,tn,fn,precision,recall,negative_false_click,positive_success,positive_miss
+42,15,122,1,49,2,47,2,0,47,0,1.0,1.0,0,2,0
+43,15,122,1,49,2,47,2,1,46,0,0.6666666666666666,1.0,1,2,0
+44,7,107,9,54,2,57,2,3,54,0,0.4,1.0,3,2,0
+45,14,138,2,44,2,36,2,1,35,0,0.6666666666666666,1.0,1,2,0
+46,14,138,2,44,2,36,2,2,34,0,0.5,1.0,2,2,0

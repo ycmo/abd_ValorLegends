@@ -1,0 +1,70 @@
+{
+  "rows": 1365,
+  "families": [
+    "x_mark",
+    "play_triangle",
+    "google_play",
+    "next",
+    "free",
+    "got",
+    "arrow"
+  ],
+  "family_counts": {
+    "google_play": 9,
+    "x_mark": 139,
+    "arrow": 117,
+    "next": 6,
+    "free": 46,
+    "play_triangle": 131,
+    "got": 151,
+    "negative": 766
+  },
+  "official_label_counts": {
+    "google_play": 9,
+    "x_mark": 139,
+    "arrow": 117,
+    "next": 6,
+    "free": 46,
+    "play_triangle": 131,
+    "got": 151
+  },
+  "none_of_the_above_rows": 766,
+  "combo_counts": {
+    "google_play": 9,
+    "x_mark": 139,
+    "arrow": 117,
+    "next": 6,
+    "free": 46,
+    "play_triangle": 131,
+    "got": 151,
+    "negative": 766
+  },
+  "domain_counts": {
+    "ads": 1365
+  },
+  "asset_role_counts": {
+    "template": 75,
+    "candidate_crop": 1018,
+    "runtime_collection": 272
+  },
+  "source_root_counts": {
+    "ads2\\assets\\1_templates": 75,
+    "vision_platform\\ads\\collections": 465,
+    "vision_platform\\ads\\hard_negative_mining": 553,
+    "vision_platform\\ads\\runtime_collection": 272
+  },
+  "representation_counts": {
+    "raw": 916,
+    "unknown": 449
+  },
+  "unique_content_ids": 796,
+  "unique_groups": 796,
+  "skipped": {
+    "representation:edge_glyph": 3,
+    "only_excluded_family": 7,
+    "not_visual_reviewed": 2
+  },
+  "output_size": 96,
+  "object_ratio": 0.7,
+  "manifest": "vision_platform\\ads\\pilot\\visual_family_smoke_20260721\\after_high_value_review\\dataset\\manifest.csv"
+}

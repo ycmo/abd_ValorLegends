@@ -1,0 +1,890 @@
+[
+  {
+    "seed": 42,
+    "subset": "train",
+    "rows": 764,
+    "none": {
+      "support": 400,
+      "false_activation_count": 53,
+      "correct_abstain_count": 347,
+      "false_activation_rate": 0.1325
+    },
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 90,
+        "tp": 82,
+        "fp": 70,
+        "tn": 604,
+        "fn": 8,
+        "precision": 0.5395,
+        "recall": 0.9111,
+        "f1": 0.6777
+      },
+      {
+        "family": "play_triangle",
+        "support": 75,
+        "tp": 74,
+        "fp": 60,
+        "tn": 629,
+        "fn": 1,
+        "precision": 0.5522,
+        "recall": 0.9867,
+        "f1": 0.7081
+      },
+      {
+        "family": "google_play",
+        "support": 5,
+        "tp": 3,
+        "fp": 3,
+        "tn": 756,
+        "fn": 2,
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1": 0.5455
+      },
+      {
+        "family": "next",
+        "support": 4,
+        "tp": 4,
+        "fp": 62,
+        "tn": 698,
+        "fn": 0,
+        "precision": 0.0606,
+        "recall": 1.0,
+        "f1": 0.1143
+      },
+      {
+        "family": "free",
+        "support": 33,
+        "tp": 32,
+        "fp": 9,
+        "tn": 722,
+        "fn": 1,
+        "precision": 0.7805,
+        "recall": 0.9697,
+        "f1": 0.8649
+      },
+      {
+        "family": "got",
+        "support": 106,
+        "tp": 60,
+        "fp": 3,
+        "tn": 655,
+        "fn": 46,
+        "precision": 0.9524,
+        "recall": 0.566,
+        "f1": 0.7101
+      },
+      {
+        "family": "arrow",
+        "support": 51,
+        "tp": 46,
+        "fp": 64,
+        "tn": 649,
+        "fn": 5,
+        "precision": 0.4182,
+        "recall": 0.902,
+        "f1": 0.5714
+      }
+    ],
+    "none_family": [
+      {
+        "family": "x_mark",
+        "none_support": 400,
+        "false_activation_count": 34,
+        "false_activation_rate": 0.085,
+        "mean_prob_on_none": 0.24246,
+        "max_prob_on_none": 0.76579
+      },
+      {
+        "family": "play_triangle",
+        "none_support": 400,
+        "false_activation_count": 18,
+        "false_activation_rate": 0.045,
+        "mean_prob_on_none": 0.13683,
+        "max_prob_on_none": 0.69207
+      },
+      {
+        "family": "google_play",
+        "none_support": 400,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.005,
+        "mean_prob_on_none": 0.10755,
+        "max_prob_on_none": 0.53489
+      },
+      {
+        "family": "next",
+        "none_support": 400,
+        "false_activation_count": 6,
+        "false_activation_rate": 0.015,
+        "mean_prob_on_none": 0.19658,
+        "max_prob_on_none": 0.56744
+      },
+      {
+        "family": "free",
+        "none_support": 400,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.12505,
+        "max_prob_on_none": 0.46817
+      },
+      {
+        "family": "got",
+        "none_support": 400,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.06645,
+        "max_prob_on_none": 0.34577
+      },
+      {
+        "family": "arrow",
+        "none_support": 400,
+        "false_activation_count": 12,
+        "false_activation_rate": 0.03,
+        "mean_prob_on_none": 0.17239,
+        "max_prob_on_none": 0.73675
+      }
+    ]
+  },
+  {
+    "seed": 42,
+    "subset": "train_strong_hard_negative",
+    "rows": 28,
+    "none": {
+      "support": 28,
+      "false_activation_count": 19,
+      "correct_abstain_count": 9,
+      "false_activation_rate": 0.6786
+    },
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 0,
+        "tp": 0,
+        "fp": 13,
+        "tn": 15,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "play_triangle",
+        "support": 0,
+        "tp": 0,
+        "fp": 4,
+        "tn": 24,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "google_play",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "next",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "free",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "got",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "arrow",
+        "support": 0,
+        "tp": 0,
+        "fp": 9,
+        "tn": 19,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ],
+    "none_family": [
+      {
+        "family": "x_mark",
+        "none_support": 28,
+        "false_activation_count": 13,
+        "false_activation_rate": 0.4643,
+        "mean_prob_on_none": 0.49926,
+        "max_prob_on_none": 0.76579
+      },
+      {
+        "family": "play_triangle",
+        "none_support": 28,
+        "false_activation_count": 4,
+        "false_activation_rate": 0.1429,
+        "mean_prob_on_none": 0.24975,
+        "max_prob_on_none": 0.59284
+      },
+      {
+        "family": "google_play",
+        "none_support": 28,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.0714,
+        "mean_prob_on_none": 0.2176,
+        "max_prob_on_none": 0.53489
+      },
+      {
+        "family": "next",
+        "none_support": 28,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.0714,
+        "mean_prob_on_none": 0.31374,
+        "max_prob_on_none": 0.56744
+      },
+      {
+        "family": "free",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.22203,
+        "max_prob_on_none": 0.45934
+      },
+      {
+        "family": "got",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.2034,
+        "max_prob_on_none": 0.31779
+      },
+      {
+        "family": "arrow",
+        "none_support": 28,
+        "false_activation_count": 9,
+        "false_activation_rate": 0.3214,
+        "mean_prob_on_none": 0.39621,
+        "max_prob_on_none": 0.64078
+      }
+    ]
+  },
+  {
+    "seed": 43,
+    "subset": "train",
+    "rows": 725,
+    "none": {
+      "support": 385,
+      "false_activation_count": 53,
+      "correct_abstain_count": 332,
+      "false_activation_rate": 0.1377
+    },
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 89,
+        "tp": 78,
+        "fp": 56,
+        "tn": 580,
+        "fn": 11,
+        "precision": 0.5821,
+        "recall": 0.8764,
+        "f1": 0.6996
+      },
+      {
+        "family": "play_triangle",
+        "support": 46,
+        "tp": 45,
+        "fp": 49,
+        "tn": 630,
+        "fn": 1,
+        "precision": 0.4787,
+        "recall": 0.9783,
+        "f1": 0.6429
+      },
+      {
+        "family": "google_play",
+        "support": 4,
+        "tp": 2,
+        "fp": 3,
+        "tn": 718,
+        "fn": 2,
+        "precision": 0.4,
+        "recall": 0.5,
+        "f1": 0.4444
+      },
+      {
+        "family": "next",
+        "support": 4,
+        "tp": 3,
+        "fp": 61,
+        "tn": 660,
+        "fn": 1,
+        "precision": 0.0469,
+        "recall": 0.75,
+        "f1": 0.0882
+      },
+      {
+        "family": "free",
+        "support": 31,
+        "tp": 29,
+        "fp": 10,
+        "tn": 684,
+        "fn": 2,
+        "precision": 0.7436,
+        "recall": 0.9355,
+        "f1": 0.8286
+      },
+      {
+        "family": "got",
+        "support": 102,
+        "tp": 43,
+        "fp": 6,
+        "tn": 617,
+        "fn": 59,
+        "precision": 0.8776,
+        "recall": 0.4216,
+        "f1": 0.5695
+      },
+      {
+        "family": "arrow",
+        "support": 64,
+        "tp": 59,
+        "fp": 38,
+        "tn": 623,
+        "fn": 5,
+        "precision": 0.6082,
+        "recall": 0.9219,
+        "f1": 0.7329
+      }
+    ],
+    "none_family": [
+      {
+        "family": "x_mark",
+        "none_support": 385,
+        "false_activation_count": 33,
+        "false_activation_rate": 0.0857,
+        "mean_prob_on_none": 0.21578,
+        "max_prob_on_none": 0.68262
+      },
+      {
+        "family": "play_triangle",
+        "none_support": 385,
+        "false_activation_count": 17,
+        "false_activation_rate": 0.0442,
+        "mean_prob_on_none": 0.14151,
+        "max_prob_on_none": 0.69495
+      },
+      {
+        "family": "google_play",
+        "none_support": 385,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.14857,
+        "max_prob_on_none": 0.4386
+      },
+      {
+        "family": "next",
+        "none_support": 385,
+        "false_activation_count": 15,
+        "false_activation_rate": 0.039,
+        "mean_prob_on_none": 0.16008,
+        "max_prob_on_none": 0.67346
+      },
+      {
+        "family": "free",
+        "none_support": 385,
+        "false_activation_count": 6,
+        "false_activation_rate": 0.0156,
+        "mean_prob_on_none": 0.1409,
+        "max_prob_on_none": 0.73609
+      },
+      {
+        "family": "got",
+        "none_support": 385,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.07807,
+        "max_prob_on_none": 0.38778
+      },
+      {
+        "family": "arrow",
+        "none_support": 385,
+        "false_activation_count": 1,
+        "false_activation_rate": 0.0026,
+        "mean_prob_on_none": 0.13028,
+        "max_prob_on_none": 0.63845
+      }
+    ]
+  },
+  {
+    "seed": 43,
+    "subset": "train_strong_hard_negative",
+    "rows": 28,
+    "none": {
+      "support": 28,
+      "false_activation_count": 17,
+      "correct_abstain_count": 11,
+      "false_activation_rate": 0.6071
+    },
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 0,
+        "tp": 0,
+        "fp": 13,
+        "tn": 15,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "play_triangle",
+        "support": 0,
+        "tp": 0,
+        "fp": 4,
+        "tn": 24,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "google_play",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "next",
+        "support": 0,
+        "tp": 0,
+        "fp": 9,
+        "tn": 19,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "free",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "got",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "arrow",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ],
+    "none_family": [
+      {
+        "family": "x_mark",
+        "none_support": 28,
+        "false_activation_count": 13,
+        "false_activation_rate": 0.4643,
+        "mean_prob_on_none": 0.42451,
+        "max_prob_on_none": 0.68262
+      },
+      {
+        "family": "play_triangle",
+        "none_support": 28,
+        "false_activation_count": 4,
+        "false_activation_rate": 0.1429,
+        "mean_prob_on_none": 0.26741,
+        "max_prob_on_none": 0.63332
+      },
+      {
+        "family": "google_play",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.2261,
+        "max_prob_on_none": 0.4386
+      },
+      {
+        "family": "next",
+        "none_support": 28,
+        "false_activation_count": 9,
+        "false_activation_rate": 0.3214,
+        "mean_prob_on_none": 0.35813,
+        "max_prob_on_none": 0.53797
+      },
+      {
+        "family": "free",
+        "none_support": 28,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.0714,
+        "mean_prob_on_none": 0.26983,
+        "max_prob_on_none": 0.58979
+      },
+      {
+        "family": "got",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.19716,
+        "max_prob_on_none": 0.38778
+      },
+      {
+        "family": "arrow",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.29545,
+        "max_prob_on_none": 0.47507
+      }
+    ]
+  },
+  {
+    "seed": 44,
+    "subset": "train",
+    "rows": 729,
+    "none": {
+      "support": 394,
+      "false_activation_count": 50,
+      "correct_abstain_count": 344,
+      "false_activation_rate": 0.1269
+    },
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 73,
+        "tp": 61,
+        "fp": 57,
+        "tn": 599,
+        "fn": 12,
+        "precision": 0.5169,
+        "recall": 0.8356,
+        "f1": 0.6387
+      },
+      {
+        "family": "play_triangle",
+        "support": 63,
+        "tp": 62,
+        "fp": 55,
+        "tn": 611,
+        "fn": 1,
+        "precision": 0.5299,
+        "recall": 0.9841,
+        "f1": 0.6889
+      },
+      {
+        "family": "google_play",
+        "support": 7,
+        "tp": 4,
+        "fp": 6,
+        "tn": 716,
+        "fn": 3,
+        "precision": 0.4,
+        "recall": 0.5714,
+        "f1": 0.4706
+      },
+      {
+        "family": "next",
+        "support": 2,
+        "tp": 1,
+        "fp": 10,
+        "tn": 717,
+        "fn": 1,
+        "precision": 0.0909,
+        "recall": 0.5,
+        "f1": 0.1538
+      },
+      {
+        "family": "free",
+        "support": 23,
+        "tp": 20,
+        "fp": 5,
+        "tn": 701,
+        "fn": 3,
+        "precision": 0.8,
+        "recall": 0.8696,
+        "f1": 0.8333
+      },
+      {
+        "family": "got",
+        "support": 114,
+        "tp": 48,
+        "fp": 4,
+        "tn": 611,
+        "fn": 66,
+        "precision": 0.9231,
+        "recall": 0.4211,
+        "f1": 0.5783
+      },
+      {
+        "family": "arrow",
+        "support": 53,
+        "tp": 49,
+        "fp": 57,
+        "tn": 619,
+        "fn": 4,
+        "precision": 0.4623,
+        "recall": 0.9245,
+        "f1": 0.6164
+      }
+    ],
+    "none_family": [
+      {
+        "family": "x_mark",
+        "none_support": 394,
+        "false_activation_count": 31,
+        "false_activation_rate": 0.0787,
+        "mean_prob_on_none": 0.20529,
+        "max_prob_on_none": 0.62823
+      },
+      {
+        "family": "play_triangle",
+        "none_support": 394,
+        "false_activation_count": 13,
+        "false_activation_rate": 0.033,
+        "mean_prob_on_none": 0.12,
+        "max_prob_on_none": 0.73977
+      },
+      {
+        "family": "google_play",
+        "none_support": 394,
+        "false_activation_count": 4,
+        "false_activation_rate": 0.0102,
+        "mean_prob_on_none": 0.13393,
+        "max_prob_on_none": 0.58478
+      },
+      {
+        "family": "next",
+        "none_support": 394,
+        "false_activation_count": 6,
+        "false_activation_rate": 0.0152,
+        "mean_prob_on_none": 0.17314,
+        "max_prob_on_none": 0.58584
+      },
+      {
+        "family": "free",
+        "none_support": 394,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.0051,
+        "mean_prob_on_none": 0.12711,
+        "max_prob_on_none": 0.75919
+      },
+      {
+        "family": "got",
+        "none_support": 394,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.06124,
+        "max_prob_on_none": 0.35475
+      },
+      {
+        "family": "arrow",
+        "none_support": 394,
+        "false_activation_count": 20,
+        "false_activation_rate": 0.0508,
+        "mean_prob_on_none": 0.18306,
+        "max_prob_on_none": 0.62108
+      }
+    ]
+  },
+  {
+    "seed": 44,
+    "subset": "train_strong_hard_negative",
+    "rows": 28,
+    "none": {
+      "support": 28,
+      "false_activation_count": 16,
+      "correct_abstain_count": 12,
+      "false_activation_rate": 0.5714
+    },
+    "metrics": [
+      {
+        "family": "x_mark",
+        "support": 0,
+        "tp": 0,
+        "fp": 14,
+        "tn": 14,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "play_triangle",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "google_play",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "next",
+        "support": 0,
+        "tp": 0,
+        "fp": 2,
+        "tn": 26,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "free",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "got",
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "tn": 28,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "arrow",
+        "support": 0,
+        "tp": 0,
+        "fp": 9,
+        "tn": 19,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ],
+    "none_family": [
+      {
+        "family": "x_mark",
+        "none_support": 28,
+        "false_activation_count": 14,
+        "false_activation_rate": 0.5,
+        "mean_prob_on_none": 0.406,
+        "max_prob_on_none": 0.62823
+      },
+      {
+        "family": "play_triangle",
+        "none_support": 28,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.0714,
+        "mean_prob_on_none": 0.2369,
+        "max_prob_on_none": 0.59337
+      },
+      {
+        "family": "google_play",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.23425,
+        "max_prob_on_none": 0.46247
+      },
+      {
+        "family": "next",
+        "none_support": 28,
+        "false_activation_count": 2,
+        "false_activation_rate": 0.0714,
+        "mean_prob_on_none": 0.32427,
+        "max_prob_on_none": 0.53986
+      },
+      {
+        "family": "free",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.21776,
+        "max_prob_on_none": 0.39099
+      },
+      {
+        "family": "got",
+        "none_support": 28,
+        "false_activation_count": 0,
+        "false_activation_rate": 0.0,
+        "mean_prob_on_none": 0.16666,
+        "max_prob_on_none": 0.27426
+      },
+      {
+        "family": "arrow",
+        "none_support": 28,
+        "false_activation_count": 9,
+        "false_activation_rate": 0.3214,
+        "mean_prob_on_none": 0.3799,
+        "max_prob_on_none": 0.55512
+      }
+    ]
+  }
+]

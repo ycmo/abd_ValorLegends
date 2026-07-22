@@ -22,6 +22,31 @@ class TestSwitchAccount(unittest.TestCase):
     def tearDown(self):
         self.write_patcher.stop()
 
+    @patch("switch_account.time.sleep")
+    @patch("builtins.print")
+    def test_detect_current_account_chooses_highest_confidence_candidate(
+        self,
+        mock_print,
+        mock_sleep,
+    ):
+        controller = MagicMock()
+        controller.screenshot.return_value = object()
+        matcher = MagicMock()
+
+        def match_template(_screen, template_path, *args, **kwargs):
+            name = Path(template_path).name
+            if name == "000_頭像311.png":
+                return DummyMatchResult(name, 0.75, (10, 10))
+            if name == "000_頭像14.png":
+                return DummyMatchResult(name, 0.95, (20, 20))
+            return None
+
+        matcher.match_template.side_effect = match_template
+
+        result = switch_account.detect_current_account(controller, matcher)
+
+        self.assertEqual(result, "14")
+
     @patch("switch_account.detect_current_account", return_value="311")
     @patch("switch_account.DeviceController")
     @patch("switch_account.VisionMatcher")

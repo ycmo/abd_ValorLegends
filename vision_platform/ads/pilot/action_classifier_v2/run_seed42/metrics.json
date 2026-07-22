@@ -1,0 +1,95 @@
+{
+  "eval_split": "test",
+  "splits": {
+    "train": 681,
+    "val": 243,
+    "test": 240
+  },
+  "threshold": 0.5,
+  "confusion": {
+    "tp": 43,
+    "fp": 3,
+    "tn": 182,
+    "fn": 12
+  },
+  "per_screen": {
+    "total_screens": 37,
+    "complete_screens": 37,
+    "excluded_incomplete_screens": 0
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.3851862870999195,
+      "val_loss": 0.5845280051668698,
+      "tp": 56,
+      "fp": 69,
+      "tn": 105,
+      "fn": 13
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.2129576019341025,
+      "val_loss": 0.5757470323231119,
+      "tp": 56,
+      "fp": 55,
+      "tn": 119,
+      "fn": 13
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.17487126676346587,
+      "val_loss": 0.4790999475088808,
+      "tp": 51,
+      "fp": 39,
+      "tn": 135,
+      "fn": 18
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.11781501266749769,
+      "val_loss": 0.35428872820090657,
+      "tp": 50,
+      "fp": 18,
+      "tn": 156,
+      "fn": 19
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.1033004825160717,
+      "val_loss": 0.3352674835675537,
+      "tp": 53,
+      "fp": 13,
+      "tn": 161,
+      "fn": 16
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.11839721709621111,
+      "val_loss": 0.29875262720922985,
+      "tp": 54,
+      "fp": 12,
+      "tn": 162,
+      "fn": 15
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.045695920435167445,
+      "val_loss": 0.2501671965184361,
+      "tp": 56,
+      "fp": 15,
+      "tn": 159,
+      "fn": 13
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.048486953768085976,
+      "val_loss": 0.20304346593238798,
+      "tp": 59,
+      "fp": 8,
+      "tn": 166,
+      "fn": 10
+    }
+  ],
+  "note": "Tiny datasets are smoke tests only; use group-held-out data before trusting deployment."
+}

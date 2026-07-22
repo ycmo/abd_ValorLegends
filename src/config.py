@@ -183,6 +183,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             notes="Run from the event screen for now. Refresh after two consecutive losses costs 5 red gems.",
         ),
     ),
+    "hero_reroll_loop": TaskSpec(
+        key="hero_reroll_loop",
+        display_name="英雄刷取",
+        daily_text="",
+        manual_dir="英雄刷取",
+        kind="independent",
+        policy=ResourcePolicy(
+            allowed_actions=("awaken_target_hero", "reset_target_hero", "select_yellow_five_star_materials"),
+            stop_conditions=("target_count_reached", "target_hero_not_found", "eligible_material_not_found"),
+            notes="Run from the hero list. Repeatedly awaken/reset the target hero until the requested count is reached.",
+        ),
+    ),
     "kingdom_vault": TaskSpec(
         key="kingdom_vault",
         display_name="王國金庫",
@@ -193,6 +205,18 @@ TASK_SPECS: Dict[str, TaskSpec] = {
             allowed_actions=("claim_free_daily_offer", "claim_notified_battle_pass_rewards"),
             stop_conditions=("unknown_popup", "badge_target_uncertain"),
             notes="Independent task. Enter through the AFK route, then run from the current Kingdom Vault screen.",
+        ),
+    ),
+    "wild_treasure": TaskSpec(
+        key="wild_treasure",
+        display_name="原野",
+        daily_text="",
+        manual_dir="原野",
+        kind="independent",
+        policy=ResourcePolicy(
+            allowed_actions=("follow_red_box_mainline", "upgrade_first_two_event_heroes", "challenge_once"),
+            stop_conditions=("expected_screen_not_found", "battle_not_won"),
+            notes="Independent task. First version starts from the Wild Treasure map shown in manual screenshot 002.",
         ),
     ),
     "midas": TaskSpec(

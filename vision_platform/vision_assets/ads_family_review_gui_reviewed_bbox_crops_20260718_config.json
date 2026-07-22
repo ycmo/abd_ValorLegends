@@ -1,0 +1,15 @@
+{
+  "default_filter": {
+    "status": "unreviewed",
+    "family": "all",
+    "source": "vision_platform\\ads\\collections",
+    "sort": "family",
+    "default_pick": "model suggestion",
+    "selection_mode": "single",
+    "path_contains": "reviewed_bbox_crops_20260718",
+    "search": ""
+  },
+  "exclude_path_contains": [
+    "context_1_5x"
+  ]
+}

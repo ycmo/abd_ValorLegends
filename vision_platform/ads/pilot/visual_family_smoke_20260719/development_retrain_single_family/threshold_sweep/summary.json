@@ -1,0 +1,80 @@
+{
+  "prediction_files": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family\\run_seed42\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family\\run_seed43\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family\\run_seed44\\test_predictions.csv"
+  ],
+  "thresholds": [
+    0.05,
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95
+  ],
+  "best_thresholds": {
+    "x_mark": {
+      "threshold": 0.55,
+      "precision": 0.7253,
+      "recall": 0.8183,
+      "f1": 0.749,
+      "none_false_activation_rate": 0.0276
+    },
+    "play_triangle": {
+      "threshold": 0.65,
+      "precision": 0.9563,
+      "recall": 0.9804,
+      "f1": 0.9673,
+      "none_false_activation_rate": 0.0183
+    },
+    "google_play": {
+      "threshold": 0.5,
+      "precision": 0.5,
+      "recall": 0.3889,
+      "f1": 0.4333,
+      "none_false_activation_rate": 0.0
+    },
+    "next": {
+      "threshold": 0.45,
+      "precision": 0.1833,
+      "recall": 0.5,
+      "f1": 0.1984,
+      "none_false_activation_rate": 0.0685
+    },
+    "free": {
+      "threshold": 0.7,
+      "precision": 1.0,
+      "recall": 0.7667,
+      "f1": 0.8519,
+      "none_false_activation_rate": 0.0
+    },
+    "got": {
+      "threshold": 0.25,
+      "precision": 0.8225,
+      "recall": 0.8833,
+      "f1": 0.8443,
+      "none_false_activation_rate": 0.0274
+    },
+    "arrow": {
+      "threshold": 0.6,
+      "precision": 0.6856,
+      "recall": 0.8889,
+      "f1": 0.745,
+      "none_false_activation_rate": 0.0
+    }
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_single_family\\threshold_sweep"
+}

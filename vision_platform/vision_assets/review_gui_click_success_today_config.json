@@ -1,0 +1,16 @@
+{
+  "default_filter": {
+    "domain": "ads_shared",
+    "role": "runtime_collection",
+    "scope": "all",
+    "source": "vision_platform\\ads\\runtime_collection",
+    "status": "all",
+    "visual_status": "unreviewed",
+    "search": "click_success_20260718",
+    "sort": "image_signature",
+    "include_path_any": [
+      "pre_click.png"
+    ]
+  },
+  "sort_mode": "image_signature"
+}

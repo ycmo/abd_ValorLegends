@@ -14,12 +14,14 @@ from src.tasks.equipment_enhance import EquipmentEnhanceTask
 from src.tasks.guild_dungeon import GuildDungeonTask
 from src.tasks.guild_wish import GuildWishTask
 from src.tasks.hero_contest import HeroContestTask
+from src.tasks.hero_reroll_loop import HeroRerollLoopTask
 from src.tasks.kingdom_vault import KingdomVaultTask
 from src.tasks.magic_shop import MagicShopTask
 from src.tasks.midas import MidasTask
 from src.tasks.secret_realm import SecretRealmTask
 from src.tasks.summon import SummonTask
 from src.tasks.time_travel import TimeTravelTask
+from src.tasks.wild_treasure import WildTreasureTask
 
 
 TASK_CLASSES: Dict[str, Type[BaseTask]] = {
@@ -33,12 +35,14 @@ TASK_CLASSES: Dict[str, Type[BaseTask]] = {
     "guild_dungeon": GuildDungeonTask,
     "guild_wish": GuildWishTask,
     "hero_contest": HeroContestTask,
+    "hero_reroll_loop": HeroRerollLoopTask,
     "kingdom_vault": KingdomVaultTask,
     "magic_shop": MagicShopTask,
     "midas": MidasTask,
     "secret_realm": SecretRealmTask,
     "summon": SummonTask,
     "time_travel": TimeTravelTask,
+    "wild_treasure": WildTreasureTask,
 }
 
 

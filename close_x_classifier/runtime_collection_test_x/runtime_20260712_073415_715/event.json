@@ -1,0 +1,51 @@
+{
+  "event_id": "20260712_073415_715",
+  "source_session": "runtime_20260712_073415_715",
+  "timestamp": "20260712_073415_715",
+  "full_screenshot": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_test_x\\runtime_20260712_073415_715\\screen.png",
+  "threshold": 0.5,
+  "selected_candidate": "cand_001",
+  "whether_clicked": true,
+  "candidates": [
+    {
+      "candidate_id": "cand_001",
+      "bbox": [
+        111,
+        41,
+        25,
+        22
+      ],
+      "center": [
+        123,
+        52
+      ],
+      "geometry_score": 0.9644181190985881,
+      "p_close": 0.9962563514709473,
+      "rank": 1,
+      "crop_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_test_x\\runtime_20260712_073415_715\\candidates\\cand_001.png",
+      "clicked": true,
+      "screen_changed": true,
+      "after_screenshot_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_test_x\\runtime_20260712_073415_715\\after_cand_001.png"
+    },
+    {
+      "candidate_id": "cand_002",
+      "bbox": [
+        139,
+        26,
+        17,
+        18
+      ],
+      "center": [
+        147,
+        35
+      ],
+      "geometry_score": 0.7987597505034907,
+      "p_close": 0.7024625539779663,
+      "rank": 2,
+      "crop_path": "D:\\Projects\\adb_vl\\close_x_classifier\\runtime_collection_test_x\\runtime_20260712_073415_715\\candidates\\cand_002.png",
+      "clicked": false,
+      "screen_changed": null,
+      "after_screenshot_path": ""
+    }
+  ]
+}

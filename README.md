@@ -131,6 +131,7 @@ src/
 
 assets/
   shared/                 共用 template
+  shared/got/             共用獲得道具 / got overlay template pool
   tasks/<task_key>/       任務專用 template
   raw_captures/           Codex 擷取的原始素材
 

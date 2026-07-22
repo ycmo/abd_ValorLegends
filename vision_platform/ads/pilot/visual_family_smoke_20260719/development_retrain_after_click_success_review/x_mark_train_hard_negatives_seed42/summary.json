@@ -1,0 +1,10 @@
+{
+  "run_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_click_success_review\\run_seed42",
+  "family": "x_mark",
+  "split": "train",
+  "threshold": 0.5,
+  "split_rows": 802,
+  "false_positive_rows": 18,
+  "false_positive_content_ids": 16,
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke_20260719\\development_retrain_after_click_success_review\\x_mark_train_hard_negatives_seed42"
+}

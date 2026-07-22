@@ -1,0 +1,18 @@
+{
+  "threshold": 0.5,
+  "prediction_files": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed42\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed43\\test_predictions.csv",
+    "vision_platform\\ads\\pilot\\visual_family_smoke\\run_seed44\\test_predictions.csv"
+  ],
+  "false_activation_rows": 65,
+  "unique_instances": 50,
+  "by_top_family": {
+    "google_play": 4,
+    "arrow": 9,
+    "x_mark": 42,
+    "free": 10
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke\\none_of_the_above_review",
+  "gui_config": "vision_platform\\ads\\pilot\\visual_family_smoke\\none_of_the_above_review\\review_gui_none_of_the_above_false_activation_config.json"
+}

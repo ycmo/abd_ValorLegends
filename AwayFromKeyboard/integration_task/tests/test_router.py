@@ -10,7 +10,7 @@ from unittest.mock import patch
 # Ensure router.py can be imported
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from router import RouteNavigator
-from src.blocker_handler import GIFT_PACK_CLOSE_POINT
+from src.ui.blockers import GIFT_PACK_CLOSE_POINT
 
 class FakeDeviceController:
     def __init__(self, screen_image=None, screen_images=None):

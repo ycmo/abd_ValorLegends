@@ -6,11 +6,13 @@ from unittest.mock import MagicMock, call, patch
 from AwayFromKeyboard.afk_midas import (
     AUTO_OCR_FAILURE_SLEEP_SECONDS,
     AUTO_WAKEUP_BUFFER_SECONDS,
+    _handle_wakeup_exceptions_if_available,
     build_auto_account_order,
     calculate_midas_wake_at,
     build_sweep_first_order,
     choose_next_account,
     execute_scheduled_midas_account,
+    format_schedule_decision,
     main,
     midas_task_debug_actions,
     process_auto_account,
@@ -42,6 +44,36 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.clear_activity_patcher.stop()
         self.activity_patcher.stop()
         self.write_patcher.stop()
+
+    @patch("AwayFromKeyboard.afk_midas._recover_or_restart")
+    def test_wakeup_exception_check_direct_retries_adb_wobble_without_recovery(self, mock_recover):
+        from src.adb_controller import AdbControllerError
+
+        recovery = MagicMock()
+        recovery.handle_wakeup_exceptions.side_effect = [AdbControllerError("screencap failed"), False]
+
+        result = _handle_wakeup_exceptions_if_available(recovery)
+
+        self.assertFalse(result)
+        self.assertEqual(recovery.handle_wakeup_exceptions.call_count, 2)
+        mock_recover.assert_not_called()
+
+    @patch("AwayFromKeyboard.afk_midas._recover_or_restart")
+    def test_wakeup_exception_check_recovers_after_direct_retry_fails(self, mock_recover):
+        from src.adb_controller import AdbControllerError
+
+        recovery = MagicMock()
+        recovery.handle_wakeup_exceptions.side_effect = [
+            AdbControllerError("screencap failed"),
+            AdbControllerError("screencap failed again"),
+            True,
+        ]
+
+        result = _handle_wakeup_exceptions_if_available(recovery)
+
+        self.assertTrue(result)
+        self.assertEqual(recovery.handle_wakeup_exceptions.call_count, 3)
+        mock_recover.assert_called_once_with(recovery)
 
     @patch("AwayFromKeyboard.afk_midas._recover_or_restart")
     @patch("AwayFromKeyboard.afk_midas.MidasTask")
@@ -492,6 +524,76 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual(schedule["accounts"]["em3"]["cooldown_source"], "ocr")
         mock_save.assert_called_once_with(schedule)
 
+    @patch("AwayFromKeyboard.afk_midas.save_midas_schedule")
+    @patch("AwayFromKeyboard.afk_midas.run_midas_auto_with_ocr_retry")
+    @patch("AwayFromKeyboard.afk_midas.notify_status")
+    @patch("AwayFromKeyboard.afk_midas.time.monotonic", side_effect=[200.0, 260.0])
+    def test_execute_scheduled_midas_retries_recoverable_task_error_without_extra_recovery(
+        self,
+        mock_monotonic,
+        mock_notify,
+        mock_run,
+        mock_save,
+    ):
+        from src.exceptions import TaskFailedError
+
+        schedule = {"accounts": {}, "timing": {"midas_run": {"seconds": 60, "samples": 0}}}
+        success = MidasAutoResult(False, 3600, "01:00:00", 0.9)
+        mock_run.side_effect = [TaskFailedError("ADB screenshot failed"), success]
+
+        result = execute_scheduled_midas_account(
+            SimpleNamespace(),
+            MagicMock(),
+            account="em3",
+            schedule=schedule,
+            notify_enabled=False,
+            midas_debug_actions=False,
+        )
+
+        self.assertIs(result, success)
+        self.assertEqual(mock_run.call_count, 2)
+        self.assertEqual(schedule["accounts"]["em3"]["cooldown_source"], "ocr")
+        mock_save.assert_called_once_with(schedule)
+
+    @patch("AwayFromKeyboard.afk_midas._recover_or_restart")
+    @patch("AwayFromKeyboard.afk_midas.save_midas_schedule")
+    @patch("AwayFromKeyboard.afk_midas.run_midas_auto_with_ocr_retry")
+    @patch("AwayFromKeyboard.afk_midas.notify_status")
+    @patch("AwayFromKeyboard.afk_midas.time.monotonic", side_effect=[200.0, 290.0])
+    def test_execute_scheduled_midas_recovers_only_after_direct_retry_fails(
+        self,
+        mock_monotonic,
+        mock_notify,
+        mock_run,
+        mock_save,
+        mock_recover,
+    ):
+        from src.exceptions import TaskFailedError
+
+        schedule = {"accounts": {}, "timing": {"midas_run": {"seconds": 60, "samples": 0}}}
+        success = MidasAutoResult(False, 3600, "01:00:00", 0.9)
+        mock_run.side_effect = [
+            TaskFailedError("ADB screenshot failed"),
+            TaskFailedError("ADB screenshot failed again"),
+            success,
+        ]
+        recovery = MagicMock()
+
+        result = execute_scheduled_midas_account(
+            SimpleNamespace(),
+            recovery,
+            account="em3",
+            schedule=schedule,
+            notify_enabled=False,
+            midas_debug_actions=False,
+        )
+
+        self.assertIs(result, success)
+        self.assertEqual(mock_run.call_count, 3)
+        mock_recover.assert_called_once_with(recovery)
+        self.assertEqual(schedule["accounts"]["em3"]["cooldown_source"], "ocr")
+        mock_save.assert_called_once_with(schedule)
+
     def test_choose_next_account_biases_current_account_when_ready_times_are_close(self):
         now = datetime(2026, 7, 13, 9, 0, tzinfo=TAIPEI_TZ)
         accounts = {"em3": {"type": "google"}, "311": {"type": "google"}}
@@ -548,6 +650,50 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual(account, "311")
         self.assertEqual(start_at, now + timedelta(seconds=180))
         self.assertEqual(switch_seconds, 180)
+
+    def test_format_schedule_decision_aligns_accounts_without_source(self):
+        now = datetime(2026, 7, 18, 8, 32, 43, tzinfo=TAIPEI_TZ)
+        accounts = {
+            "em3": {"type": "google"},
+            "311": {"type": "google"},
+            "tiger": {"type": "email"},
+            "14": {"type": "email"},
+        }
+        schedule = {
+            "accounts": {
+                "em3": {
+                    "ready_at": datetime(2026, 7, 18, 15, 27, 43, tzinfo=TAIPEI_TZ).isoformat(),
+                    "cooldown_source": "ocr",
+                },
+                "311": {
+                    "ready_at": datetime(2026, 7, 18, 16, 18, 22, tzinfo=TAIPEI_TZ).isoformat(),
+                    "cooldown_source": "ocr",
+                },
+                "tiger": {
+                    "ready_at": datetime(2026, 7, 18, 16, 10, 0, tzinfo=TAIPEI_TZ).isoformat(),
+                    "cooldown_source": "ocr",
+                },
+                "14": {
+                    "ready_at": datetime(2026, 7, 18, 16, 32, 6, tzinfo=TAIPEI_TZ).isoformat(),
+                    "cooldown_source": "ocr",
+                },
+            },
+            "timing": {"midas_run": {"seconds": 60, "samples": 1}},
+        }
+
+        text = format_schedule_decision(
+            schedule,
+            accounts,
+            ["em3", "311", "tiger", "14"],
+            "em3",
+            now=now,
+        )
+
+        self.assertIn("- em3   : ready = 2026-07-18 15:27:43 (06:55:00)", text)
+        self.assertIn("- 311   : ready = 2026-07-18 16:18:22 (07:45:39)", text)
+        self.assertIn("- tiger : ready = 2026-07-18 16:10:00 (07:37:17)", text)
+        self.assertIn("- 14    : ready = 2026-07-18 16:32:06 (07:59:23)", text)
+        self.assertNotIn("source=", text)
 
     def test_calculate_midas_wake_at_includes_prepare_buffer(self):
         now = datetime(2026, 7, 13, 9, 0, tzinfo=TAIPEI_TZ)
@@ -667,6 +813,7 @@ class AutoMidasLoopTests(unittest.TestCase):
         mock_execute.assert_not_called()
 
     @patch("AwayFromKeyboard.afk_midas.smart_sleep", side_effect=KeyboardInterrupt)
+    @patch("AwayFromKeyboard.afk_midas.save_midas_schedule")
     @patch("AwayFromKeyboard.afk_midas.choose_next_account")
     @patch("AwayFromKeyboard.afk_midas.detect_current_account", return_value="em3")
     @patch("AwayFromKeyboard.afk_midas.sweep_all_accounts_for_schedule", return_value="em3")
@@ -681,6 +828,7 @@ class AutoMidasLoopTests(unittest.TestCase):
         mock_sweep,
         mock_detect,
         mock_choose,
+        mock_save,
         mock_sleep,
     ):
         future = datetime.now(TAIPEI_TZ) + timedelta(seconds=600)
@@ -702,6 +850,7 @@ class AutoMidasLoopTests(unittest.TestCase):
         self.assertEqual(clear_call.kwargs["source"], "midas.auto.smart_sleep")
         self.assertIn("wake_at", clear_call.kwargs["extra"])
         mock_sweep.assert_called_once()
+        mock_save.assert_called_once_with(mock_schedule.return_value)
         mock_sleep.assert_called_once()
 
     @patch("AwayFromKeyboard.afk_midas.sys.argv", ["afk_midas.py"])

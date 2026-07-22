@@ -5,7 +5,6 @@ from typing import Dict, Iterable, List, Optional, Type
 
 from src.adb_controller import DeviceController
 from src.battle_handler import BattleHandler
-from src.blocker_handler import BlockerHandler
 from src.config import (
     DEFAULT_SERIAL,
     RUN_ALL_GO_FIRST_TASK_ORDER,
@@ -18,6 +17,7 @@ from src.navigator import Navigator
 from src.scene_detector import SceneDetector
 from src.task_runner import TaskContext, TaskRunResult, TaskState
 from src.tasks import TASK_CLASSES
+from src.ui.blockers import BlockerHandler
 from src.vision_matcher import VisionMatcher
 
 

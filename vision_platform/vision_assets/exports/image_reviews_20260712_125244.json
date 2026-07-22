@@ -1,0 +1,16 @@
+[
+  {
+    "instance_id": "file_b040dd17ca19329c",
+    "content_id": "asset_1bb199c29d32b6fe",
+    "original_path": "D:\\Projects\\adb_vl\\ads2\\assets\\1_templates\\close_glyphs\\google_play_pill_edge.png",
+    "relative_path": "ads2\\assets\\1_templates\\close_glyphs\\google_play_pill_edge.png",
+    "vision_domain": "ads",
+    "asset_type": "template",
+    "representation": "edge_glyph",
+    "review_status": "pending",
+    "has_no_target": 0,
+    "note": "",
+    "created_at": "2026-07-12T04:45:09.544033+00:00",
+    "updated_at": "2026-07-12T04:52:44.733075+00:00"
+  }
+]

@@ -1,0 +1,8 @@
+﻿family,none_support,false_activation_count,false_activation_rate,mean_prob_on_none,max_prob_on_none
+x_mark,137,5,0.0365,0.14839,0.65187
+play_triangle,137,1,0.0073,0.16645,0.67673
+google_play,137,0,0.0,0.07188,0.41322
+next,137,1,0.0073,0.11962,0.54836
+free,137,0,0.0,0.04236,0.18341
+got,137,0,0.0,0.04227,0.34524
+arrow,137,1,0.0073,0.07135,0.69645

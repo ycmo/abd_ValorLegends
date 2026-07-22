@@ -1,0 +1,13 @@
+{
+  "reviewed_instances_in_batch": 82,
+  "changed_instances": 4,
+  "unchanged_instances": 78,
+  "fixed_against_prediction_total": 6,
+  "still_mismatch_against_prediction_total": 240,
+  "changed_added_family_counts": {},
+  "changed_removed_family_counts": {
+    "x_mark": 2,
+    "next": 2
+  },
+  "output_dir": "vision_platform\\ads\\pilot\\visual_family_smoke\\review_mismatches\\after_review_compare"
+}

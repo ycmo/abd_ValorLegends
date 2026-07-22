@@ -1,0 +1,8 @@
+﻿seed,family,threshold,support,tp,fp,tn,fn,precision,recall,f1,none_support,none_false_activation,none_false_activation_rate
+seed42,x_mark,0.75,19,16,7,120,3,0.6957,0.8421,0.7619,67,3,0.0448
+seed42,play_triangle,0.3,11,10,2,133,1,0.8333,0.9091,0.8696,67,0,0.0
+seed42,google_play,0.8,2,1,0,144,1,1.0,0.5,0.6667,67,0,0.0
+seed42,next,0.15,1,1,28,117,0,0.0345,1.0,0.0667,67,2,0.0299
+seed42,free,0.8,3,2,0,143,1,1.0,0.6667,0.8,67,0,0.0
+seed42,got,0.3,22,22,1,123,0,0.9565,1.0,0.9778,67,0,0.0
+seed42,arrow,0.7,21,20,1,124,1,0.9524,0.9524,0.9524,67,0,0.0

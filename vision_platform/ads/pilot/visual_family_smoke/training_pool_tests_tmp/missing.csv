@@ -1,0 +1,2 @@
+﻿image_path,families,label_x_mark,label_play_triangle,label_google_play,label_next,label_free,label_got,label_arrow,review_status,group_key,source_screen,instance_id,content_id,original_path,relative_path,vision_domain,asset_type,asset_role,image_scope,representation,source_root,split,is_confirmed_strong_hard_negative
+dummy.png,negative,0,0,0,0,0,0,0,reviewed,group_a,,file_1,asset_present,dummy.png,dummy.png,ads,crop,candidate_crop,crop,raw,synthetic,,0

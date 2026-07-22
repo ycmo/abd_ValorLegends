@@ -1,0 +1,39 @@
+{
+  "rows": 1164,
+  "label_counts": {
+    "close": 304,
+    "not_close": 860
+  },
+  "domain_counts": {
+    "ads": 1032,
+    "shared": 132
+  },
+  "asset_role_counts": {
+    "template": 78,
+    "review_asset": 221,
+    "candidate_crop": 709,
+    "runtime_collection": 156
+  },
+  "source_root_counts": {
+    "ads2\\assets\\1_templates": 78,
+    "ads2\\assets\\2_communication": 47,
+    "ads2\\assets\\review_crops": 491,
+    "close_x_classifier\\data\\review_batch_001": 174,
+    "close_x_classifier\\data\\stage0_6_canonical_object_poc": 39,
+    "close_x_classifier\\runtime_collection_dryrun": 4,
+    "vision_platform\\ads\\runtime_collection": 152,
+    "vision_platform\\ads\\hard_negative_mining": 179
+  },
+  "unique_content_ids": 1003,
+  "skipped": {
+    "not_reviewed": 10,
+    "scope:fullscreen": 6,
+    "role:reference_only": 5,
+    "role:uncertain": 178,
+    "domain:game": 36,
+    "domain:unknown": 22
+  },
+  "output_size": 96,
+  "object_ratio": 0.7,
+  "manifest": "vision_platform\\ads\\pilot\\action_classifier_v2\\dataset\\manifest.csv"
+}
