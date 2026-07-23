@@ -1,6 +1,6 @@
 ﻿source_root,vision_domain,asset_role,image_scope,image_count,total_size_bytes,error_count,files_in_duplicate_groups,redundant_copy_occurrences
 AwayFromKeyboard\debug,game,debug_output,crop,4,248289,0,0,0
-AwayFromKeyboard\debug,game,debug_output,fullscreen,42,22361861,0,0,0
+AwayFromKeyboard\debug,game,debug_output,fullscreen,42,22232285,0,0,0
 AwayFromKeyboard\integration_task\templates,game,template,crop,10,73933,0,0,0
 AwayFromKeyboard\integration_task\templates,game,template,unknown,1,19065,0,0,0
 AwayFromKeyboard\route_screenshots,game,reference_screen,fullscreen,65,40589720,0,44,14
@@ -37,7 +37,7 @@ close_x_classifier\runtime_collection_dryrun_max3,ads,runtime_collection,crop,4,
 close_x_classifier\runtime_collection_dryrun_max3,ads,runtime_collection,fullscreen,4,12102624,0,4,4
 close_x_classifier\runtime_collection_test_x,ads,runtime_collection,crop,4,35478,0,0,0
 log,unknown,runtime_log,crop,192,773437,0,90,52
-log,unknown,runtime_log,fullscreen,3680,1870889603,0,2,1
+log,unknown,runtime_log,fullscreen,3770,1928732811,0,2,1
 magic_shop\assets,game,template,crop,18,105628,0,0,0
 magic_shop\assets,game,template,fullscreen,1,410227,0,1,0
 manual_screenshots,ads,manual_screenshot,crop,1,3149,0,0,0
@@ -51,6 +51,7 @@ switch_account\templates,game,template,unknown,6,22581,0,1,1
 vision_platform\ads\collections,ads,candidate_crop,crop,1680,45102021,0,1225,821
 vision_platform\ads\hard_negative_mining,ads,candidate_crop,crop,974,4573232,0,935,681
 vision_platform\ads\hard_negative_mining,ads,candidate_crop,sheet_or_composite,2,542914,0,0,0
-vision_platform\ads\runtime_collection,ads,runtime_collection,crop,4625,69669077,0,1618,1329
-vision_platform\ads\runtime_collection,ads,runtime_collection,fullscreen,1850,818315166,0,189,153
+vision_platform\ads\runtime_collection,ads,runtime_collection,crop,5200,78580511,0,1821,1526
+vision_platform\ads\runtime_collection,ads,runtime_collection,fullscreen,2323,1031664464,0,471,303
 vision_platform\ads\runtime_collection,ads,runtime_collection,sheet_or_composite,6,5609871,0,0,0
+vision_platform\ads\runtime_collection,ads,runtime_collection,unknown,24,15471816,0,8,8

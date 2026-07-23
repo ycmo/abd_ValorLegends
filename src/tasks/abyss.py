@@ -10,7 +10,12 @@ import cv2
 
 from src.config import LOG_DIR, TASK_SPECS, TRANSITION_WAIT_SECONDS, VERBOSE_PROBE_LOGS_ENABLED
 from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSkippedError
-from src.ocr_utils import get_cached_easyocr_reader, parse_power_value
+from src.ocr_utils import (
+    get_cached_easyocr_reader,
+    parse_power_ocr_text,
+    parse_power_value,
+    read_pattern_easyocr_multiscale,
+)
 from src.task_runner import BaseTask, TaskRunResult, TaskSceneAnchor, TaskState
 from src.vision_matcher import MatchResult, Roi, write_image
 
@@ -97,6 +102,7 @@ class AbyssTask(BaseTask):
     RENT_BUTTON_ACTIVE_MIN_CONFIDENCE = 0.78
     RENT_BUTTON_ACTIVE_MIN_BRIGHTNESS = 0.92
     RENTAL_POWER_MIN_CONFIDENCE = 0.60
+    RENTAL_POWER_OCR_FAST_ACCEPT_CONFIDENCE = 0.85
     RENTED_SKIP_THRESHOLD = 3
     DRAGON_HERO_THRESHOLD = 0.75
     DRAGON_HERO_ROI_X = 295
@@ -344,11 +350,19 @@ class AbyssTask(BaseTask):
         if crop.size == 0:
             return "", 0.0, crop_path
 
-        enlarged = cv2.resize(crop, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        padded = cv2.copyMakeBorder(enlarged, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=[25, 25, 45])
-        ocr_results = self._get_ocr_reader().readtext(padded, detail=1, allowlist="0123456789,")
-        text, confidence = self._combine_power_ocr(ocr_results)
-        return text, confidence, crop_path
+        result = read_pattern_easyocr_multiscale(
+            crop,
+            reader=self._get_ocr_reader(),
+            parser=parse_power_ocr_text,
+            allowlist="0123456789,kKmM",
+            scales=(2, 2.5, 3, 4, 5),
+            fast_accept_confidence=self.RENTAL_POWER_OCR_FAST_ACCEPT_CONFIDENCE,
+            agreement_accept_confidence=self.RENTAL_POWER_MIN_CONFIDENCE,
+            border_value=(25, 25, 45),
+        )
+        if not result.accepted:
+            return "", 0.0, crop_path
+        return result.text, result.confidence, crop_path
 
     def _combine_power_ocr(self, ocr_results) -> tuple[str, float]:
         pieces = []

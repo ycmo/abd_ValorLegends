@@ -5,7 +5,7 @@ from typing import Optional
 
 from src.config import TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import TaskFailedError
-from src.ocr_utils import get_cached_easyocr_reader
+from src.ocr_utils import get_cached_easyocr_reader, read_digits_easyocr_multiscale
 from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult, Roi
 
@@ -28,6 +28,7 @@ class TimeTravelTask(BaseTask):
     REWARD_TITLE_ROI: Roi = (300, 90, 380, 120)
     COST_OCR_ROI: Roi = (665, 395, 170, 55)
     COST_BUTTON_THRESHOLD = 0.96
+    COST_OCR_FAST_ACCEPT_CONFIDENCE = 0.85
     MAX_50_GEM_TAPS = 6
     task_scene_anchors = (
         TaskSceneAnchor("time_travel_title.png", threshold=0.86, roi=TITLE_ROI),
@@ -143,35 +144,19 @@ class TimeTravelTask(BaseTask):
         if crop.size == 0:
             return None
         try:
-            ocr_results = self._get_cost_ocr_reader().readtext(
+            result = read_digits_easyocr_multiscale(
                 crop,
-                detail=1,
-                allowlist="0123456789",
+                reader=self._get_cost_ocr_reader(),
+                scales=(2, 3, 4, 5),
+                fast_accept_confidence=self.COST_OCR_FAST_ACCEPT_CONFIDENCE,
             )
         except Exception:
             return None
-
-        pieces = []
-        for box, text, confidence in ocr_results:
-            digits = "".join(char for char in str(text) if char.isdigit())
-            if not digits:
-                continue
-            xs = []
-            for point in box:
-                try:
-                    xs.append(float(point[0]))
-                except (TypeError, ValueError, IndexError):
-                    continue
-            left = min(xs) if xs else 0.0
-            pieces.append((left, digits, float(confidence)))
-        if not pieces:
-            return None
-        pieces.sort(key=lambda item: item[0])
-        text = "".join(piece[1] for piece in pieces)
-        try:
-            return int(text)
-        except ValueError:
-            return None
+        self._log(
+            f"Time Travel cost OCR value={result.value!r} confidence={result.confidence:.3f} "
+            f"source={result.source} scale={result.scale or '-'} agreement={result.agreement_count}"
+        )
+        return result.value if result.accepted else None
 
     def _get_cost_ocr_reader(self):
         if self._cost_ocr_reader is None:

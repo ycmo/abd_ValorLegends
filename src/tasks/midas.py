@@ -5,10 +5,9 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-import cv2
-
 from src.config import SHARED_ASSETS_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, TaskFailedError
+from src.ocr_utils import parse_time_hhmmss_ocr_text, read_pattern_easyocr_multiscale
 from src.task_runner import BaseTask, TaskSceneAnchor, TaskRunResult, TaskState
 from src.vision_matcher import MatchResult, Roi
 
@@ -52,6 +51,7 @@ class MidasTask(BaseTask):
     MAX_ALLOWED_TAPS = 12
     COOLDOWN_OCR_ROI: Roi = (482, 124, 74, 22)
     COOLDOWN_OCR_MIN_CONFIDENCE = 0.50
+    COOLDOWN_OCR_FAST_ACCEPT_CONFIDENCE = 0.85
     COOLDOWN_MAX_SECONDS = 8 * 60 * 60
     task_scene_anchors = (
         TaskSceneAnchor("midas_title.png", threshold=0.86, roi=TITLE_ROI),
@@ -137,32 +137,26 @@ class MidasTask(BaseTask):
         if crop.size == 0:
             return None, "", 0.0
 
-        enlarged = cv2.resize(crop, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
-        padded = cv2.copyMakeBorder(
-            enlarged,
-            12,
-            12,
-            12,
-            12,
-            cv2.BORDER_CONSTANT,
-            value=(20, 20, 35),
-        )
         try:
-            results = self._get_cooldown_ocr_reader().readtext(
-                padded,
-                detail=1,
+            result = read_pattern_easyocr_multiscale(
+                crop,
+                reader=self._get_cooldown_ocr_reader(),
+                parser=parse_time_hhmmss_ocr_text,
                 allowlist="0123456789:",
+                scales=(2, 3, 4, 5),
+                fast_accept_confidence=self.COOLDOWN_OCR_FAST_ACCEPT_CONFIDENCE,
+                agreement_accept_confidence=self.COOLDOWN_OCR_MIN_CONFIDENCE,
+                border_value=(20, 20, 35),
             )
         except Exception as exc:
             self._log(f"Midas cooldown OCR error: {exc}")
             return None, "", 0.0
 
-        pieces = []
-        for box, text, confidence in results:
-            xs = [float(point[0]) for point in box]
-            pieces.append((min(xs), str(text).strip(), float(confidence)))
-        pieces.sort(key=lambda item: item[0])
-        seconds, ocr_text, confidence = self._select_cooldown_candidate(pieces)
+        seconds = result.value if result.accepted and result.value is not None else None
+        if seconds is not None and seconds >= self.COOLDOWN_MAX_SECONDS:
+            seconds = None
+        ocr_text = result.text
+        confidence = result.confidence
         save_debug = getattr(self.context.controller, "save_annotated_debug", None)
         if save_debug is not None:
             status = "valid" if seconds is not None else "invalid"
@@ -173,6 +167,7 @@ class MidasTask(BaseTask):
                     f"midas cooldown OCR {status}",
                     f"text={ocr_text!r} confidence={confidence:.3f}",
                     f"seconds={seconds}",
+                    f"source={result.source} scale={result.scale or '-'} agreement={result.agreement_count}",
                 ],
                 boxes=[(*self.COOLDOWN_OCR_ROI, "cooldown_ocr_roi")],
             )

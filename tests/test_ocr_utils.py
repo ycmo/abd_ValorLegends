@@ -1,6 +1,8 @@
 from unittest import TestCase
 from unittest.mock import patch
 
+import numpy as np
+
 from src.config import TASK_SPECS
 from src.ocr_utils import (
     clear_easyocr_reader_cache,
@@ -8,6 +10,7 @@ from src.ocr_utils import (
     fuzzy_text_score,
     get_cached_easyocr_reader,
     normalize_ocr_text,
+    read_digits_easyocr_multiscale,
 )
 
 
@@ -18,6 +21,17 @@ class FakeReader:
     def readtext(self, *args, **kwargs):
         self.calls.append((args, kwargs))
         return [("box", "123", 0.9)]
+
+
+class ShapeDrivenDigitReader:
+    def __init__(self, results_by_height):
+        self.results_by_height = results_by_height
+        self.calls = []
+
+    def readtext(self, image, *args, **kwargs):
+        self.calls.append((image.shape, kwargs))
+        text, confidence = self.results_by_height[image.shape[0]]
+        return [([(0, 0), (10, 0), (10, 10), (0, 10)], text, confidence)]
 
 
 class EasyOcrReaderCacheTests(TestCase):
@@ -57,6 +71,75 @@ class EasyOcrReaderCacheTests(TestCase):
 
         self.assertEqual(result, [("box", "123", 0.9)])
         self.assertEqual(raw_reader.calls, [(('image',), {"detail": 1})])
+
+
+class DigitOcrMultiscaleTests(TestCase):
+    def test_fast_accept_stops_after_first_high_confidence_scale(self):
+        image = np.zeros((10, 20, 3), dtype=np.uint8)
+        reader = ShapeDrivenDigitReader(
+            {
+                44: ("75", 0.90),
+                54: ("76", 0.99),
+            }
+        )
+
+        result = read_digits_easyocr_multiscale(
+            image,
+            reader=reader,
+            scales=(2, 3),
+            fast_accept_confidence=0.85,
+        )
+
+        self.assertEqual(result.value, 75)
+        self.assertEqual(result.source, "fast_accept")
+        self.assertEqual(result.scale, 2)
+        self.assertTrue(result.accepted)
+        self.assertEqual(len(reader.calls), 1)
+
+    def test_low_confidence_matching_scales_accept_by_agreement(self):
+        image = np.zeros((10, 20, 3), dtype=np.uint8)
+        reader = ShapeDrivenDigitReader(
+            {
+                44: ("75", 0.49),
+                54: ("75", 0.53),
+            }
+        )
+
+        result = read_digits_easyocr_multiscale(
+            image,
+            reader=reader,
+            scales=(2, 3),
+            fast_accept_confidence=0.85,
+        )
+
+        self.assertEqual(result.value, 75)
+        self.assertEqual(result.confidence, 0.53)
+        self.assertEqual(result.source, "multiscale_agreement")
+        self.assertEqual(result.agreement_count, 2)
+        self.assertTrue(result.accepted)
+        self.assertEqual(len(reader.calls), 2)
+
+    def test_conflicting_digit_scales_fail_closed(self):
+        image = np.zeros((10, 20, 3), dtype=np.uint8)
+        reader = ShapeDrivenDigitReader(
+            {
+                44: ("75", 0.49),
+                54: ("76", 0.99),
+            }
+        )
+
+        result = read_digits_easyocr_multiscale(
+            image,
+            reader=reader,
+            scales=(2, 3),
+            fast_accept_confidence=0.85,
+        )
+
+        self.assertIsNone(result.value)
+        self.assertEqual(result.confidence, 0.0)
+        self.assertEqual(result.source, "conflict")
+        self.assertEqual(result.agreement_count, 2)
+        self.assertFalse(result.accepted)
 
 
 class OcrTextMatchingTests(TestCase):

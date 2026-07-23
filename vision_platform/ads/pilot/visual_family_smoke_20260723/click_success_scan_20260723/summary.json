@@ -1,0 +1,32 @@
+{
+  "collection_root": "vision_platform\\ads\\runtime_collection\\click_success",
+  "date": "20260723",
+  "device": "cuda",
+  "checkpoints": [
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\run_seed42\\best.pt",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\run_seed43\\best.pt",
+    "vision_platform\\ads\\pilot\\visual_family_smoke_20260722\\after_review\\run_seed44\\best.pt"
+  ],
+  "events_found": 115,
+  "scored_events": 115,
+  "error_events": 0,
+  "proposal_source_counts": {
+    "close_template": 39,
+    "free_ad_template": 36,
+    "got_template": 40
+  },
+  "top_family_counts": {
+    "arrow": 4,
+    "free": 36,
+    "got": 40,
+    "next": 2,
+    "play_triangle": 5,
+    "x_mark": 28
+  },
+  "expected_low_confidence_count": 5,
+  "expected_top_disagreement_count": 7,
+  "outputs": {
+    "predictions": "vision_platform\\ads\\pilot\\visual_family_smoke_20260723\\click_success_scan_20260723\\click_success_predictions.csv",
+    "contact_sheets": "vision_platform\\ads\\pilot\\visual_family_smoke_20260723\\click_success_scan_20260723\\contact_sheets"
+  }
+}

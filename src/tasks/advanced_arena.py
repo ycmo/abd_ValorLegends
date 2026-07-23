@@ -9,6 +9,7 @@ import numpy as np
 
 from src.config import TASK_SPECS, TAP_COOLDOWN_SECONDS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, MissingAssetError, TaskFailedError, TaskSkippedError
+from src.ocr_utils import parse_digits_ocr_text, read_pattern_easyocr_multiscale
 from src.task_runner import BaseTask, TaskRunResult, TaskSceneAnchor, TaskState
 from src.vision_matcher import MatchResult, Roi
 
@@ -41,6 +42,8 @@ class AdvancedArenaTask(BaseTask):
     TARGET_FREE_FIGHTS = 3
     RESULT_TIMEOUT_SECONDS = 180.0
     RESULT_MAX_ACTIONS = 24
+    COUNTDOWN_OCR_FAST_ACCEPT_CONFIDENCE = 0.85
+    COUNTDOWN_OCR_AGREEMENT_CONFIDENCE = 0.50
 
     task_scene_anchors = (
         TaskSceneAnchor("challenge_button.png", threshold=0.86, roi=MAIN_CHALLENGE_ROI),
@@ -178,27 +181,26 @@ class AdvancedArenaTask(BaseTask):
         crop = screen[y : y + h, x : x + w]
         if crop.size == 0:
             return "", 0.0
+        result = read_pattern_easyocr_multiscale(
+            crop,
+            reader=self._get_ocr_reader(),
+            parser=parse_digits_ocr_text,
+            allowlist="0123456789",
+            scales=(2, 3, 4, 5),
+            fast_accept_confidence=self.COUNTDOWN_OCR_FAST_ACCEPT_CONFIDENCE,
+            agreement_accept_confidence=self.COUNTDOWN_OCR_AGREEMENT_CONFIDENCE,
+            preprocess=self._prepare_green_digits_for_ocr,
+            interpolation=cv2.INTER_NEAREST,
+        )
+        return (result.text if result.accepted else ""), result.confidence
+
+    @staticmethod
+    def _prepare_green_digits_for_ocr(crop) -> np.ndarray:
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, (35, 80, 80), (95, 255, 255))
         prepared = np.full(crop.shape, 255, dtype=np.uint8)
         prepared[mask > 0] = (0, 0, 0)
-        prepared = cv2.resize(prepared, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
-        reader = self._get_ocr_reader()
-        try:
-            results = reader.readtext(prepared, detail=1, allowlist="0123456789")
-        except TypeError:
-            results = reader.readtext(prepared, allowlist="0123456789")
-        digits = []
-        confidences = []
-        for _box, text, confidence in results:
-            clean = re.sub(r"\D+", "", str(text))
-            if not clean:
-                continue
-            digits.append(clean)
-            confidences.append(float(confidence))
-        if not digits:
-            return "", 0.0
-        return " ".join(digits), min(confidences)
+        return prepared
 
     def _open_challenge_dialog(self) -> bool:
         if self._match_asset(

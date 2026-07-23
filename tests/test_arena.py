@@ -328,10 +328,11 @@ class ArenaVisionTests(TestCase):
         task._get_ocr_reader = lambda: Reader()
         screen = read_image(ARENA_DIR / "005_\u9000\u51fa\u7af6\u6280\u5834.png", cv2.IMREAD_COLOR)
 
-        value, confidence = task._read_ticket_count(screen)
+        value, confidence, detail = task._read_ticket_count(screen)
 
         self.assertEqual(value, 148)
         self.assertEqual(confidence, 0.99)
+        self.assertIn("ocr_source=fast_accept", detail)
 
     def test_tickets_20_mode_stops_when_ticket_floor_reached(self):
         task = ArenaTask(context=SimpleNamespace())
@@ -357,7 +358,7 @@ class ArenaVisionTests(TestCase):
 
         self.assertTrue(task._ticket_count_at_or_below_floor())
 
-    def test_ticket_count_check_accepts_low_confidence_when_clearly_above_floor(self):
+    def test_ticket_count_check_rejects_low_confidence_even_when_clearly_above_floor(self):
         class Controller:
             def screenshot(self):
                 return object()
@@ -368,9 +369,13 @@ class ArenaVisionTests(TestCase):
 
         task = ArenaTask(context=SimpleNamespace(controller=Controller(), matcher=Matcher()))
         task.settings = ArenaSettings(mode="tickets_20", ticket_floor=20)
+        task.TICKET_OCR_ATTEMPTS = 1
+        task.TICKET_OCR_RETRY_SECONDS = 0
         task._read_ticket_count = lambda _screen: (453, 0.525)
+        task._save_ticket_ocr_uncertain_debug = lambda _screen, _confidence: "ticket_debug.png"
 
-        self.assertFalse(task._ticket_count_at_or_below_floor())
+        with self.assertRaises(TaskFailedError):
+            task._ticket_count_at_or_below_floor()
 
     def test_ticket_count_check_retries_low_confidence_near_floor(self):
         class Controller:

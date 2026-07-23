@@ -2,16 +2,16 @@
 
 > `asset_id` is a legacy compatibility field. Prefer `instance_id` for a physical file path and `content_id` for identical image content.
 
-- Scan time: `2026-07-22T05:17:49.485475+00:00`
-- Total instances: `15558`
-- Unique image contents: `11832`
-- Total size: `3267090526` bytes
-- Successful images: `15558`
+- Scan time: `2026-07-23T08:41:12.887906+00:00`
+- Total instances: `16720`
+- Unique image contents: `12639`
+- Total size: `3562536706` bytes
+- Successful images: `16720`
 - Scan errors: `0`
-- Files in duplicate groups: `5185`
-- Redundant copies: `3726`
-- Duplicate groups: `1459`
-- Reclaimable bytes: `153074811`
+- Files in duplicate groups: `5678`
+- Redundant copies: `4081`
+- Duplicate groups: `1597`
+- Reclaimable bytes: `220399306`
 - Cross-source duplicate groups: `196`
 - Cross-role duplicate groups: `185`
 
@@ -21,8 +21,8 @@ Duplicate images are not automatically safe to delete. The same content may be i
 
 | Source root | Count |
 |---|---:|
-| `vision_platform\ads\runtime_collection` | 6481 |
-| `log` | 3872 |
+| `vision_platform\ads\runtime_collection` | 7553 |
+| `log` | 3962 |
 | `vision_platform\ads\collections` | 1680 |
 | `vision_platform\ads\hard_negative_mining` | 976 |
 | `ads2\assets\review_crops` | 562 |
@@ -51,16 +51,16 @@ Duplicate images are not automatically safe to delete. The same content may be i
 
 | Vision domain | Count |
 |---|---:|
-| `ads` | 10830 |
-| `unknown` | 3899 |
+| `ads` | 11902 |
+| `unknown` | 3989 |
 | `game` | 829 |
 
 ## Counts By Asset Role
 
 | Asset role | Count |
 |---|---:|
-| `runtime_collection` | 6519 |
-| `runtime_log` | 3872 |
+| `runtime_collection` | 7591 |
+| `runtime_log` | 3962 |
 | `candidate_crop` | 3455 |
 | `review_asset` | 707 |
 | `manual_screenshot` | 457 |
@@ -72,9 +72,9 @@ Duplicate images are not automatically safe to delete. The same content may be i
 
 | Image scope | Count |
 |---|---:|
-| `crop` | 9317 |
-| `fullscreen` | 6188 |
-| `unknown` | 39 |
+| `crop` | 9892 |
+| `fullscreen` | 6751 |
+| `unknown` | 63 |
 | `sheet_or_composite` | 14 |
 
 ## Top 20 Directories
@@ -85,22 +85,22 @@ Duplicate images are not automatically safe to delete. The same content may be i
 | `vision_platform\ads\hard_negative_mining\batch_visual_negative_20260714\crops` | 558 | 2818447 |
 | `log\20260710_125824_2204` | 496 | 275301119 |
 | `ads2\assets\review_crops\close_glyph_candidates\sample\candidate_crops` | 484 | 8613605 |
-| `log\20260722_092758_137096_afk_20260722_092737_311_每日任務_task` | 361 | 164903285 |
-| `log\20260722_083102_77864_afk_20260722_083042_tiger_每日任務_task` | 355 | 162293248 |
-| `log\20260722_085909_146292_afk_20260722_085846_em3_每日任務_task` | 339 | 155798030 |
+| `log\20260723_085250_113628_afk_20260723_085229_tiger_每日任務_task` | 351 | 161131053 |
+| `log\20260723_093710_94372_afk_20260723_093649_em3_每日任務_task` | 325 | 148227053 |
 | `vision_platform\ads\collections\close_x_proposal_collection_pilot_20260720_latest30\raw_proposal_crops` | 275 | 241578 |
 | `vision_platform\ads\collections\close_x_proposal_collection_pilot_20260720_latest30\crops\canonical_96` | 243 | 845738 |
 | `vision_platform\ads\collections\close_x_proposal_collection_pilot_20260720_latest30\crops\context_1_5x` | 243 | 421685 |
 | `vision_platform\ads\collections\close_x_proposal_collection_pilot_20260720_latest30\crops\raw_bbox` | 243 | 215566 |
 | `ads2\assets\2_communication` | 240 | 89528090 |
 | `close_x_classifier\data\stage0_6_canonical_object_poc\images` | 236 | 1075195 |
+| `log\20260723_104307_12172_afk_20260723_102554_311_每日任務_task` | 225 | 101851556 |
 | `close_x_classifier\data\review_batch_001\patches` | 224 | 1623151 |
 | `vision_platform\ads\collections\reviewed_bbox_crops_20260718\context_1_5x` | 222 | 1919185 |
 | `vision_platform\ads\collections\reviewed_bbox_crops_20260718\crops` | 222 | 960005 |
 | `close_x_classifier\data\review_batch_001\review\not_close` | 218 | 1582611 |
 | `vision_platform\ads\hard_negative_mining\batch_full_40\crops` | 179 | 803735 |
 | `vision_platform\ads\hard_negative_mining\batch_quick_latest\crops` | 153 | 579747 |
-| `log\20260722_091740_175724_afk_20260722_091732_em3_懸賞委託_task` | 92 | 34809676 |
+| `log\20260723_102614_36328_afk_20260723_102554_311_每日任務_task_fail_returncode_1` | 142 | 60843472 |
 
 ## Suggested Next Priorities
 

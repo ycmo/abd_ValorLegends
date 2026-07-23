@@ -56,6 +56,15 @@ class FakeTimeTravelTask(TimeTravelTask):
         return type("Context", (), {"controller": Controller()})()
 
 
+class CostOcrReader:
+    def __init__(self):
+        self.calls = []
+
+    def readtext(self, image, *args, **kwargs):
+        self.calls.append((image.shape, kwargs))
+        return [([(0, 0), (10, 0), (10, 10), (0, 10)], "50", 0.99)]
+
+
 class TimeTravelSafetyTests(unittest.TestCase):
     def _cost_detection_task(self, matched_asset=None):
         calls = []
@@ -98,6 +107,18 @@ class TimeTravelSafetyTests(unittest.TestCase):
         self.assertEqual(cost, 50)
         self.assertEqual(calls, ["gem_100_button.png", "gem_50_button.png"])
         task._read_action_cost_ocr.assert_called_once()
+
+    def test_cost_ocr_uses_multiscale_digit_reader(self):
+        context = SimpleNamespace()
+        task = TimeTravelTask(context)
+        reader = CostOcrReader()
+        task._get_cost_ocr_reader = lambda: reader
+
+        cost = task._read_action_cost_ocr(np.zeros((540, 960, 3), dtype=np.uint8))
+
+        self.assertEqual(cost, 50)
+        self.assertEqual(len(reader.calls), 1)
+        self.assertEqual(reader.calls[0][1]["allowlist"], "0123456789")
 
     def test_stops_before_100_gem_tier(self):
         task = FakeTimeTravelTask([100])

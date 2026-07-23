@@ -1,26 +1,26 @@
 {
-  "scan_time": "2026-07-22T05:17:49.485475+00:00",
-  "total_instances": 15558,
-  "unique_instance_ids": 15558,
-  "unique_content_ids": 11832,
-  "total_images": 15558,
-  "total_size_bytes": 3267090526,
-  "successful_images": 15558,
+  "scan_time": "2026-07-23T08:41:12.887906+00:00",
+  "total_instances": 16720,
+  "unique_instance_ids": 16720,
+  "unique_content_ids": 12639,
+  "total_images": 16720,
+  "total_size_bytes": 3562536706,
+  "successful_images": 16720,
   "error_images": 0,
-  "unique_hashes": 11832,
-  "files_in_duplicate_groups": 5185,
-  "redundant_copies": 3726,
-  "duplicate_groups": 1459,
-  "reclaimable_bytes": 153074811,
+  "unique_hashes": 12639,
+  "files_in_duplicate_groups": 5678,
+  "redundant_copies": 4081,
+  "duplicate_groups": 1597,
+  "reclaimable_bytes": 220399306,
   "cross_source_duplicate_groups": 196,
   "cross_role_duplicate_groups": 185,
   "counts_by_extension": {
-    ".png": 15558
+    ".png": 16720
   },
   "counts_by_vision_domain": {
-    "ads": 10830,
+    "ads": 11902,
     "game": 829,
-    "unknown": 3899
+    "unknown": 3989
   },
   "counts_by_asset_role": {
     "candidate_crop": 3455,
@@ -28,15 +28,15 @@
     "manual_screenshot": 457,
     "reference_screen": 106,
     "review_asset": 707,
-    "runtime_collection": 6519,
-    "runtime_log": 3872,
+    "runtime_collection": 7591,
+    "runtime_log": 3962,
     "template": 396
   },
   "counts_by_image_scope": {
-    "crop": 9317,
-    "fullscreen": 6188,
+    "crop": 9892,
+    "fullscreen": 6751,
     "sheet_or_composite": 14,
-    "unknown": 39
+    "unknown": 63
   },
   "counts_by_source_root": {
     "AwayFromKeyboard\\debug": 46,
@@ -57,12 +57,12 @@
     "close_x_classifier\\runtime_collection_dryrun_all": 9,
     "close_x_classifier\\runtime_collection_dryrun_max3": 8,
     "close_x_classifier\\runtime_collection_test_x": 4,
-    "log": 3872,
+    "log": 3962,
     "magic_shop\\assets": 19,
     "manual_screenshots": 435,
     "switch_account\\templates": 29,
     "vision_platform\\ads\\collections": 1680,
     "vision_platform\\ads\\hard_negative_mining": 976,
-    "vision_platform\\ads\\runtime_collection": 6481
+    "vision_platform\\ads\\runtime_collection": 7553
   }
 }

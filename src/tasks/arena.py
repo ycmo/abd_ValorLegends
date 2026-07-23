@@ -13,7 +13,11 @@ import numpy as np
 from src.config import LOG_DIR, ROOT_DIR, TAP_COOLDOWN_SECONDS, TASK_SPECS, TRANSITION_WAIT_SECONDS
 from src.exceptions import BotError, TaskFailedError, TaskSkippedError
 from src.account_state import DEFAULT_ACCOUNT_STATE_FILE, read_current_account
-from src.ocr_utils import extract_arena_powers_easyocr, extract_arena_powers_easyocr_batch
+from src.ocr_utils import (
+    extract_arena_powers_easyocr,
+    extract_arena_powers_easyocr_batch,
+    read_digits_easyocr_multiscale,
+)
 from src.scene_detector import Scene
 from src.task_runner import BaseTask, TaskSceneAnchor
 from src.vision_matcher import MatchResult, Roi, write_image
@@ -61,8 +65,7 @@ class ArenaTask(BaseTask):
     OCR_OVERPOWERED_MIN_CONFIDENCE = 0.50
     OCR_UNSCALED_POWER_SAFE_MAX_K = 1000
     TICKET_OCR_MIN_CONFIDENCE = 0.60
-    TICKET_OCR_CLEAR_ABOVE_FLOOR_MIN_CONFIDENCE = 0.50
-    TICKET_OCR_CLEAR_ABOVE_FLOOR_MARGIN = 50
+    TICKET_OCR_FAST_ACCEPT_CONFIDENCE = 0.85
     TICKET_OCR_ATTEMPTS = 5
     TICKET_OCR_RETRY_SECONDS = 1.0
 
@@ -304,17 +307,23 @@ class ArenaTask(BaseTask):
                 roi=self.ARENA_MAIN_ROI,
             ):
                 return False
-            value, confidence = self._read_ticket_count(screen)
+            ticket_result = self._read_ticket_count(screen)
+            if len(ticket_result) == 2:
+                value, confidence = ticket_result
+                ocr_detail = "ocr_source=legacy"
+            else:
+                value, confidence, ocr_detail = ticket_result
             last_confidence = confidence
             if value is not None and self._is_ticket_count_confident_enough(value, confidence, floor):
                 self._log(
-                    f"Arena tickets={value} confidence={confidence:.3f}; floor={floor}; mode={self.settings.mode}"
+                    f"Arena tickets={value} confidence={confidence:.3f}; floor={floor}; "
+                    f"mode={self.settings.mode}; {ocr_detail}"
                 )
                 return value <= floor
             value_text = "unknown" if value is None else str(value)
             self._log(
                 f"Arena ticket OCR uncertain attempt={attempt}/{self.TICKET_OCR_ATTEMPTS} "
-                f"value={value_text} confidence={confidence:.3f}; retrying"
+                f"value={value_text} confidence={confidence:.3f}; {ocr_detail}; retrying"
             )
             time.sleep(self.TICKET_OCR_RETRY_SECONDS)
         debug_path = None
@@ -326,11 +335,7 @@ class ArenaTask(BaseTask):
         raise TaskFailedError(message)
 
     def _is_ticket_count_confident_enough(self, value: int, confidence: float, floor: int) -> bool:
-        if confidence >= self.TICKET_OCR_MIN_CONFIDENCE:
-            return True
-        if value >= floor + self.TICKET_OCR_CLEAR_ABOVE_FLOOR_MARGIN:
-            return confidence >= self.TICKET_OCR_CLEAR_ABOVE_FLOOR_MIN_CONFIDENCE
-        return False
+        return confidence >= self.TICKET_OCR_MIN_CONFIDENCE
 
     def _save_ticket_ocr_uncertain_debug(self, screen, confidence: float) -> str:
         filename = datetime.now().strftime("arena_ticket_ocr_uncertain_%Y%m%d_%H%M%S_%f.png")
@@ -353,43 +358,23 @@ class ArenaTask(BaseTask):
             )
         return saved_path
 
-    def _read_ticket_count(self, screen) -> tuple[Optional[int], float]:
+    def _read_ticket_count(self, screen) -> tuple[Optional[int], float, str]:
         x, y, w, h = self.TICKET_COUNT_ROI
         roi = screen[y : y + h, x : x + w]
         if roi.size == 0:
-            return None, 0.0
-        prepared = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-        prepared = cv2.copyMakeBorder(
-            prepared,
-            12,
-            12,
-            12,
-            12,
-            cv2.BORDER_CONSTANT,
-            value=[255, 255, 255],
+            return None, 0.0, "ocr=empty_roi"
+        result = read_digits_easyocr_multiscale(
+            roi,
+            reader=self._get_ocr_reader(),
+            scales=(2, 3, 4, 5),
+            fast_accept_confidence=self.TICKET_OCR_FAST_ACCEPT_CONFIDENCE,
         )
-        try:
-            results = self._get_ocr_reader().readtext(prepared, detail=1, allowlist="0123456789")
-        except TypeError:
-            results = self._get_ocr_reader().readtext(prepared, allowlist="0123456789")
-        pieces = []
-        for box, text, confidence in results:
-            digits = "".join(char for char in str(text) if char.isdigit())
-            if not digits:
-                continue
-            left_values = []
-            for point in box:
-                try:
-                    left_values.append(float(point[0]))
-                except (TypeError, ValueError, IndexError):
-                    continue
-            pieces.append((min(left_values) if left_values else 0.0, digits, float(confidence)))
-        if not pieces:
-            return None, 0.0
-        pieces.sort(key=lambda item: item[0])
-        digits = "".join(piece[1] for piece in pieces)
-        confidence = min(piece[2] for piece in pieces)
-        return int(digits), confidence
+        detail = (
+            f"ocr_source={result.source} scale={result.scale or '-'} "
+            f"agreement={result.agreement_count}"
+        )
+        value = result.value if result.accepted else None
+        return value, result.confidence, detail
 
     def _wait_for_battle_result_and_continue(self) -> None:
         deadline = time.time() + 150.0

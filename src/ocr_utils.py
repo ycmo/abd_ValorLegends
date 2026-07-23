@@ -4,8 +4,9 @@ import hashlib
 import re
 import threading
 import time
+from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -201,6 +202,213 @@ def get_cached_easyocr_reader(
 def clear_easyocr_reader_cache() -> None:
     with _EASYOCR_READER_CACHE_LOCK:
         _EASYOCR_READER_CACHE.clear()
+
+
+@dataclass(frozen=True)
+class DigitOcrResult:
+    value: Optional[int]
+    confidence: float
+    text: str = ""
+    scale: Optional[float] = None
+    source: str = "none"
+    agreement_count: int = 0
+    accepted: bool = False
+
+
+OcrParser = Callable[[str], Optional[int]]
+OcrPreprocessor = Callable[[np.ndarray], np.ndarray]
+
+
+def parse_digits_ocr_text(text: str) -> Optional[int]:
+    digits = "".join(char for char in str(text) if char.isdigit())
+    return int(digits) if digits else None
+
+
+def parse_time_hhmmss_ocr_text(text: str) -> Optional[int]:
+    compact = re.sub(r"\s+", "", str(text))
+    match = re.search(r"(?<!\d)(\d{1,2}):([0-5]\d):([0-5]\d)(?!\d)", compact)
+    if match is None:
+        return None
+    hours, minutes, seconds = (int(value) for value in match.groups())
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def parse_power_ocr_text(text: str) -> Optional[int]:
+    cleaned = re.sub(r"[^0-9kKmM,]", "", str(text))
+    if not cleaned:
+        return None
+    match = re.search(r"(\d+)([kKmM])?", cleaned.replace(",", ""))
+    if match is None:
+        return None
+    value = int(match.group(1))
+    suffix = (match.group(2) or "").lower()
+    if suffix == "m":
+        return value * 1000
+    return value
+
+
+def read_digits_easyocr_multiscale(
+    image: np.ndarray,
+    *,
+    reader,
+    scales: Sequence[int] = (2, 3, 4, 5),
+    fast_accept_confidence: float = 0.85,
+    min_agreement_count: int = 2,
+    pad_pixels: int = 12,
+    border_value: Sequence[int] = (255, 255, 255),
+    agreement_accept_confidence: float = 0.50,
+) -> DigitOcrResult:
+    """Read a small pure-digit ROI with resize fallback."""
+    return read_pattern_easyocr_multiscale(
+        image,
+        reader=reader,
+        parser=parse_digits_ocr_text,
+        allowlist="0123456789",
+        scales=scales,
+        fast_accept_confidence=fast_accept_confidence,
+        min_agreement_count=min_agreement_count,
+        pad_pixels=pad_pixels,
+        border_value=border_value,
+        agreement_accept_confidence=agreement_accept_confidence,
+    )
+
+
+def read_pattern_easyocr_multiscale(
+    image: np.ndarray,
+    *,
+    reader,
+    parser: OcrParser,
+    allowlist: str,
+    scales: Sequence[float] = (2, 3, 4, 5),
+    fast_accept_confidence: float = 0.85,
+    min_agreement_count: int = 2,
+    pad_pixels: int = 12,
+    border_value: Sequence[int] = (255, 255, 255),
+    agreement_accept_confidence: float = 0.50,
+    preprocess: Optional[OcrPreprocessor] = None,
+    interpolation: int = cv2.INTER_CUBIC,
+) -> DigitOcrResult:
+    """Read a fixed-format OCR ROI with resize fallback and parsed-value agreement."""
+    if image.size == 0:
+        return DigitOcrResult(value=None, confidence=0.0)
+
+    source_image = preprocess(image) if preprocess is not None else image
+    observations: list[DigitOcrResult] = []
+    best = DigitOcrResult(value=None, confidence=0.0)
+    for scale in scales:
+        prepared = cv2.resize(
+            source_image,
+            None,
+            fx=float(scale),
+            fy=float(scale),
+            interpolation=interpolation,
+        )
+        if pad_pixels > 0:
+            prepared = cv2.copyMakeBorder(
+                prepared,
+                pad_pixels,
+                pad_pixels,
+                pad_pixels,
+                pad_pixels,
+                cv2.BORDER_CONSTANT,
+                value=list(border_value),
+            )
+
+        text, confidence = _read_fixed_text_easyocr(prepared, reader, allowlist=allowlist)
+        if not text:
+            continue
+        value = parser(text)
+        if value is None:
+            result = DigitOcrResult(
+                value=None,
+                confidence=confidence,
+                text=text,
+                scale=float(scale),
+                source="unparsed",
+                agreement_count=1,
+            )
+            observations.append(result)
+            if result.confidence > best.confidence:
+                best = result
+            continue
+
+        result = DigitOcrResult(
+            value=value,
+            confidence=confidence,
+            text=text,
+            scale=float(scale),
+            source="single_scale",
+            agreement_count=1,
+        )
+        observations.append(result)
+        if result.confidence > best.confidence:
+            best = result
+
+        parsed_observations = [item for item in observations if item.value is not None]
+        observed_values = {item.value for item in parsed_observations}
+        if len(observed_values) > 1:
+            continue
+
+        if result.confidence >= fast_accept_confidence:
+            return DigitOcrResult(
+                value=result.value,
+                confidence=result.confidence,
+                text=result.text,
+                scale=result.scale,
+                source="fast_accept",
+                agreement_count=1,
+                accepted=True,
+            )
+
+        if len(parsed_observations) >= min_agreement_count:
+            agreed_best = max(parsed_observations, key=lambda item: item.confidence)
+            if agreed_best.confidence < agreement_accept_confidence:
+                continue
+            return DigitOcrResult(
+                value=agreed_best.value,
+                confidence=agreed_best.confidence,
+                text=agreed_best.text,
+                scale=agreed_best.scale,
+                source="multiscale_agreement",
+                agreement_count=len(parsed_observations),
+                accepted=True,
+            )
+
+    parsed_observations = [item for item in observations if item.value is not None]
+    if len({item.value for item in parsed_observations}) > 1:
+        return DigitOcrResult(
+            value=None,
+            confidence=0.0,
+            source="conflict",
+            agreement_count=len(parsed_observations),
+        )
+    return best
+
+
+def _read_fixed_text_easyocr(image: np.ndarray, reader, *, allowlist: str) -> tuple[str, float]:
+    try:
+        results = reader.readtext(image, detail=1, allowlist=allowlist)
+    except TypeError:
+        results = reader.readtext(image, allowlist=allowlist)
+
+    pieces = []
+    for box, text, confidence in results:
+        cleaned = str(text).strip()
+        if not cleaned:
+            continue
+        left_values = []
+        for point in box:
+            try:
+                left_values.append(float(point[0]))
+            except (TypeError, ValueError, IndexError):
+                continue
+        pieces.append((min(left_values) if left_values else 0.0, cleaned, float(confidence)))
+    if not pieces:
+        return "", 0.0
+    pieces.sort(key=lambda item: item[0])
+    text = "".join(piece[1] for piece in pieces).replace(" ", "")
+    confidence = min(piece[2] for piece in pieces)
+    return text, confidence
 
 
 def read_texts_easyocr(

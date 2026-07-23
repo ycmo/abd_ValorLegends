@@ -1,6 +1,6 @@
 {
   "review_mode": "detector",
-  "default_bbox_source": "manual",
+  "default_bbox_source": "model",
   "default_filter": {
     "domain": "ads_shared",
     "role": "runtime_collection",
@@ -8,9 +8,10 @@
     "source": "vision_platform\\ads\\runtime_collection",
     "status": "unreviewed",
     "visual_status": "all",
-    "search": "runtime_collection\\screens",
+    "search": "20260723",
     "sort": "image_signature",
     "include_path_any": [
+      "runtime_collection\\screens",
       "screen.png"
     ]
   },

@@ -301,6 +301,13 @@ def clear_failed_this_round(state: dict) -> bool:
     save_completion_state(state)
     return True
 
+def clear_stale_failed_this_round_for_new_run(state: dict) -> bool:
+    """Clear per-process failure skips left by an earlier AFK invocation."""
+    if not clear_failed_this_round(state):
+        return False
+    print("[AFK recovery] cleared stale failed_this_round entries from previous run")
+    return True
+
 def mark_route_failed_this_round(state: dict, account: str, route_name: str, detail: str) -> None:
     failed = state.setdefault("failed_this_round", {})
     account_state = failed.setdefault(account, {})
@@ -1250,8 +1257,7 @@ def main():
         start_previous_day_log_cleanup(LOG_DIR)
 
         configured_tasks, date_key, completion_state = load_runtime_task_state()
-        if args.force:
-            clear_failed_this_round(completion_state)
+        clear_stale_failed_this_round_for_new_run(completion_state)
 
         if not configured_tasks:
             print("⚠️ [提示] afk_tasks.ini 目前沒有任何 enable=Y 的任務，直接結束。")
@@ -1655,6 +1661,7 @@ def main():
         sys.exit(0)
 
     print("\n✅ 所有帳號掛機大循環執行完畢！工作結束！")
+    clear_failed_this_round(completion_state)
     notify_status("AFK", "全部完成", enabled=notify_enabled)
 
 if __name__ == "__main__":

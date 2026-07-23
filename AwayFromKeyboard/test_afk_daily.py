@@ -436,6 +436,36 @@ class AfkDailyCompletionTests(unittest.TestCase):
             ["route_a", "route_b"],
         )
 
+    def test_clear_stale_failed_this_round_restores_pending_tasks_for_new_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(afk_daily, "STATE_DIR", Path(tmpdir)):
+                state = {
+                    "date": "2026-06-26",
+                    "completed": {},
+                    "failed_this_round": {
+                        "14": {
+                            "每日任務": {
+                                "detail": "returncode=1",
+                                "updated_at": "2026-06-26T08:00:00+08:00",
+                            },
+                        },
+                    },
+                }
+                afk_daily.save_completion_state(state)
+                loaded = afk_daily.load_completion_state("2026-06-26")
+
+                self.assertEqual(
+                    afk_daily.pending_tasks_for_account(loaded, "14", ["每日任務"], force=False),
+                    [],
+                )
+                self.assertTrue(afk_daily.clear_stale_failed_this_round_for_new_run(loaded))
+                reloaded = afk_daily.load_completion_state("2026-06-26")
+
+        self.assertEqual(
+            afk_daily.pending_tasks_for_account(reloaded, "14", ["每日任務"], force=False),
+            ["每日任務"],
+        )
+
     def test_runtime_task_state_reloads_enabled_tasks_each_call(self):
         task_lists = [["每日任務"], ["深淵", "疾風呼喚"]]
 
